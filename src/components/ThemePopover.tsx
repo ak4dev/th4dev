@@ -1,6 +1,7 @@
+// src/components/sidebar/ThemePopover.tsx
 import React, { useState, useEffect } from 'react';
 import * as Popover from '@radix-ui/react-popover';
-import { styled, keyframes } from '../../stitches.config';
+import { styled, keyframes, themeObjects } from '../../stitches.config';
 import * as Icons from '@radix-ui/react-icons';
 
 // =======================
@@ -22,13 +23,22 @@ const PopoverContent = styled(Popover.Content, {
   minWidth: '180px',
   display: 'flex',
   flexDirection: 'column',
-  gap: '10px',
+  gap: '8px',
   boxShadow: '0 10px 20px rgba(0,0,0,0.2)',
   animation: `${slideRightAndFade} 0.25s ease-out`,
 });
 
 const PopoverArrow = styled(Popover.Arrow, {
   fill: '$currentLine',
+});
+
+const ScrollArea = styled('div', {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '8px',
+  maxHeight: 'calc(4 * 48px + 16px)', // 4 buttons + padding
+  overflowY: 'auto',
+  paddingRight: '4px', // prevent scrollbar overlapping
 });
 
 const ThemeButton = styled('button', {
@@ -62,55 +72,62 @@ const ColorSwatch = styled('span', {
   border: '2px solid $foreground',
 });
 
+const TriggerButton = styled('button', {
+  all: 'unset',
+  cursor: 'pointer',
+  color: 'inherit',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '36px',
+  height: '36px',
+});
+
 // =======================
 // Component
 // =======================
 export function ThemePopover() {
-  const [activeTheme, setActiveTheme] = useState<'dracula' | 'gruvbox'>('dracula');
+  const themeKeys = Object.keys(themeObjects) as Array<keyof typeof themeObjects>;
+  const [activeTheme, setActiveTheme] = useState<string>(themeKeys[0]);
 
+  // Detect currently applied theme on mount
   useEffect(() => {
-    if (document.body.classList.contains('gruvbox-theme')) setActiveTheme('gruvbox');
-    else setActiveTheme('dracula');
-  }, []);
+    const current = themeKeys.find(key => document.body.classList.contains(`${key}-theme`));
+    if (current) setActiveTheme(current);
+  }, [themeKeys]);
 
-  const switchTheme = (theme: 'dracula' | 'gruvbox') => {
+  const switchTheme = (themeKey: string) => {
     const body = document.body;
-    body.classList.remove('dracula-theme', 'gruvbox-theme');
-    if (theme === 'dracula') body.classList.add('dracula-theme');
-    if (theme === 'gruvbox') body.classList.add('gruvbox-theme');
-    setActiveTheme(theme);
+    themeKeys.forEach(key => body.classList.remove(`${key}-theme`));
+    body.classList.add(`${themeKey}-theme`);
+    setActiveTheme(themeKey);
   };
 
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
-        <button
-          style={{
-            all: 'unset',
-            cursor: 'pointer',
-            color: 'inherit',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '36px',
-            height: '36px',
-          }}
-          aria-label="Select Theme"
-        >
+        <TriggerButton aria-label="Select Theme">
           <Icons.ColorWheelIcon width={20} height={20} />
-        </button>
+        </TriggerButton>
       </Popover.Trigger>
 
-      <PopoverContent side="right" align="start">
-        <ThemeButton onClick={() => switchTheme('dracula')}>
-          <ColorSwatch style={{ backgroundColor: '#282a36' }} />
-          Dracula
-        </ThemeButton>
-
-        <ThemeButton onClick={() => switchTheme('gruvbox')}>
-          <ColorSwatch style={{ backgroundColor: '#282828' }} />
-          Gruvbox Dark
-        </ThemeButton>
+      <PopoverContent side="right" align="start" style={{ maxHeight: '240px' }}>
+        <ScrollArea>
+          {themeKeys.map(key => {
+            const theme = themeObjects[key];
+            const isActive = activeTheme === key;
+            return (
+              <ThemeButton
+                key={key}
+                style={{ backgroundColor: isActive ? '#6b5fb5' : undefined }}
+                onClick={() => switchTheme(key)}
+              >
+                <ColorSwatch style={{ backgroundColor: theme.colors.background }} />
+                {theme.name.charAt(0).toUpperCase() + theme.name.slice(1)}
+              </ThemeButton>
+            );
+          })}
+        </ScrollArea>
 
         <PopoverArrow />
       </PopoverContent>

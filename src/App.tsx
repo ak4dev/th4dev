@@ -1,22 +1,21 @@
 // src/App.tsx
 import React, { useState, useEffect } from "react";
-import { styled } from "../stitches.config";
+import { styled, themeObjects, themeClasses, globalStyles } from "../stitches.config";
 import InvestmentCalculatorRadixModern from "./components/InvestmentCalculatorModern";
-import { ThemeSelector } from "./components/sidebar/theme-button";
+import { ThemeSelector } from "./components/ThemeSwitcher";
 import StateIOPopover from "./components/sidebar/StateIOPopover";
-import { gruvboxTheme } from "../stitches.config";
 
 /* ------------------------------------------------ */
 /* Types */
 /* ------------------------------------------------ */
 export interface TH4State {
-  theme: "dracula" | "gruvbox";
+  theme: string; // now generic string to support all themes
   sliders: Record<string, number>;
   inputs: Record<string, string>;
   toggles: {
     advanced: boolean;
     rollover: boolean;
-    showInflation: boolean; // added toggle for modern calculator
+    showInflation: boolean;
   };
 }
 
@@ -47,7 +46,7 @@ const Content = styled("div", {
 /* Default State */
 /* ------------------------------------------------ */
 const defaultState: TH4State = {
-  theme: "dracula",
+  theme: "gruvbox",
   sliders: {
     investmentA: 10000,
     investmentB: 10000,
@@ -80,26 +79,29 @@ const defaultState: TH4State = {
 /* ------------------------------------------------ */
 export default function App() {
   const [mounted, setMounted] = useState(false);
-  const [theme, setTheme] = useState<"dracula" | "gruvbox">(defaultState.theme);
+  const [theme, setTheme] = useState(defaultState.theme);
   const [sliders, setSliders] = useState<Record<string, number>>(defaultState.sliders);
   const [inputs, setInputs] = useState<Record<string, string>>(defaultState.inputs);
   const [toggles, setToggles] = useState(defaultState.toggles);
 
   /* ------------------------------------------------ */
   /* Mount */
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    globalStyles(); // apply global styles
+    setMounted(true);
+  }, []);
 
   /* ------------------------------------------------ */
-  /* Theme */
+  /* Apply theme */
   useEffect(() => {
-    document.body.className = theme === "gruvbox" ? gruvboxTheme : "";
+    // remove all theme classes
+    Object.values(themeClasses).forEach((cls) => document.body.classList.remove(cls));
+    // add current theme
+    const cls = themeClasses[theme];
+    if (cls) document.body.classList.add(cls);
   }, [theme]);
 
   if (!mounted) return null;
-
-  /* ------------------------------------------------ */
-  /* Theme Switch */
-  const handleThemeChange = (newTheme: "dracula" | "gruvbox") => setTheme(newTheme);
 
   /* ------------------------------------------------ */
   /* Export / Import State */
@@ -129,7 +131,7 @@ export default function App() {
       </Content>
 
       <Sidebar>
-        <ThemeSelector onThemeChange={handleThemeChange} />
+        <ThemeSelector onThemeChange={setTheme} />
         <StateIOPopover getState={getAppState} setState={setAppState} />
       </Sidebar>
     </Container>

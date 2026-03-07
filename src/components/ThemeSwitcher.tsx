@@ -1,7 +1,6 @@
-// src/components/ThemeSelector.tsx
 import React from 'react';
 import * as Popover from '@radix-ui/react-popover';
-import { styled } from '../../stitches.config';
+import { styled, themeClasses, themeObjects } from '../../stitches.config';
 import * as Icons from '@radix-ui/react-icons';
 
 // =======================
@@ -70,7 +69,7 @@ const SidebarButton = styled('button', {
 // Component
 // =======================
 type ThemeSelectorProps = {
-  onThemeChange: (theme: 'dracula' | 'gruvbox') => void;
+  onThemeChange: (themeName: string) => void;
 };
 
 export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
@@ -83,14 +82,15 @@ export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
       </Popover.Trigger>
 
       <PopoverContent side="right" align="start">
-        <ThemeButton onClick={() => onThemeChange('dracula')}>
-          <ColorSwatch style={{ backgroundColor: '#282a36' }} />
-          Dracula
-        </ThemeButton>
-        <ThemeButton onClick={() => onThemeChange('gruvbox')}>
-          <ColorSwatch style={{ backgroundColor: '#282828' }} />
-          Gruvbox Dark
-        </ThemeButton>
+        {Object.entries(themeObjects).map(([key, theme]) => (
+          <ThemeButton
+            key={key}
+            onClick={() => onThemeChange(key)}
+          >
+            <ColorSwatch style={{ backgroundColor: theme.colors.background }} />
+            {theme.name.charAt(0).toUpperCase() + theme.name.slice(1)}
+          </ThemeButton>
+        ))}
       </PopoverContent>
     </Popover.Root>
   );
