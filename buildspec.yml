@@ -3,18 +3,32 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      nodejs: 18
+      nodejs: 22          # Use 22 (LTS) or 20 if you prefer; 24 may be available on newer images
+
     commands:
-      - echo Installing dependencies...
+      - echo "Installing dependencies..."
       - npm ci --legacy-peer-dependencies
 
   build:
     commands:
-      - echo Building...
+      - echo "Building..."
       - npm run build
+
+# Optional: cache node_modules for much faster rebuilds on subsequent runs
+cache:
+  paths:
+    - node_modules/**/*
 
 artifacts:
   files:
     - '**/*'
-  base-directory: dist
-  discard-paths: no
+  base-directory: dist      # Vite's default output folder
+  discard-paths: no         # keep folder structure inside dist
+
+# Optional: if you want to produce reports (e.g. for tests) later
+# reports:
+#   vite-coverage-report:
+#     files:
+#       - 'coverage/**'
+#     base-directory: coverage
+#     file-format: 'SIMPLE-COVERAGE'
