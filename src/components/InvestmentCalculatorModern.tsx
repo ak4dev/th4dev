@@ -1,5 +1,4 @@
 // src/components/InvestmentCalculatorRadixModern.tsx
-import React from "react";
 import * as Popover from "@radix-ui/react-popover";
 import * as Slider from "@radix-ui/react-slider";
 import * as Switch from "@radix-ui/react-switch";
@@ -221,7 +220,8 @@ export default function InvestmentCalculatorRadixModern({
   setInputs,
   toggles,
   setToggles,
-}: CalculatorProps) {
+}: any) {
+  //TODO: FIX
   const updateSlider = (key: string, val: number) =>
     setSliders({ ...sliders, [key]: val });
   const updateInput = (key: string, val: string) =>
@@ -244,12 +244,19 @@ export default function InvestmentCalculatorRadixModern({
     rollOver: false,
     investmentId: "investmentA",
     growthMatrix: [],
-    setCurrentAmount: (v: string) => updateInput("currentAmountA", v),
-    setProjectedGain: (v: number) => updateSlider("projectedGainA", v),
-    setYearsOfGrowth: (v: number) => updateSlider("yearsOfGrowthA", v),
+    setCurrentAmount: (v: string | undefined) =>
+      updateInput("currentAmountA", v ?? ""), // Added default value for undefined
+    setProjectedGain: (v: number) => updateSlider("projectedGainA", v ?? 0), // Added default value for undefined
+    setYearsOfGrowth: (v: number) => updateSlider("yearsOfGrowthA", v ?? 0),
     setMonthlyContribution: (v: number) =>
-      updateSlider("monthlyContributionA", v),
-    setMonthlyWithdrawal: (v: number) => updateSlider("monthlyWithdrawalA", v),
+      updateSlider("monthlyContributionA", v ?? 0),
+    setMonthlyWithdrawal: (v: number) =>
+      updateSlider("monthlyWithdrawalA", v ?? 0),
+    setYearWithdrawalsBegin: (v: number) =>
+      updateSlider("withdrawalStartYearA", v ?? 0),
+    setYearContributionsStop: (v: number | undefined) =>
+      updateSlider("contributionStopYearA", v ?? 0), // Added default value for undefined
+    maxMonthlyWithdrawal: 10000, // max limit set for the withdrawal
   };
   const calcA = new InvestmentCalculator(invAProps);
   calcA.getGrowthMatrix();
@@ -274,22 +281,24 @@ export default function InvestmentCalculatorRadixModern({
     yearOfRollover: toggles.rollover ? sliders.yearsOfGrowthA : undefined,
     investmentId: "investmentB",
     growthMatrix: [],
-    setCurrentAmount: (v: string) => updateInput("currentAmountB", v),
-    setProjectedGain: (v: number) => updateSlider("projectedGainB", v),
-    setYearsOfGrowth: (v: number) => updateSlider("yearsOfGrowthB", v),
+    setCurrentAmount: (v: string | undefined) =>
+      updateInput("currentAmountB", v ?? ""), // Added default value for undefined
+    setProjectedGain: (v: number) => updateSlider("projectedGainB", v ?? 0), // Added default value for undefined
+    setYearsOfGrowth: (v: number) => updateSlider("yearsOfGrowthB", v ?? 0),
     setMonthlyContribution: (v: number) =>
-      updateSlider("monthlyContributionB", v),
-    setMonthlyWithdrawal: (v: number) => updateSlider("monthlyWithdrawalB", v),
+      updateSlider("monthlyContributionB", v ?? 0),
+    setMonthlyWithdrawal: (v: number) =>
+      updateSlider("monthlyWithdrawalB", v ?? 0),
+    setYearWithdrawalsBegin: (v: number) =>
+      updateSlider("withdrawalStartYearB", v ?? 0),
+    setYearContributionsStop: (v: number | undefined) =>
+      updateSlider("contributionStopYearB", v ?? 0), // Added default value for undefined
+    maxMonthlyWithdrawal: 10000, // max limit set for the withdrawal
   };
   const calcB = new InvestmentCalculator(invBProps);
   calcB.getGrowthMatrix();
   const totalB = parseInt(
     calcB.calculateGrowth(toggles.showInflation).replace(/[^0-9.-]+/g, ""),
-  );
-
-  const maxYears = Math.max(
-    sliders.yearsOfGrowthA || 0,
-    sliders.yearsOfGrowthB || 0,
   );
 
   /* ---------------- Compute Info Panel Values ---------------- */
@@ -462,7 +471,7 @@ export default function InvestmentCalculatorRadixModern({
             />
           </div>
           <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-            <Label>Inflated:</Label>
+            <Label>Inflated :</Label>
             <SwitchButton
               checked={toggles.showInflation}
               onCheckedChange={(v) => updateToggle("showInflation", v)}
@@ -516,7 +525,7 @@ export default function InvestmentCalculatorRadixModern({
         growthMatrixB={toggles.advanced ? calcB.getGrowthMatrix() : undefined}
         advanced={toggles.advanced}
         yearOfRollover={toggles.rollover ? sliders.yearsOfGrowthA : undefined}
-        maxYears={maxYears}
+        //maxYears={maxYears}
       />
     </Container>
   );

@@ -1,5 +1,4 @@
 // src/components/investment-line-chart.tsx
-import React from "react";
 import {
   ResponsiveContainer,
   LineChart,

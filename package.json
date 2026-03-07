@@ -5,8 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run format && tsc -b && vite build",
     "lint": "eslint .",
+    "format": "npx prettier --write .",
+    "deploy-dev": "npm run build && aws s3 sync ./dist/ s3://$DEV_BUCKET && aws cloudfront create-invalidation --distribution-id $DEV_DIST_ID --paths '/*'",
+    "deploy-io": "npm run build && aws s3 sync ./dist/ s3://$IO_BUCKET && aws cloudfront create-invalidation --distribution-id $IO_DIST_ID --paths '/*'",
+    "deploy-all": "npm run deploy-dev && npm run deploy-io",
     "preview": "vite preview"
   },
   "dependencies": {

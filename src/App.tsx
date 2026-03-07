@@ -1,6 +1,6 @@
 // src/App.tsx
-import React, { useState, useEffect } from "react";
-import { styled, themeObjects, themeClasses, globalStyles } from "../stitches.config";
+import { useState, useEffect } from "react";
+import { styled, themeClasses, globalStyles } from "../stitches.config";
 import InvestmentCalculatorRadixModern from "./components/InvestmentCalculatorModern";
 import { ThemeSelector } from "./components/ThemeSwitcher";
 import StateIOPopover from "./components/sidebar/StateIOPopover";
@@ -80,8 +80,12 @@ const defaultState: TH4State = {
 export default function App() {
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState(defaultState.theme);
-  const [sliders, setSliders] = useState<Record<string, number>>(defaultState.sliders);
-  const [inputs, setInputs] = useState<Record<string, string>>(defaultState.inputs);
+  const [sliders, setSliders] = useState<Record<string, number>>(
+    defaultState.sliders,
+  );
+  const [inputs, setInputs] = useState<Record<string, string>>(
+    defaultState.inputs,
+  );
   const [toggles, setToggles] = useState(defaultState.toggles);
 
   /* ------------------------------------------------ */
@@ -95,7 +99,9 @@ export default function App() {
   /* Apply theme */
   useEffect(() => {
     // remove all theme classes
-    Object.values(themeClasses).forEach((cls) => document.body.classList.remove(cls));
+    Object.values(themeClasses).forEach((cls) =>
+      document.body.classList.remove(cls),
+    );
     // add current theme
     const cls = themeClasses[theme];
     if (cls) document.body.classList.add(cls);

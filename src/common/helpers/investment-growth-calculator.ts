@@ -1,5 +1,5 @@
-import { addYears } from 'date-fns';
-import type { InvestmentCalculatorProps, LineGraphEntry } from '../types/types';
+import { addYears } from "date-fns";
+import type { InvestmentCalculatorProps, LineGraphEntry } from "../types/types";
 
 /**
  * Investment Growth Calculator
@@ -33,7 +33,7 @@ export class InvestmentCalculator {
   public calculateGrowth(showInflation: boolean): string {
     // Validate required inputs
     if (!this.isValidInput()) {
-      return '';
+      return "";
     }
 
     // Clear any existing growth data
@@ -46,13 +46,23 @@ export class InvestmentCalculator {
 
     // Calculate growth year by year
     for (let year = 0; year <= this.props.yearsOfGrowth; year++) {
-      const result = this.calculateYearGrowth(year, nominalAmount, inflationAdjustedAmount, monthlyGrowthRate);
+      const result = this.calculateYearGrowth(
+        year,
+        nominalAmount,
+        inflationAdjustedAmount,
+        monthlyGrowthRate,
+      );
 
       nominalAmount = result.nominal;
       inflationAdjustedAmount = result.inflationAdjusted;
 
       // Store data point for charting
-      this.addGrowthDataPoint(year, nominalAmount, inflationAdjustedAmount, showInflation);
+      this.addGrowthDataPoint(
+        year,
+        nominalAmount,
+        inflationAdjustedAmount,
+        showInflation,
+      );
     }
 
     const finalAmount = showInflation ? inflationAdjustedAmount : nominalAmount;
@@ -63,7 +73,10 @@ export class InvestmentCalculator {
    * Returns inflation-adjusted amount for a given value
    */
   public getInflationAdjusted(amount: number): number {
-    const depreciation = this.calculateDepreciation(amount, this.props.depreciationRate);
+    const depreciation = this.calculateDepreciation(
+      amount,
+      this.props.depreciationRate,
+    );
     return Math.floor(amount - depreciation);
   }
 
@@ -84,7 +97,10 @@ export class InvestmentCalculator {
   /**
    * Calculates percentage change between two amounts
    */
-  public getPercentageChange(originalAmount: number, newAmount: number): number {
+  public getPercentageChange(
+    originalAmount: number,
+    newAmount: number,
+  ): number {
     if (originalAmount === 0) return 0;
     return Math.floor(((newAmount - originalAmount) / originalAmount) * 100);
   }
@@ -108,7 +124,7 @@ export class InvestmentCalculator {
    * Gets the initial investment amount as a number
    */
   private getInitialAmount(): number {
-    return parseInt(this.props.currentAmount || '0') || 0;
+    return parseInt(this.props.currentAmount || "0") || 0;
   }
 
   /**
@@ -164,7 +180,10 @@ export class InvestmentCalculator {
 
     // Apply annual inflation adjustment
     if (this.props.depreciationRate) {
-      const depreciation = this.calculateDepreciation(inflationAdjusted, this.props.depreciationRate);
+      const depreciation = this.calculateDepreciation(
+        inflationAdjusted,
+        this.props.depreciationRate,
+      );
       inflationAdjusted -= depreciation;
     }
 
@@ -174,7 +193,12 @@ export class InvestmentCalculator {
   /**
    * Adds a data point to the growth matrix for charting
    */
-  private addGrowthDataPoint(year: number, nominal: number, inflationAdjusted: number, showInflation: boolean): void {
+  private addGrowthDataPoint(
+    year: number,
+    nominal: number,
+    inflationAdjusted: number,
+    showInflation: boolean,
+  ): void {
     this.props.growthMatrix.push({
       x: addYears(this.today, year),
       y: Math.floor(showInflation ? inflationAdjusted : nominal),
@@ -196,17 +220,25 @@ export class InvestmentCalculator {
     }
 
     // Must have a valid withdrawal start year
-    if (this.props.yearWithdrawalsBegin === undefined || this.props.yearWithdrawalsBegin === null) {
+    if (
+      this.props.yearWithdrawalsBegin === undefined ||
+      this.props.yearWithdrawalsBegin === null
+    ) {
       return false;
     }
 
     // Special handling for year 0 (current year)
     if (year === 0) {
-      return this.props.yearWithdrawalsBegin === 0 && month >= this.currentMonth;
+      return (
+        this.props.yearWithdrawalsBegin === 0 && month >= this.currentMonth
+      );
     }
 
     // For subsequent years, check if we've reached the withdrawal start year
-    return year > this.props.yearWithdrawalsBegin || (year === this.props.yearWithdrawalsBegin && month >= 0);
+    return (
+      year > this.props.yearWithdrawalsBegin ||
+      (year === this.props.yearWithdrawalsBegin && month >= 0)
+    );
   }
 
   /**
@@ -250,7 +282,10 @@ export class InvestmentCalculator {
   /**
    * Calculates depreciation amount based on percentage and principal
    */
-  private calculateDepreciation(amount: number, depreciationRate: number): number {
+  private calculateDepreciation(
+    amount: number,
+    depreciationRate: number,
+  ): number {
     return amount * (depreciationRate / 100);
   }
 

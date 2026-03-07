@@ -1,8 +1,8 @@
 // src/common/types.ts
 
 export interface LineGraphEntry {
-  x: Date;          // The date of the data point
-  y: number;        // The primary value (nominal or inflation-adjusted)
+  x: Date; // The date of the data point
+  y: number; // The primary value (nominal or inflation-adjusted)
   alternateY: number; // The alternate value for comparison
 }
 
