@@ -35,7 +35,6 @@ const SubdomainRouter = ({
 }: SubdomainRouterProps) => {
   const currentComponent = subdomainToComponent[subdomain] || <div></div>;
 
-  console.log(`subdomain is: ${subdomain}`);
 
   // Clone the component and pass down props correctly
   return React.cloneElement(currentComponent, {
