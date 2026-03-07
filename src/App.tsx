@@ -1,15 +1,15 @@
 // src/App.tsx
 import { useState, useEffect } from "react";
 import { styled, themeClasses, globalStyles } from "../stitches.config";
-import InvestmentCalculatorRadixModern from "./components/InvestmentCalculatorModern";
 import { ThemeSelector } from "./components/ThemeSwitcher";
 import StateIOPopover from "./components/sidebar/StateIOPopover";
+import SubdomainRouter from "./components/SubdomainRouter";
 
 /* ------------------------------------------------ */
 /* Types */
 /* ------------------------------------------------ */
 export interface TH4State {
-  theme: string; // now generic string to support all themes
+  theme: string;
   sliders: Record<string, number>;
   inputs: Record<string, string>;
   toggles: {
@@ -78,41 +78,36 @@ const defaultState: TH4State = {
 /* App Component */
 /* ------------------------------------------------ */
 export default function App() {
-  const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState(defaultState.theme);
-  const [sliders, setSliders] = useState<Record<string, number>>(
-    defaultState.sliders,
-  );
-  const [inputs, setInputs] = useState<Record<string, string>>(
-    defaultState.inputs,
-  );
+  const [sliders, setSliders] = useState(defaultState.sliders);
+  const [inputs, setInputs] = useState(defaultState.inputs);
   const [toggles, setToggles] = useState(defaultState.toggles);
 
   /* ------------------------------------------------ */
   /* Mount */
   useEffect(() => {
     globalStyles(); // apply global styles
-    setMounted(true);
   }, []);
 
   /* ------------------------------------------------ */
-  /* Apply theme */
+  /* Apply Theme */
   useEffect(() => {
-    // remove all theme classes
+    // Remove all theme classes
     Object.values(themeClasses).forEach((cls) =>
       document.body.classList.remove(cls),
     );
-    // add current theme
+    // Add current theme class
     const cls = themeClasses[theme];
     if (cls) document.body.classList.add(cls);
   }, [theme]);
 
-  if (!mounted) return null;
+  /* ------------------------------------------------ */
+  /* Subdomain Detection (if needed for routing) */
+  const hostname = window.location.hostname;
+  const subdomain = hostname.split(".")[0]; // Extract subdomain from URL
 
   /* ------------------------------------------------ */
-  /* Export / Import State */
-  const getAppState = (): TH4State => ({ theme, sliders, inputs, toggles });
-
+  /* Set App State Function */
   const setAppState = (state: TH4State) => {
     if (!state) return;
     if (state.theme) setTheme(state.theme);
@@ -126,7 +121,8 @@ export default function App() {
   return (
     <Container>
       <Content>
-        <InvestmentCalculatorRadixModern
+        <SubdomainRouter
+          subdomain={subdomain}
           sliders={sliders}
           setSliders={setSliders}
           inputs={inputs}
@@ -138,7 +134,10 @@ export default function App() {
 
       <Sidebar>
         <ThemeSelector onThemeChange={setTheme} />
-        <StateIOPopover getState={getAppState} setState={setAppState} />
+        <StateIOPopover
+          getState={() => ({ theme, sliders, inputs, toggles })}
+          setState={setAppState}
+        />
       </Sidebar>
     </Container>
   );
