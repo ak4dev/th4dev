@@ -462,7 +462,7 @@ export default function InvestmentCalculatorRadixModern({
             />
           </div>
           <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-            <Label>Show Inflation:</Label>
+            <Label>Inflated:</Label>
             <SwitchButton
               checked={toggles.showInflation}
               onCheckedChange={(v) => updateToggle("showInflation", v)}
