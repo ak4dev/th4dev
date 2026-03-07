@@ -1,43 +1,63 @@
-import React from 'react';
-import * as Popover from '@radix-ui/react-popover';
-import { styled, themeClasses, themeObjects } from '../../stitches.config';
+// src/components/sidebar/ThemeSelector.tsx
+import React, { useState, useEffect } from 'react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { styled, themeObjects } from '../../stitches.config';
 import * as Icons from '@radix-ui/react-icons';
 
 // =======================
 // Styled Components
 // =======================
-const PopoverContent = styled(Popover.Content, {
+const TriggerButton = styled(DropdownMenu.Trigger, {
+  all: 'unset',
+  cursor: 'pointer',
+  color: '$foreground',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '36px',
+  height: '36px',
+  marginBottom: '0.5rem',
+  borderRadius: 5,
+  '&:hover': {
+    backgroundColor: '$purple',
+  },
+});
+
+const DropdownContent = styled(DropdownMenu.Content, {
   backgroundColor: '$currentLine',
   color: '$foreground',
   borderRadius: '12px',
-  padding: '12px',
-  minWidth: '160px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '10px',
+  minWidth: '180px',
+  padding: '8px',
   boxShadow: '0 10px 20px rgba(0,0,0,0.2)',
 });
 
-const ThemeButton = styled('button', {
+const ScrollArea = styled('div', {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '6px',
+  maxHeight: 'calc(4 * 44px + 12px)', // ~4 items visible, then scroll
+  overflowY: 'auto',
+  paddingRight: '4px',
+});
+
+const ThemeButton = styled(DropdownMenu.Item, {
   all: 'unset',
   display: 'flex',
   alignItems: 'center',
   gap: '10px',
-  padding: '10px 14px',
-  borderRadius: '9999px',
+  padding: '10px 12px',
   cursor: 'pointer',
   fontSize: '0.95rem',
-  fontWeight: 500,
+  borderRadius: '9999px',
   backgroundColor: '$currentLine',
-  transition: 'all 0.2s ease',
   '&:hover': {
     backgroundColor: '$purple',
-    transform: 'translateY(-1px)',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+    color: '$background',
   },
-  '&:active': {
-    transform: 'translateY(0)',
-    boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+  '&:focus': {
+    outline: 'none',
+    backgroundColor: '$comment',
   },
 });
 
@@ -50,21 +70,6 @@ const ColorSwatch = styled('span', {
   boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
 });
 
-const SidebarButton = styled('button', {
-  all: 'unset',
-  color: '$foreground',
-  padding: '0.75rem',
-  marginBottom: '0.5rem',
-  cursor: 'pointer',
-  borderRadius: 5,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  '&:hover': {
-    backgroundColor: '$purple',
-  },
-});
-
 // =======================
 // Component
 // =======================
@@ -73,25 +78,54 @@ type ThemeSelectorProps = {
 };
 
 export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
-  return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
-        <SidebarButton>
-          <Icons.ColorWheelIcon />
-        </SidebarButton>
-      </Popover.Trigger>
+  const themeKeys = Object.keys(themeObjects) as Array<keyof typeof themeObjects>;
+  const [activeTheme, setActiveTheme] = useState<string>(themeKeys[0]);
 
-      <PopoverContent side="right" align="start">
-        {Object.entries(themeObjects).map(([key, theme]) => (
-          <ThemeButton
-            key={key}
-            onClick={() => onThemeChange(key)}
-          >
-            <ColorSwatch style={{ backgroundColor: theme.colors.background }} />
-            {theme.name.charAt(0).toUpperCase() + theme.name.slice(1)}
-          </ThemeButton>
-        ))}
-      </PopoverContent>
-    </Popover.Root>
+  // Detect current body theme on mount
+  useEffect(() => {
+    const current = themeKeys.find(key =>
+      document.body.classList.contains(`${key}-theme`)
+    );
+    if (current) setActiveTheme(current);
+  }, [themeKeys]);
+
+  const switchTheme = (themeKey: string) => {
+    const body = document.body;
+    themeKeys.forEach(key => body.classList.remove(`${key}-theme`));
+    body.classList.add(`${themeKey}-theme`);
+    setActiveTheme(themeKey);
+    onThemeChange(themeKey);
+  };
+
+  return (
+    <DropdownMenu.Root>
+      <TriggerButton aria-label="Select Theme">
+        <Icons.ColorWheelIcon width={20} height={20} />
+      </TriggerButton>
+
+      <DropdownMenu.Portal>
+        <DropdownContent sideOffset={5}>
+          <ScrollArea>
+            {themeKeys.map(key => {
+              const theme = themeObjects[key];
+              const isActive = activeTheme === key;
+              return (
+                <ThemeButton
+                  key={key}
+                  onSelect={() => switchTheme(key)}
+                  style={{
+                    backgroundColor: isActive ? '$purple' : undefined,
+                    color: isActive ? '$background' : undefined,
+                  }}
+                >
+                  <ColorSwatch style={{ backgroundColor: theme.colors.background }} />
+                  {theme.name.charAt(0).toUpperCase() + theme.name.slice(1)}
+                </ThemeButton>
+              );
+            })}
+          </ScrollArea>
+        </DropdownContent>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
