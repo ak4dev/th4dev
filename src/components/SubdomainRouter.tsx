@@ -33,9 +33,7 @@ const SubdomainRouter = ({
   toggles,
   setToggles,
 }: SubdomainRouterProps) => {
-  const currentComponent = subdomainToComponent[subdomain] || (
-    <div>Default Page</div>
-  );
+  const currentComponent = subdomainToComponent[subdomain] || <div></div>;
 
   console.log(`subdomain is: ${subdomain}`);
 
