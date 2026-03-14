@@ -14,6 +14,36 @@ phases:
       - echo "Building..."
       - npm run build
 
+  post_build:
+    commands:
+      - echo "Deploying to S3 and invalidating CloudFront..."
+      # Sync built assets to S3. Set S3_BUCKET in the CodeBuild environment variables.
+      - |
+        if [ -n "$S3_BUCKET" ]; then
+          echo "Syncing dist/ to s3://$S3_BUCKET"
+          aws s3 sync dist/ s3://$S3_BUCKET --delete
+        else
+          echo "S3_BUCKET not set — skipping S3 sync."
+        fi
+      # Invalidate CloudFront so the CDN serves the latest assets immediately.
+      # Set DISTRIBUTION_ID in the CodeBuild environment variables.
+      # To invalidate multiple distributions, set EXTRA_DISTRIBUTION_IDS as a
+      # space-separated list (e.g. "E1EXAMPLE E2EXAMPLE").
+      - |
+        if [ -n "$DISTRIBUTION_ID" ]; then
+          echo "Creating CloudFront invalidation for distribution $DISTRIBUTION_ID"
+          aws cloudfront create-invalidation --distribution-id $DISTRIBUTION_ID --paths "/*"
+        else
+          echo "DISTRIBUTION_ID not set — skipping CloudFront invalidation."
+        fi
+      - |
+        if [ -n "$EXTRA_DISTRIBUTION_IDS" ]; then
+          for id in $EXTRA_DISTRIBUTION_IDS; do
+            echo "Creating CloudFront invalidation for extra distribution $id"
+            aws cloudfront create-invalidation --distribution-id $id --paths "/*"
+          done
+        fi
+
 # Optional: cache node_modules for much faster rebuilds on subsequent runs
 cache:
   paths:
