@@ -61,7 +61,7 @@ export default function DateAmountTable({
   investmentCalc,
 }: DateAmountTableProps) {
   const matrix: LineGraphEntry[] = investmentCalc?.getGrowthMatrix() ?? [];
-  
+
   if (!matrix || matrix.length === 0) {
     return <div>No data available</div>;
   }
@@ -93,13 +93,12 @@ export default function DateAmountTable({
         <tbody>
           {matrix.map((entry, idx) => {
             if (!entry || entry.y === undefined) return null;
-            
+
             const year = new Date(entry.x).getFullYear();
             const nominal = entry.y;
             const adjusted = entry.alternateY ?? nominal;
-            const pctChange = initial !== 0 
-              ? ((nominal - initial) / initial) * 100 
-              : 0;
+            const pctChange =
+              initial !== 0 ? ((nominal - initial) / initial) * 100 : 0;
 
             return (
               <tr key={idx}>

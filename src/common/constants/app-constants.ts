@@ -32,8 +32,8 @@ export const MONTHS_PER_YEAR = 12;
 export const PERCENTAGE_DIVISOR = 100;
 
 /* ---------- File Export ---------- */
-export const FILE_EXPORT_PREFIX = 'th4';
-export const FILE_EXPORT_EXTENSION = 'json';
+export const FILE_EXPORT_PREFIX = "th4";
+export const FILE_EXPORT_EXTENSION = "json";
 
 /* ---------- Default Theme ---------- */
-export const DEFAULT_THEME = 'gruvbox';
+export const DEFAULT_THEME = "gruvbox";

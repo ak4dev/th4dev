@@ -5,7 +5,10 @@
 import React from "react";
 import * as Icons from "@radix-ui/react-icons";
 import { styled } from "../../../stitches.config";
-import { FILE_EXPORT_PREFIX, FILE_EXPORT_EXTENSION } from "../../common/constants/app-constants";
+import {
+  FILE_EXPORT_PREFIX,
+  FILE_EXPORT_EXTENSION,
+} from "../../common/constants/app-constants";
 
 /* ==================================================
  * Styled Components
@@ -113,10 +116,10 @@ export default function StateIOButtons({ getState, setState }: Props) {
         <SidebarButton as="span" title="Import JSON">
           <Icons.UploadIcon width={20} height={20} />
         </SidebarButton>
-        <FileInput 
-          type="file" 
-          accept={`.${FILE_EXPORT_EXTENSION}`} 
-          onChange={handleImport} 
+        <FileInput
+          type="file"
+          accept={`.${FILE_EXPORT_EXTENSION}`}
+          onChange={handleImport}
         />
       </label>
     </div>

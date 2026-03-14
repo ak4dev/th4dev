@@ -4,7 +4,10 @@
 
 import { addYears } from "date-fns";
 import type { InvestmentCalculatorProps, LineGraphEntry } from "../types/types";
-import { MONTHS_PER_YEAR, PERCENTAGE_DIVISOR } from "../constants/app-constants";
+import {
+  MONTHS_PER_YEAR,
+  PERCENTAGE_DIVISOR,
+} from "../constants/app-constants";
 
 /**
  * Investment Growth Calculator
@@ -116,7 +119,9 @@ export class InvestmentCalculator {
     newAmount: number,
   ): number {
     if (originalAmount === 0) return 0;
-    return Math.floor(((newAmount - originalAmount) / originalAmount) * PERCENTAGE_DIVISOR);
+    return Math.floor(
+      ((newAmount - originalAmount) / originalAmount) * PERCENTAGE_DIVISOR,
+    );
   }
 
   /* ==================================================

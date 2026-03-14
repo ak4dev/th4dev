@@ -6,7 +6,10 @@ import { useState, useEffect } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { styled, themeObjects } from "../../stitches.config";
 import * as Icons from "@radix-ui/react-icons";
-import { SCROLLABLE_THEME_ITEMS, THEME_ITEM_HEIGHT } from "../common/constants/app-constants";
+import {
+  SCROLLABLE_THEME_ITEMS,
+  THEME_ITEM_HEIGHT,
+} from "../common/constants/app-constants";
 
 /* ==================================================
  * Styled Components
@@ -119,13 +122,13 @@ export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
    */
   const switchTheme = (themeKey: string) => {
     const body = document.body;
-    
+
     // Remove all theme classes
     themeKeys.forEach((key) => body.classList.remove(`${key}-theme`));
-    
+
     // Add new theme class
     body.classList.add(`${themeKey}-theme`);
-    
+
     // Update state and notify parent
     setActiveTheme(themeKey);
     onThemeChange(themeKey);

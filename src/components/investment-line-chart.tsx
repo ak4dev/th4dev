@@ -106,15 +106,15 @@ function getPerformanceColor(
   defaultColor: string,
 ): string {
   if (!matrix || matrix.length === 0) return defaultColor;
-  
+
   const start = matrix[0].y;
   const end = matrix[matrix.length - 1].y;
   const red = "var(--colors-red)";
   const orange = "var(--colors-orange)";
-  
+
   if (end < 0) return red;
   if (end < start) return orange;
-  
+
   return defaultColor;
 }
 

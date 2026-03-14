@@ -276,10 +276,10 @@ export const themeClasses: Record<string, string> = Object.fromEntries(
  * Global CSS styles applied to the entire application
  */
 export const globalStyles = globalCss({
-  "*": { 
-    boxSizing: "border-box", 
-    margin: 0, 
-    padding: 0 
+  "*": {
+    boxSizing: "border-box",
+    margin: 0,
+    padding: 0,
   },
   body: {
     fontFamily: "$body",

@@ -35,9 +35,9 @@ interface SubdomainRouterProps {
   /** Function to update input values */
   setInputs: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   /** State for all toggle switches */
-  toggles: TH4State['toggles'];
+  toggles: TH4State["toggles"];
   /** Function to update toggle values */
-  setToggles: React.Dispatch<React.SetStateAction<TH4State['toggles']>>;
+  setToggles: React.Dispatch<React.SetStateAction<TH4State["toggles"]>>;
 }
 
 /* ==================================================
