@@ -7,6 +7,7 @@ import * as Slider from "@radix-ui/react-slider";
 import * as Switch from "@radix-ui/react-switch";
 import { styled, keyframes } from "../../stitches.config";
 import { InvestmentCalculator } from "../common/helpers/investment-growth-calculator";
+import { solveForGain } from "../common/helpers/solve-for-gain";
 import DateAmountTable from "./date-amount-table";
 import { InvestmentLineChart } from "./investment-line-chart";
 import PortfolioPanel from "./portfolio/PortfolioPanel";
@@ -21,6 +22,7 @@ import {
   MAX_MONTHLY_CONTRIBUTION,
   MAX_MONTHLY_WITHDRAWAL,
   MAX_INFLATION_RATE,
+  MAX_TARGET_VALUE,
   MIN_VALUE,
 } from "../common/constants/app-constants";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
@@ -335,7 +337,79 @@ export default function InvestmentCalculatorRadixModern({
   const calcB = new InvestmentCalculator(invBProps);
   const totalB = calcB.calculateGrowth(toggles.showInflation).numeric;
 
+  // ---------------- Target Value Handlers ----------------
+
+  /**
+   * When the user sets a target value, solve for the gain % required to reach it
+   * and update the projected gain slider accordingly. Changing gain directly does
+   * NOT update the target (no feedback loop).
+   */
+  const handleTargetA = (target: number) => {
+    updateSlider("targetValueA", target);
+    if (target > 0) {
+      const { projectedGain: _ignored, ...baseProps } = invAProps;
+      void _ignored;
+      const gain = solveForGain(baseProps, target, toggles.showInflation);
+      updateSlider("projectedGainA", gain);
+    }
+  };
+
+  const handleTargetB = (target: number) => {
+    updateSlider("targetValueB", target);
+    if (target > 0) {
+      const { projectedGain: _ignored, ...baseProps } = invBProps;
+      void _ignored;
+      const gain = solveForGain(baseProps, target, toggles.showInflation);
+      updateSlider("projectedGainB", gain);
+    }
+  };
+
   /* ---------------- Compute Info Panel Values ---------------- */
+
+  // Scan growth matrix for the first year the portfolio meets/exceeds the target
+  const matrixA = calcA.getGrowthMatrix();
+  const targetReachedA =
+    sliders.targetValueA > 0
+      ? matrixA.find((e) => e.y >= sliders.targetValueA)
+      : null;
+
+  const matrixB = calcB.getGrowthMatrix();
+  const targetReachedB =
+    toggles.advanced && sliders.targetValueB > 0
+      ? matrixB.find((e) => e.y >= sliders.targetValueB)
+      : null;
+
+  // Earliest year where annual growth alone covers all monthly withdrawals
+  const annualWithdrawalA = (sliders.monthlyWithdrawalA || 0) * 12;
+  const earliestSafeWithdrawalA =
+    annualWithdrawalA > 0
+      ? matrixA.find(
+          (e) =>
+            e.y * ((sliders.projectedGainA || DEFAULT_PROJECTED_GAIN) / 100) >=
+            annualWithdrawalA,
+        )
+      : null;
+
+  const annualWithdrawalB = (sliders.monthlyWithdrawalB || 0) * 12;
+  const earliestSafeWithdrawalB =
+    annualWithdrawalB > 0 && toggles.advanced
+      ? matrixB.find(
+          (e) =>
+            e.y * ((sliders.projectedGainB || DEFAULT_PROJECTED_GAIN) / 100) >=
+            annualWithdrawalB,
+        )
+      : null;
+
+  // Dynamic step for target slider: 1 order of magnitude below the portfolio value
+  const targetStepA = Math.pow(
+    10,
+    Math.max(2, Math.floor(Math.log10(Math.max(totalA, 1000))) - 1),
+  );
+  const targetStepB = Math.pow(
+    10,
+    Math.max(2, Math.floor(Math.log10(Math.max(totalB, 1000))) - 1),
+  );
+
   const infoItems = [
     {
       label: "(A) Withdrawal Start",
@@ -380,6 +454,46 @@ export default function InvestmentCalculatorRadixModern({
       label: "Inflation Rate",
       value: `${sliders.yearlyInflation || DEFAULT_INFLATION_RATE}%`,
     },
+    {
+      label: "(A) Target Reached",
+      value: targetReachedA
+        ? `${targetReachedA.x.getFullYear()} (yr ${matrixA.indexOf(targetReachedA)})`
+        : sliders.targetValueA > 0
+          ? `> ${sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH} yrs`
+          : "N/A",
+    },
+    ...(toggles.advanced
+      ? [
+          {
+            label: "(B) Target Reached",
+            value: targetReachedB
+              ? `${targetReachedB.x.getFullYear()} (yr ${matrixB.indexOf(targetReachedB)})`
+              : sliders.targetValueB > 0
+                ? `> ${sliders.yearsOfGrowthB || DEFAULT_YEARS_OF_GROWTH} yrs`
+                : "N/A",
+          },
+        ]
+      : []),
+    {
+      label: "(A) Safe Withdrawal from",
+      value: earliestSafeWithdrawalA
+        ? `${earliestSafeWithdrawalA.x.getFullYear()} ($${Math.floor((earliestSafeWithdrawalA.y * (sliders.projectedGainA || DEFAULT_PROJECTED_GAIN)) / 100 / 12).toLocaleString()}/mo covered)`
+        : annualWithdrawalA > 0
+          ? "Not within horizon"
+          : "N/A",
+    },
+    ...(toggles.advanced
+      ? [
+          {
+            label: "(B) Safe Withdrawal from",
+            value: earliestSafeWithdrawalB
+              ? `${earliestSafeWithdrawalB.x.getFullYear()} ($${Math.floor((earliestSafeWithdrawalB.y * (sliders.projectedGainB || DEFAULT_PROJECTED_GAIN)) / 100 / 12).toLocaleString()}/mo covered)`
+              : annualWithdrawalB > 0
+                ? "Not within horizon"
+                : "N/A",
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -437,6 +551,25 @@ export default function InvestmentCalculatorRadixModern({
               />
             </>
           )}
+          {/* Target value — sets the required return % to reach this balance */}
+          <div>
+            <Label>Target Value (sets Return %)</Label>
+            <CurrencyInput
+              value={String(sliders.targetValueA || 0)}
+              onChange={(v) => handleTargetA(Number(v))}
+            />
+            <SliderRoot
+              value={[Math.min(sliders.targetValueA || 0, MAX_TARGET_VALUE)]}
+              min={0}
+              max={MAX_TARGET_VALUE}
+              step={targetStepA}
+            >
+              <SliderTrack>
+                <SliderRange />
+              </SliderTrack>
+              <SliderThumb />
+            </SliderRoot>
+          </div>
         </Panel>
 
         {/* Investment B Panel */}
@@ -488,6 +621,26 @@ export default function InvestmentCalculatorRadixModern({
               max={sliders.yearsOfGrowthB}
               onChange={(v) => updateSlider("withdrawalStartYearB", v)}
             />
+            {/* Target value for Investment B */}
+            <div>
+              <Label>Target Value (sets Return %)</Label>
+              <CurrencyInput
+                value={String(sliders.targetValueB || 0)}
+                onChange={(v) => handleTargetB(Number(v))}
+              />
+              <SliderRoot
+                value={[Math.min(sliders.targetValueB || 0, MAX_TARGET_VALUE)]}
+                min={0}
+                max={MAX_TARGET_VALUE}
+                step={targetStepB}
+                onValueChange={(val) => handleTargetB(val[0])}
+              >
+                <SliderTrack>
+                  <SliderRange />
+                </SliderTrack>
+                <SliderThumb />
+              </SliderRoot>
+            </div>
           </Panel>
         )}
 
@@ -569,6 +722,10 @@ export default function InvestmentCalculatorRadixModern({
         growthMatrixB={toggles.advanced ? calcB.getGrowthMatrix() : undefined}
         advanced={toggles.advanced}
         yearOfRollover={toggles.rollover ? sliders.yearsOfGrowthA : undefined}
+        targetValueA={sliders.targetValueA || undefined}
+        targetValueB={
+          toggles.advanced ? sliders.targetValueB || undefined : undefined
+        }
       />
 
       {/* Portfolio Capital Preservation Panel */}
@@ -579,7 +736,9 @@ export default function InvestmentCalculatorRadixModern({
           stockApiUrl={stockApiUrl}
           defaultPortfolioValue={totalA}
           monthlyWithdrawal={sliders.monthlyWithdrawalA || MIN_VALUE}
+          withdrawalStartYear={sliders.withdrawalStartYearA || 0}
           yearsForward={sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH}
+          growthMatrix={calcA.getGrowthMatrix()}
         />
       )}
     </Container>

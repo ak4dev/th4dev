@@ -11,6 +11,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  ReferenceLine,
 } from "recharts";
 import { format } from "date-fns";
 import type { LineGraphEntry } from "../common/types/types";
@@ -134,6 +135,10 @@ interface InvestmentLineChartProps {
   advanced?: boolean;
   /** Year when rollover occurs (optional) */
   yearOfRollover?: number;
+  /** Optional target value for Investment A — rendered as a dashed reference line */
+  targetValueA?: number;
+  /** Optional target value for Investment B — rendered as a dashed reference line */
+  targetValueB?: number;
 }
 
 /**
@@ -145,6 +150,8 @@ export function InvestmentLineChart({
   growthMatrixB,
   advanced = false,
   yearOfRollover,
+  targetValueA,
+  targetValueB,
 }: InvestmentLineChartProps) {
   const data = prepareChartData(
     growthMatrixA,
@@ -166,6 +173,8 @@ export function InvestmentLineChart({
   const allValues = [
     ...data.map((d) => d.investmentA ?? 0),
     ...(advanced ? data.map((d) => d.investmentB ?? 0) : []),
+    ...(targetValueA ? [targetValueA] : []),
+    ...(targetValueB && advanced ? [targetValueB] : []),
   ];
   const maxValue = Math.max(...allValues) * CHART_PADDING_MULTIPLIER;
 
@@ -217,6 +226,36 @@ export function InvestmentLineChart({
             align="right"
             wrapperStyle={{ color: fg }}
           />
+
+          {/* Target reference lines */}
+          {targetValueA != null && targetValueA > 0 && (
+            <ReferenceLine
+              y={targetValueA}
+              stroke={investmentAColor}
+              strokeDasharray="6 3"
+              strokeOpacity={0.7}
+              label={{
+                value: `Target A: $${numberFormatter.format(targetValueA)}`,
+                fill: investmentAColor,
+                fontSize: 11,
+                position: "insideTopRight",
+              }}
+            />
+          )}
+          {advanced && targetValueB != null && targetValueB > 0 && (
+            <ReferenceLine
+              y={targetValueB}
+              stroke={investmentBColor}
+              strokeDasharray="6 3"
+              strokeOpacity={0.7}
+              label={{
+                value: `Target B: $${numberFormatter.format(targetValueB)}`,
+                fill: investmentBColor,
+                fontSize: 11,
+                position: "insideBottomRight",
+              }}
+            />
+          )}
 
           {/* Investment A Line */}
           <Line

@@ -37,3 +37,7 @@ export const FILE_EXPORT_EXTENSION = "json";
 
 /* ---------- Default Theme ---------- */
 export const DEFAULT_THEME = "gruvbox";
+
+/* ---------- Target Value ---------- */
+export const MAX_TARGET_VALUE = 10_000_000; // $10M ceiling for target slider
+export const DEFAULT_TARGET_VALUE = 0; // 0 = no target set

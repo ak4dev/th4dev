@@ -8,7 +8,9 @@ import { styled } from "../../../stitches.config";
 import { fetchStockData } from "../../common/helpers/stock-client";
 import { computePortfolioProjection } from "../../common/helpers/portfolio-projection";
 import type { PortfolioHolding } from "../../common/types/portfolio-types";
+import type { LineGraphEntry } from "../../common/types/types";
 import PortfolioProjectionChart from "./PortfolioProjectionChart";
+import CapitalPreservationSchedule from "./CapitalPreservationSchedule";
 
 /* ==================================================
  * Styled Components
@@ -179,8 +181,15 @@ interface PortfolioPanelProps {
   defaultPortfolioValue: number;
   /** Monthly withdrawal amount from the investment calculator */
   monthlyWithdrawal: number;
+  /** Year offset at which withdrawals begin — forwarded to the preservation schedule */
+  withdrawalStartYear: number;
   /** Number of years to project forward */
   yearsForward: number;
+  /**
+   * Growth matrix from the investment calculator — used to derive the
+   * required stock price at each projected year (capital preservation schedule).
+   */
+  growthMatrix: LineGraphEntry[];
 }
 
 /* ==================================================
@@ -230,7 +239,9 @@ export default function PortfolioPanel({
   stockApiUrl,
   defaultPortfolioValue,
   monthlyWithdrawal,
+  withdrawalStartYear,
   yearsForward,
+  growthMatrix,
 }: PortfolioPanelProps) {
   const [portfolioValue, setPortfolioValue] = useState<number>(
     defaultPortfolioValue,
@@ -384,7 +395,7 @@ export default function PortfolioPanel({
 
       {fetchError && <ErrorText>{fetchError}</ErrorText>}
 
-      {/* Projection chart */}
+      {/* Withdrawal-based projection chart */}
       {hasProjection && allocationValid ? (
         <PortfolioProjectionChart projection={projection} />
       ) : holdingsWithPrice.length > 0 && !allocationValid ? (
@@ -394,6 +405,14 @@ export default function PortfolioPanel({
       ) : holdingsWithPrice.length === 0 && holdings.length > 0 ? (
         <InfoText>Fetch current prices to generate the projection.</InfoText>
       ) : null}
+
+      {/* Capital preservation schedule — requires fetched prices */}
+      <CapitalPreservationSchedule
+        growthMatrix={growthMatrix}
+        holdings={holdings}
+        withdrawalStartYear={withdrawalStartYear}
+        monthlyWithdrawal={monthlyWithdrawal}
+      />
     </Wrapper>
   );
 }

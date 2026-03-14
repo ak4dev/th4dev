@@ -17,6 +17,7 @@ import {
   DEFAULT_MONTHLY_WITHDRAWAL,
   DEFAULT_WITHDRAWAL_START_YEAR,
   DEFAULT_INFLATION_RATE,
+  DEFAULT_TARGET_VALUE,
 } from "./common/constants/app-constants";
 import type { TH4State } from "./common/types/types";
 import type { PortfolioHolding } from "./common/types/portfolio-types";
@@ -70,6 +71,8 @@ const defaultState: TH4State = {
     withdrawalStartYearA: DEFAULT_WITHDRAWAL_START_YEAR,
     withdrawalStartYearB: DEFAULT_WITHDRAWAL_START_YEAR,
     yearlyInflation: DEFAULT_INFLATION_RATE,
+    targetValueA: DEFAULT_TARGET_VALUE,
+    targetValueB: DEFAULT_TARGET_VALUE,
   },
   inputs: {
     currentAmountA: String(DEFAULT_INITIAL_AMOUNT),
