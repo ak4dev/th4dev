@@ -9,6 +9,7 @@ import { styled, keyframes } from "../../stitches.config";
 import { InvestmentCalculator } from "../common/helpers/investment-growth-calculator";
 import DateAmountTable from "./date-amount-table";
 import { InvestmentLineChart } from "./investment-line-chart";
+import PortfolioPanel from "./portfolio/PortfolioPanel";
 import { addYears } from "date-fns";
 import {
   DEFAULT_INITIAL_AMOUNT,
@@ -22,6 +23,7 @@ import {
   MAX_INFLATION_RATE,
   MIN_VALUE,
 } from "../common/constants/app-constants";
+import type { PortfolioHolding } from "../common/types/portfolio-types";
 
 /* ---------------- Styles & Animations ---------------- */
 const fadeInUp = keyframes({
@@ -237,6 +239,7 @@ interface TogglesState {
   advanced: boolean;
   rollover: boolean;
   showInflation: boolean;
+  portfolio: boolean;
 }
 
 interface InvestmentCalculatorModernProps {
@@ -246,6 +249,9 @@ interface InvestmentCalculatorModernProps {
   setInputs: Dispatch<SetStateAction<Record<string, string>>>;
   toggles: TogglesState;
   setToggles: Dispatch<SetStateAction<TogglesState>>;
+  stockApiUrl: string;
+  stockHoldings: PortfolioHolding[];
+  setStockHoldings: Dispatch<SetStateAction<PortfolioHolding[]>>;
 }
 
 /* ---------------- Main Component ---------------- */
@@ -256,6 +262,9 @@ export default function InvestmentCalculatorRadixModern({
   setInputs,
   toggles,
   setToggles,
+  stockApiUrl,
+  stockHoldings,
+  setStockHoldings,
 }: InvestmentCalculatorModernProps) {
   const updateSlider = (key: string, val: number) =>
     setSliders({ ...sliders, [key]: val });
@@ -505,6 +514,13 @@ export default function InvestmentCalculatorRadixModern({
               onCheckedChange={(v) => updateToggle("showInflation", v)}
             />
           </SwitchRow>
+          <SwitchRow>
+            <Label>Portfolio:</Label>
+            <SwitchButton
+              checked={toggles.portfolio}
+              onCheckedChange={(v) => updateToggle("portfolio", v)}
+            />
+          </SwitchRow>
           <InvestmentSlider
             label="Inflation (%)"
             value={sliders.yearlyInflation || DEFAULT_INFLATION_RATE}
@@ -554,6 +570,18 @@ export default function InvestmentCalculatorRadixModern({
         advanced={toggles.advanced}
         yearOfRollover={toggles.rollover ? sliders.yearsOfGrowthA : undefined}
       />
+
+      {/* Portfolio Capital Preservation Panel */}
+      {toggles.portfolio && (
+        <PortfolioPanel
+          holdings={stockHoldings}
+          setHoldings={setStockHoldings}
+          stockApiUrl={stockApiUrl}
+          defaultPortfolioValue={totalA}
+          monthlyWithdrawal={sliders.monthlyWithdrawalA || MIN_VALUE}
+          yearsForward={sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH}
+        />
+      )}
     </Container>
   );
 }

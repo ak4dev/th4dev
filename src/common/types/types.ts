@@ -89,12 +89,13 @@ export interface TH4State {
     advanced: boolean;
     rollover: boolean;
     showInflation: boolean;
+    portfolio: boolean;
   };
-  /** Stock data fetcher configuration */
+  /** Stock API configuration and portfolio holdings */
   stock?: {
     /** API URL template — use {symbol} as the ticker placeholder */
     apiUrl: string;
-    /** List of ticker symbols to fetch */
-    symbols: string[];
+    /** Portfolio holdings: symbol, allocation %, and optionally fetched price */
+    holdings: import("./portfolio-types").PortfolioHolding[];
   };
 }

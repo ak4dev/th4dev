@@ -7,6 +7,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as Icons from "@radix-ui/react-icons";
 import { styled, keyframes } from "../../stitches.config";
 import { fetchStockData } from "../common/helpers/stock-client";
+import type { PortfolioHolding } from "../common/types/portfolio-types";
 
 /* ==================================================
  * Animations
@@ -187,8 +188,9 @@ interface StockModalProps {
   onOpenChange: (open: boolean) => void;
   apiUrl: string;
   setApiUrl: (url: string) => void;
-  symbols: string[];
-  setSymbols: (symbols: string[]) => void;
+  /** Portfolio holdings — symbols are derived from these */
+  holdings: PortfolioHolding[];
+  setHoldings: (holdings: PortfolioHolding[]) => void;
 }
 
 export default function StockModal({
@@ -196,25 +198,32 @@ export default function StockModal({
   onOpenChange,
   apiUrl,
   setApiUrl,
-  symbols,
-  setSymbols,
+  holdings,
+  setHoldings,
 }: StockModalProps) {
   const [addInput, setAddInput] = useState("");
   const [results, setResults] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const symbols = holdings.map((h) => h.symbol);
+
   const addSymbols = () => {
     const incoming = addInput
       .split(",")
       .map((s) => s.trim().toUpperCase())
       .filter((s) => s && !symbols.includes(s));
-    if (incoming.length) setSymbols([...symbols, ...incoming]);
+    if (incoming.length) {
+      setHoldings([
+        ...holdings,
+        ...incoming.map((s) => ({ symbol: s, allocationPct: 0 })),
+      ]);
+    }
     setAddInput("");
   };
 
   const removeSymbol = (symbol: string) =>
-    setSymbols(symbols.filter((s) => s !== symbol));
+    setHoldings(holdings.filter((h) => h.symbol !== symbol));
 
   const handleFetch = async () => {
     if (!symbols.length) return;

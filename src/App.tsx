@@ -19,6 +19,7 @@ import {
   DEFAULT_INFLATION_RATE,
 } from "./common/constants/app-constants";
 import type { TH4State } from "./common/types/types";
+import type { PortfolioHolding } from "./common/types/portfolio-types";
 
 export type { TH4State };
 
@@ -78,10 +79,11 @@ const defaultState: TH4State = {
     advanced: false,
     rollover: false,
     showInflation: false,
+    portfolio: false,
   },
   stock: {
     apiUrl: DEFAULT_STOCK_API_URL,
-    symbols: ["IBM"],
+    holdings: [{ symbol: "IBM", allocationPct: 100 }],
   },
 };
 
@@ -99,7 +101,9 @@ export default function App() {
   const [inputs, setInputs] = useState(defaultState.inputs);
   const [toggles, setToggles] = useState(defaultState.toggles);
   const [stockApiUrl, setStockApiUrl] = useState(defaultState.stock!.apiUrl);
-  const [stockSymbols, setStockSymbols] = useState(defaultState.stock!.symbols);
+  const [stockHoldings, setStockHoldings] = useState<PortfolioHolding[]>(
+    defaultState.stock!.holdings,
+  );
   const [stockModalOpen, setStockModalOpen] = useState(false);
 
   /**
@@ -156,7 +160,16 @@ export default function App() {
     }
     if (state.stock) {
       setStockApiUrl(state.stock.apiUrl);
-      setStockSymbols(state.stock.symbols);
+      // Support old exports that used `symbols: string[]` instead of holdings
+      const legacySymbols = (state.stock as unknown as { symbols?: string[] })
+        .symbols;
+      if (state.stock.holdings) {
+        setStockHoldings(state.stock.holdings);
+      } else if (legacySymbols) {
+        setStockHoldings(
+          legacySymbols.map((s) => ({ symbol: s, allocationPct: 0 })),
+        );
+      }
     }
   };
 
@@ -171,6 +184,9 @@ export default function App() {
           setInputs={setInputs}
           toggles={toggles}
           setToggles={setToggles}
+          stockApiUrl={stockApiUrl}
+          stockHoldings={stockHoldings}
+          setStockHoldings={setStockHoldings}
         />
       </Content>
 
@@ -182,7 +198,7 @@ export default function App() {
             sliders,
             inputs,
             toggles,
-            stock: { apiUrl: stockApiUrl, symbols: stockSymbols },
+            stock: { apiUrl: stockApiUrl, holdings: stockHoldings },
           })}
           setState={setAppState}
         />
@@ -193,8 +209,8 @@ export default function App() {
         onOpenChange={setStockModalOpen}
         apiUrl={stockApiUrl}
         setApiUrl={setStockApiUrl}
-        symbols={stockSymbols}
-        setSymbols={setStockSymbols}
+        holdings={stockHoldings}
+        setHoldings={setStockHoldings}
       />
     </Container>
   );

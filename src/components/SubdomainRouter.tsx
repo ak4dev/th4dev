@@ -5,6 +5,7 @@
 import { type JSX } from "react";
 import InvestmentCalculatorRadixModern from "./InvestmentCalculatorModern";
 import type { TH4State } from "../common/types/types";
+import type { PortfolioHolding } from "../common/types/portfolio-types";
 
 /* ==================================================
  * Types
@@ -28,6 +29,12 @@ interface SubdomainRouterProps {
   toggles: TH4State["toggles"];
   /** Function to update toggle values */
   setToggles: React.Dispatch<React.SetStateAction<TH4State["toggles"]>>;
+  /** Stock API URL template */
+  stockApiUrl: string;
+  /** Portfolio holdings */
+  stockHoldings: PortfolioHolding[];
+  /** Setter for portfolio holdings */
+  setStockHoldings: React.Dispatch<React.SetStateAction<PortfolioHolding[]>>;
 }
 
 type SharedProps = Omit<SubdomainRouterProps, "subdomain">;
@@ -63,6 +70,9 @@ const SubdomainRouter = ({
   setInputs,
   toggles,
   setToggles,
+  stockApiUrl,
+  stockHoldings,
+  setStockHoldings,
 }: SubdomainRouterProps) => {
   const factory = subdomainToComponent[subdomain];
   const sharedProps: SharedProps = {
@@ -72,6 +82,9 @@ const SubdomainRouter = ({
     setInputs,
     toggles,
     setToggles,
+    stockApiUrl,
+    stockHoldings,
+    setStockHoldings,
   };
 
   return factory ? factory(sharedProps) : <div />;
