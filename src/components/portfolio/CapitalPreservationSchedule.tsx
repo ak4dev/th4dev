@@ -8,6 +8,7 @@ import { styled } from "../../../stitches.config";
 import type { LineGraphEntry } from "../../common/types/types";
 import type { PortfolioHolding } from "../../common/types/portfolio-types";
 import { interpolateMonthly } from "../../common/helpers/interpolate-monthly";
+import { interpolateDailyForMonth } from "../../common/helpers/interpolate-daily";
 
 /* ==================================================
  * Styled Components
@@ -127,7 +128,23 @@ const Td = styled("td", {
         fontWeight: 600,
       },
     },
+    daily: {
+      true: {
+        backgroundColor: "rgba(98,114,164,0.08)",
+        fontSize: "0.7rem",
+        color: "$comment",
+      },
+    },
   },
+});
+
+const ExpandBtn = styled("button", {
+  all: "unset",
+  cursor: "pointer",
+  fontSize: "0.65rem",
+  marginLeft: 6,
+  opacity: 0.6,
+  "&:hover": { opacity: 1 },
 });
 
 /* ==================================================
@@ -209,6 +226,16 @@ export default function CapitalPreservationSchedule({
   const [granularity, setGranularity] = useState<"yearly" | "monthly">(
     "yearly",
   );
+  // Set of month-row indices that are expanded to show daily breakdown
+  const [expandedMonths, setExpandedMonths] = useState<Set<number>>(new Set());
+
+  const toggleMonth = (idx: number) =>
+    setExpandedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
 
   const pricedHoldings = holdings.filter(
     (h) => h.currentPrice != null && h.currentPrice > 0,
@@ -261,7 +288,10 @@ export default function CapitalPreservationSchedule({
         <ToggleGroup>
           <ToggleButton
             active={granularity === "yearly"}
-            onClick={() => setGranularity("yearly")}
+            onClick={() => {
+              setGranularity("yearly");
+              setExpandedMonths(new Set());
+            }}
           >
             Yearly
           </ToggleButton>
@@ -319,55 +349,114 @@ export default function CapitalPreservationSchedule({
                   : format(entry.x, "yyyy");
               const isWithdrawalRow =
                 idx === withdrawalRowIdx && withdrawalStartYear > 0;
+              const isExpanded =
+                granularity === "monthly" && expandedMonths.has(idx);
+              const nextEntry = matrix[idx + 1];
+
+              // Compute daily rows when expanded
+              const dailyRows =
+                isExpanded && nextEntry
+                  ? interpolateDailyForMonth(entry, nextEntry)
+                  : [];
 
               return (
-                <tr key={idx}>
-                  <Td highlight={isWithdrawalRow}>
-                    {label}
-                    {isWithdrawalRow && (
-                      <span
-                        style={{
-                          marginLeft: 6,
-                          fontSize: "0.65rem",
-                          color: "var(--colors-purple)",
-                        }}
-                      >
-                        ← withdrawal start
-                      </span>
-                    )}
-                  </Td>
-                  <Td
-                    highlight={isWithdrawalRow}
-                    style={{ color: "var(--colors-foreground)" }}
-                  >
-                    {usd.format(entry.y)}
-                  </Td>
-                  {pricedHoldings.map((h) => {
-                    const required = h.currentPrice! * growthFactor;
-                    const pct =
-                      ((required - h.currentPrice!) / h.currentPrice!) * 100;
-
-                    return (
-                      <Td
-                        key={h.symbol}
-                        highlight={isWithdrawalRow}
-                        style={{ color: growthColor(pct) }}
-                      >
-                        {usd.format(required)}
+                <>
+                  <tr key={idx}>
+                    <Td highlight={isWithdrawalRow}>
+                      {granularity === "monthly" && nextEntry && (
+                        <ExpandBtn
+                          title={isExpanded ? "Collapse days" : "Expand days"}
+                          onClick={() => toggleMonth(idx)}
+                        >
+                          {isExpanded ? "▼" : "▶"}
+                        </ExpandBtn>
+                      )}
+                      {label}
+                      {isWithdrawalRow && (
                         <span
                           style={{
-                            opacity: 0.65,
-                            marginLeft: 4,
-                            fontSize: "0.68rem",
+                            marginLeft: 6,
+                            fontSize: "0.65rem",
+                            color: "var(--colors-purple)",
                           }}
                         >
-                          {pct >= 0 ? "+" : ""}
-                          {pct.toFixed(1)}%
+                          ← withdrawal start
                         </span>
-                      </Td>
+                      )}
+                    </Td>
+                    <Td
+                      highlight={isWithdrawalRow}
+                      style={{ color: "var(--colors-foreground)" }}
+                    >
+                      {usd.format(entry.y)}
+                    </Td>
+                    {pricedHoldings.map((h) => {
+                      const required = h.currentPrice! * growthFactor;
+                      const pct =
+                        ((required - h.currentPrice!) / h.currentPrice!) * 100;
+
+                      return (
+                        <Td
+                          key={h.symbol}
+                          highlight={isWithdrawalRow}
+                          style={{ color: growthColor(pct) }}
+                        >
+                          {usd.format(required)}
+                          <span
+                            style={{
+                              opacity: 0.65,
+                              marginLeft: 4,
+                              fontSize: "0.68rem",
+                            }}
+                          >
+                            {pct >= 0 ? "+" : ""}
+                            {pct.toFixed(1)}%
+                          </span>
+                        </Td>
+                      );
+                    })}
+                  </tr>
+
+                  {/* Daily drill-down rows */}
+                  {dailyRows.map((dayEntry, dIdx) => {
+                    const dayFactor = dayEntry.y / initialValue;
+                    return (
+                      <tr key={`${idx}-d${dIdx}`}>
+                        <Td daily>
+                          &nbsp;&nbsp;&nbsp;{format(dayEntry.x, "EEE, MMM d")}
+                        </Td>
+                        <Td daily style={{ color: "var(--colors-foreground)" }}>
+                          {usd.format(dayEntry.y)}
+                        </Td>
+                        {pricedHoldings.map((h) => {
+                          const required = h.currentPrice! * dayFactor;
+                          const pct =
+                            ((required - h.currentPrice!) / h.currentPrice!) *
+                            100;
+                          return (
+                            <Td
+                              key={h.symbol}
+                              daily
+                              style={{ color: growthColor(pct) }}
+                            >
+                              {usd.format(required)}
+                              <span
+                                style={{
+                                  opacity: 0.6,
+                                  marginLeft: 3,
+                                  fontSize: "0.65rem",
+                                }}
+                              >
+                                {pct >= 0 ? "+" : ""}
+                                {pct.toFixed(1)}%
+                              </span>
+                            </Td>
+                          );
+                        })}
+                      </tr>
                     );
                   })}
-                </tr>
+                </>
               );
             })}
           </tbody>

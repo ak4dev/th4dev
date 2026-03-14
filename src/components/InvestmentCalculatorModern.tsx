@@ -361,30 +361,41 @@ export default function InvestmentCalculatorRadixModern({
 
   /**
    * When the user sets a target value, solve for the monthly withdrawal that
-   * results in that ending balance (at the current return %). The gain % slider
-   * is NOT modified.
+   * results in that ending balance (at the current return % and withdrawal start
+   * year). Both slider values are committed atomically to avoid stale-closure
+   * clobbering.
    */
   const handleTargetA = (target: number) => {
-    updateSlider("targetValueA", target);
     if (target > 0) {
       const withdrawal = solveForWithdrawal(
         invAProps,
         target,
         toggles.showInflation,
       );
-      updateSlider("monthlyWithdrawalA", withdrawal);
+      setSliders((prev) => ({
+        ...prev,
+        targetValueA: target,
+        monthlyWithdrawalA: withdrawal,
+      }));
+    } else {
+      setSliders((prev) => ({ ...prev, targetValueA: 0 }));
     }
   };
 
   const handleTargetB = (target: number) => {
-    updateSlider("targetValueB", target);
     if (target > 0) {
       const withdrawal = solveForWithdrawal(
         invBProps,
         target,
         toggles.showInflation,
       );
-      updateSlider("monthlyWithdrawalB", withdrawal);
+      setSliders((prev) => ({
+        ...prev,
+        targetValueB: target,
+        monthlyWithdrawalB: withdrawal,
+      }));
+    } else {
+      setSliders((prev) => ({ ...prev, targetValueB: 0 }));
     }
   };
 
