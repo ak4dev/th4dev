@@ -390,6 +390,33 @@ export default function InvestmentCalculatorRadixModern({
     }));
   };
 
+  /**
+   * When the inflation toggle changes, re-solve withdrawals for any active
+   * target values using the new showInflation flag so the withdrawal amount
+   * stays consistent with the selected projection mode.
+   */
+  const handleInflationToggle = (nextShowInflation: boolean) => {
+    updateToggle("showInflation", nextShowInflation);
+    setSliders((prev) => {
+      const updates: Record<string, number> = {};
+      if (prev.targetValueA) {
+        updates.monthlyWithdrawalA = solveForWithdrawal(
+          invAProps,
+          prev.targetValueA,
+          nextShowInflation,
+        );
+      }
+      if (prev.targetValueB) {
+        updates.monthlyWithdrawalB = solveForWithdrawal(
+          invBProps,
+          prev.targetValueB,
+          nextShowInflation,
+        );
+      }
+      return { ...prev, ...updates };
+    });
+  };
+
   /* ---------------- Compute Info Panel Values ---------------- */
 
   // Scan growth matrix for the first year the portfolio meets/exceeds the target
@@ -701,7 +728,7 @@ export default function InvestmentCalculatorRadixModern({
             <Label>Inflated:</Label>
             <SwitchButton
               checked={toggles.showInflation}
-              onCheckedChange={(v) => updateToggle("showInflation", v)}
+              onCheckedChange={(v) => handleInflationToggle(v)}
             />
           </SwitchRow>
           <SwitchRow>
