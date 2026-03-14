@@ -375,113 +375,66 @@ export default function InvestmentCalculatorRadixModern({
    * clobbering.
    */
   const handleTargetA = (target: number) => {
+    // target arrives in current display units; store as nominal so it is
+    // stable across inflation-toggle round-trips.
+    const nominalTarget = toggles.showInflation
+      ? Math.round(target * (nominalMaxA / inflatedMaxA))
+      : target;
     const withdrawal = solveForWithdrawal(
       invAProps,
       target,
       toggles.showInflation,
     );
-    // When the user sets a target, derive and store the nominal (inflation-off)
-    // equivalent so handleInflationToggle can always convert from a stable base.
-    let nominalTargetA = target;
-    if (toggles.showInflation) {
-      const base = new InvestmentCalculator({
-        ...invAProps,
-        monthlyWithdrawal: 0,
-      });
-      const nominal = base.calculateGrowth(false).numeric || 1;
-      const inflated = base.calculateGrowth(true).numeric;
-      nominalTargetA = Math.round(target * (nominal / inflated));
-    }
     setSliders((prev) => ({
       ...prev,
-      targetValueA: target,
-      targetValueA_nominal: nominalTargetA,
+      targetValueA: nominalTarget,
       monthlyWithdrawalA: withdrawal,
     }));
   };
 
   const handleTargetB = (target: number) => {
+    const nominalTarget = toggles.showInflation
+      ? Math.round(target * (nominalMaxB / inflatedMaxB))
+      : target;
     const withdrawal = solveForWithdrawal(
       invBProps,
       target,
       toggles.showInflation,
     );
-    let nominalTargetB = target;
-    if (toggles.showInflation) {
-      const base = new InvestmentCalculator({
-        ...invBProps,
-        monthlyWithdrawal: 0,
-      });
-      const nominal = base.calculateGrowth(false).numeric || 1;
-      const inflated = base.calculateGrowth(true).numeric;
-      nominalTargetB = Math.round(target * (nominal / inflated));
-    }
     setSliders((prev) => ({
       ...prev,
-      targetValueB: target,
-      targetValueB_nominal: nominalTargetB,
+      targetValueB: nominalTarget,
       monthlyWithdrawalB: withdrawal,
     }));
   };
 
   /**
-   * When the inflation toggle changes, scale any active target values by the
-   * ratio between the new and old zero-withdrawal projections, then re-solve
-   * the monthly withdrawal for the scaled target.
+   * When the inflation toggle changes, re-solve the monthly withdrawal that
+   * achieves the stored (always-nominal) target in the new display mode.
+   * The target value itself is never modified — it is always stored as nominal
+   * and converted to display units by the render layer.
    */
   const handleInflationToggle = (nextShowInflation: boolean) => {
-    const baseA0 = new InvestmentCalculator({
-      ...invAProps,
-      monthlyWithdrawal: 0,
-    });
-    const baseB0 = new InvestmentCalculator({
-      ...invBProps,
-      monthlyWithdrawal: 0,
-    });
-    // Compute nominal and inflated projections independently so we can always
-    // derive the new-mode target from the stable nominal, rather than scaling
-    // the already-scaled current target (which accumulates rounding drift).
-    const nominalA = baseA0.calculateGrowth(false).numeric || 1;
-    const inflatedA = baseA0.calculateGrowth(true).numeric;
-    const nominalB = baseB0.calculateGrowth(false).numeric || 1;
-    const inflatedB = baseB0.calculateGrowth(true).numeric;
-
     updateToggle("showInflation", nextShowInflation);
     setSliders((prev) => {
       const updates: Record<string, number> = {};
       if (prev.targetValueA) {
-        // Recover the stable nominal target: use stored value if available,
-        // otherwise derive it from the current mode's target.
-        const nominalTargetA =
-          prev.targetValueA_nominal ||
-          (toggles.showInflation
-            ? Math.round(prev.targetValueA * (nominalA / inflatedA))
-            : prev.targetValueA);
-        const newTarget = nextShowInflation
-          ? Math.round(nominalTargetA * (inflatedA / nominalA))
-          : nominalTargetA;
-        updates.targetValueA = newTarget;
-        updates.targetValueA_nominal = nominalTargetA;
+        const displayTarget = nextShowInflation
+          ? Math.round(prev.targetValueA * (inflatedMaxA / nominalMaxA))
+          : prev.targetValueA;
         updates.monthlyWithdrawalA = solveForWithdrawal(
           invAProps,
-          newTarget,
+          displayTarget,
           nextShowInflation,
         );
       }
       if (prev.targetValueB) {
-        const nominalTargetB =
-          prev.targetValueB_nominal ||
-          (toggles.showInflation
-            ? Math.round(prev.targetValueB * (nominalB / inflatedB))
-            : prev.targetValueB);
-        const newTarget = nextShowInflation
-          ? Math.round(nominalTargetB * (inflatedB / nominalB))
-          : nominalTargetB;
-        updates.targetValueB = newTarget;
-        updates.targetValueB_nominal = nominalTargetB;
+        const displayTarget = nextShowInflation
+          ? Math.round(prev.targetValueB * (inflatedMaxB / nominalMaxB))
+          : prev.targetValueB;
         updates.monthlyWithdrawalB = solveForWithdrawal(
           invBProps,
-          newTarget,
+          displayTarget,
           nextShowInflation,
         );
       }
@@ -491,17 +444,47 @@ export default function InvestmentCalculatorRadixModern({
 
   /* ---------------- Compute Info Panel Values ---------------- */
 
+  // Slider max = the ending balance if no withdrawal is taken (true ceiling).
+  // We need both nominal and inflated maxes: nominal is the stable base for
+  // storing targets; inflated is used when the inflation toggle is on.
+  const baseA0ForMax = new InvestmentCalculator({
+    ...invAProps,
+    monthlyWithdrawal: 0,
+  });
+  const nominalMaxA = baseA0ForMax.calculateGrowth(false).numeric || 1;
+  const inflatedMaxA = baseA0ForMax.calculateGrowth(true).numeric;
+  const maxTargetA = toggles.showInflation ? inflatedMaxA : nominalMaxA;
+
+  const baseB0ForMax = new InvestmentCalculator({
+    ...invBProps,
+    monthlyWithdrawal: 0,
+  });
+  const nominalMaxB = baseB0ForMax.calculateGrowth(false).numeric || 1;
+  const inflatedMaxB = baseB0ForMax.calculateGrowth(true).numeric;
+  const maxTargetB = toggles.showInflation ? inflatedMaxB : nominalMaxB;
+
+  // Display targets: targetValueA/B are always stored as nominal; convert to
+  // current display mode for sliders, inputs, and chart annotations.
+  const displayTargetA = sliders.targetValueA
+    ? toggles.showInflation
+      ? Math.round(sliders.targetValueA * (inflatedMaxA / nominalMaxA))
+      : sliders.targetValueA
+    : 0;
+  const displayTargetB = sliders.targetValueB
+    ? toggles.showInflation
+      ? Math.round(sliders.targetValueB * (inflatedMaxB / nominalMaxB))
+      : sliders.targetValueB
+    : 0;
+
   // Scan growth matrix for the first year the portfolio meets/exceeds the target
   const matrixA = calcA.getGrowthMatrix();
   const targetReachedA =
-    sliders.targetValueA > 0
-      ? matrixA.find((e) => e.y >= sliders.targetValueA)
-      : null;
+    displayTargetA > 0 ? matrixA.find((e) => e.y >= displayTargetA) : null;
 
   const matrixB = calcB.getGrowthMatrix();
   const targetReachedB =
-    toggles.advanced && sliders.targetValueB > 0
-      ? matrixB.find((e) => e.y >= sliders.targetValueB)
+    toggles.advanced && displayTargetB > 0
+      ? matrixB.find((e) => e.y >= displayTargetB)
       : null;
 
   // Earliest year where annual growth alone covers all monthly withdrawals
@@ -534,16 +517,6 @@ export default function InvestmentCalculatorRadixModern({
     10,
     Math.max(2, Math.floor(Math.log10(Math.max(totalB, 1000))) - 1),
   );
-
-  // Slider max = the ending balance if no withdrawal is taken (true ceiling)
-  const maxTargetA = new InvestmentCalculator({
-    ...invAProps,
-    monthlyWithdrawal: 0,
-  }).calculateGrowth(toggles.showInflation).numeric;
-  const maxTargetB = new InvestmentCalculator({
-    ...invBProps,
-    monthlyWithdrawal: 0,
-  }).calculateGrowth(toggles.showInflation).numeric;
 
   const infoItems = [
     {
@@ -593,7 +566,7 @@ export default function InvestmentCalculatorRadixModern({
       label: "(A) Target Reached",
       value: targetReachedA
         ? `${targetReachedA.x.getFullYear()} (yr ${matrixA.indexOf(targetReachedA)})`
-        : sliders.targetValueA > 0
+        : displayTargetA > 0
           ? `> ${sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH} yrs`
           : "N/A",
     },
@@ -603,7 +576,7 @@ export default function InvestmentCalculatorRadixModern({
             label: "(B) Target Reached",
             value: targetReachedB
               ? `${targetReachedB.x.getFullYear()} (yr ${matrixB.indexOf(targetReachedB)})`
-              : sliders.targetValueB > 0
+              : displayTargetB > 0
                 ? `> ${sliders.yearsOfGrowthB || DEFAULT_YEARS_OF_GROWTH} yrs`
                 : "N/A",
           },
@@ -690,11 +663,11 @@ export default function InvestmentCalculatorRadixModern({
           <div>
             <Label>Target Value (sets Withdrawal)</Label>
             <CurrencyInput
-              value={String(sliders.targetValueA || 0)}
+              value={String(displayTargetA)}
               onChange={(v) => handleTargetA(Number(v))}
             />
             <SliderRoot
-              value={[Math.min(sliders.targetValueA || 0, maxTargetA)]}
+              value={[Math.min(displayTargetA, maxTargetA)]}
               min={0}
               max={maxTargetA}
               step={targetStepA}
@@ -761,11 +734,11 @@ export default function InvestmentCalculatorRadixModern({
             <div>
               <Label>Target Value (sets Withdrawal)</Label>
               <CurrencyInput
-                value={String(sliders.targetValueB || 0)}
+                value={String(displayTargetB)}
                 onChange={(v) => handleTargetB(Number(v))}
               />
               <SliderRoot
-                value={[Math.min(sliders.targetValueB || 0, maxTargetB)]}
+                value={[Math.min(displayTargetB, maxTargetB)]}
                 min={0}
                 max={maxTargetB}
                 step={targetStepB}
@@ -860,9 +833,9 @@ export default function InvestmentCalculatorRadixModern({
         growthMatrixB={toggles.advanced ? calcB.getGrowthMatrix() : undefined}
         advanced={toggles.advanced}
         yearOfRollover={toggles.rollover ? sliders.yearsOfGrowthA : undefined}
-        targetValueA={sliders.targetValueA || undefined}
+        targetValueA={displayTargetA || undefined}
         targetValueB={
-          toggles.advanced ? sliders.targetValueB || undefined : undefined
+          toggles.advanced ? displayTargetB || undefined : undefined
         }
       />
 
