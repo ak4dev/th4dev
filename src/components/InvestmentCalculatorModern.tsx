@@ -171,6 +171,16 @@ const SwitchRow = styled("div", {
   alignItems: "center",
 });
 
+/** Auto-distributes toggle rows across available width; minimum 2 columns */
+const TogglesGrid = styled("div", {
+  display: "grid",
+  gap: "12px",
+  gridTemplateColumns: "repeat(2, 1fr)",
+  "@media(min-width:480px)": {
+    gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+  },
+});
+
 /* ---------------- Helpers ---------------- */
 function CurrencyInput({
   value,
@@ -370,9 +380,22 @@ export default function InvestmentCalculatorRadixModern({
       target,
       toggles.showInflation,
     );
+    // When the user sets a target, derive and store the nominal (inflation-off)
+    // equivalent so handleInflationToggle can always convert from a stable base.
+    let nominalTargetA = target;
+    if (toggles.showInflation) {
+      const base = new InvestmentCalculator({
+        ...invAProps,
+        monthlyWithdrawal: 0,
+      });
+      const nominal = base.calculateGrowth(false).numeric || 1;
+      const inflated = base.calculateGrowth(true).numeric;
+      nominalTargetA = Math.round(target * (nominal / inflated));
+    }
     setSliders((prev) => ({
       ...prev,
       targetValueA: target,
+      targetValueA_nominal: nominalTargetA,
       monthlyWithdrawalA: withdrawal,
     }));
   };
@@ -383,9 +406,20 @@ export default function InvestmentCalculatorRadixModern({
       target,
       toggles.showInflation,
     );
+    let nominalTargetB = target;
+    if (toggles.showInflation) {
+      const base = new InvestmentCalculator({
+        ...invBProps,
+        monthlyWithdrawal: 0,
+      });
+      const nominal = base.calculateGrowth(false).numeric || 1;
+      const inflated = base.calculateGrowth(true).numeric;
+      nominalTargetB = Math.round(target * (nominal / inflated));
+    }
     setSliders((prev) => ({
       ...prev,
       targetValueB: target,
+      targetValueB_nominal: nominalTargetB,
       monthlyWithdrawalB: withdrawal,
     }));
   };
@@ -404,19 +438,30 @@ export default function InvestmentCalculatorRadixModern({
       ...invBProps,
       monthlyWithdrawal: 0,
     });
-    const ratioA =
-      baseA0.calculateGrowth(nextShowInflation).numeric /
-      (baseA0.calculateGrowth(toggles.showInflation).numeric || 1);
-    const ratioB =
-      baseB0.calculateGrowth(nextShowInflation).numeric /
-      (baseB0.calculateGrowth(toggles.showInflation).numeric || 1);
+    // Compute nominal and inflated projections independently so we can always
+    // derive the new-mode target from the stable nominal, rather than scaling
+    // the already-scaled current target (which accumulates rounding drift).
+    const nominalA = baseA0.calculateGrowth(false).numeric || 1;
+    const inflatedA = baseA0.calculateGrowth(true).numeric;
+    const nominalB = baseB0.calculateGrowth(false).numeric || 1;
+    const inflatedB = baseB0.calculateGrowth(true).numeric;
 
     updateToggle("showInflation", nextShowInflation);
     setSliders((prev) => {
       const updates: Record<string, number> = {};
       if (prev.targetValueA) {
-        const newTarget = Math.round(prev.targetValueA * ratioA);
+        // Recover the stable nominal target: use stored value if available,
+        // otherwise derive it from the current mode's target.
+        const nominalTargetA =
+          prev.targetValueA_nominal ||
+          (toggles.showInflation
+            ? Math.round(prev.targetValueA * (nominalA / inflatedA))
+            : prev.targetValueA);
+        const newTarget = nextShowInflation
+          ? Math.round(nominalTargetA * (inflatedA / nominalA))
+          : nominalTargetA;
         updates.targetValueA = newTarget;
+        updates.targetValueA_nominal = nominalTargetA;
         updates.monthlyWithdrawalA = solveForWithdrawal(
           invAProps,
           newTarget,
@@ -424,8 +469,16 @@ export default function InvestmentCalculatorRadixModern({
         );
       }
       if (prev.targetValueB) {
-        const newTarget = Math.round(prev.targetValueB * ratioB);
+        const nominalTargetB =
+          prev.targetValueB_nominal ||
+          (toggles.showInflation
+            ? Math.round(prev.targetValueB * (nominalB / inflatedB))
+            : prev.targetValueB);
+        const newTarget = nextShowInflation
+          ? Math.round(nominalTargetB * (inflatedB / nominalB))
+          : nominalTargetB;
         updates.targetValueB = newTarget;
+        updates.targetValueB_nominal = nominalTargetB;
         updates.monthlyWithdrawalB = solveForWithdrawal(
           invBProps,
           newTarget,
@@ -729,34 +782,36 @@ export default function InvestmentCalculatorRadixModern({
 
         {/* Info / Global Settings Panel */}
         <Panel>
-          <SwitchRow>
-            <Label>Advanced:</Label>
-            <SwitchButton
-              checked={toggles.advanced}
-              onCheckedChange={(v) => updateToggle("advanced", v)}
-            />
-          </SwitchRow>
-          <SwitchRow>
-            <Label>Rollover:</Label>
-            <SwitchButton
-              checked={toggles.rollover}
-              onCheckedChange={(v) => updateToggle("rollover", v)}
-            />
-          </SwitchRow>
-          <SwitchRow>
-            <Label>Inflated:</Label>
-            <SwitchButton
-              checked={toggles.showInflation}
-              onCheckedChange={(v) => handleInflationToggle(v)}
-            />
-          </SwitchRow>
-          <SwitchRow>
-            <Label>Portfolio:</Label>
-            <SwitchButton
-              checked={toggles.portfolio}
-              onCheckedChange={(v) => updateToggle("portfolio", v)}
-            />
-          </SwitchRow>
+          <TogglesGrid>
+            <SwitchRow>
+              <Label>Advanced:</Label>
+              <SwitchButton
+                checked={toggles.advanced}
+                onCheckedChange={(v) => updateToggle("advanced", v)}
+              />
+            </SwitchRow>
+            <SwitchRow>
+              <Label>Rollover:</Label>
+              <SwitchButton
+                checked={toggles.rollover}
+                onCheckedChange={(v) => updateToggle("rollover", v)}
+              />
+            </SwitchRow>
+            <SwitchRow>
+              <Label>Inflated:</Label>
+              <SwitchButton
+                checked={toggles.showInflation}
+                onCheckedChange={(v) => handleInflationToggle(v)}
+              />
+            </SwitchRow>
+            <SwitchRow>
+              <Label>Portfolio:</Label>
+              <SwitchButton
+                checked={toggles.portfolio}
+                onCheckedChange={(v) => updateToggle("portfolio", v)}
+              />
+            </SwitchRow>
+          </TogglesGrid>
           <InvestmentSlider
             label="Inflation (%)"
             value={sliders.yearlyInflation || DEFAULT_INFLATION_RATE}
