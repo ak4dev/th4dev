@@ -197,16 +197,20 @@ interface CapitalPreservationScheduleProps {
   /** Holdings — those with currentPrice are included in the schedule */
   holdings: PortfolioHolding[];
   /**
-   * Year offset at which Investment A withdrawals begin.
+   * Year offset at which primary withdrawals begin.
    * This row is highlighted in purple.
    */
   withdrawalStartYear: number;
   /** Monthly withdrawal amount — used to compute "safe withdrawal" status */
   monthlyWithdrawal: number;
-  /** Optional Investment B withdrawal start year — highlighted in cyan */
+  /** Optional secondary withdrawal start year — highlighted in green */
   withdrawalStartYearB?: number;
-  /** Optional Investment B growth matrix — its withdrawal start row uses its own value */
+  /** Optional secondary growth matrix — used to extend the timeline */
   growthMatrixB?: LineGraphEntry[];
+  /** Label for the primary withdrawal row (default: "A") */
+  primaryWithdrawalLabel?: string;
+  /** Label for the secondary withdrawal row (default: "B") */
+  secondaryWithdrawalLabel?: string;
 }
 
 /* ==================================================
@@ -234,6 +238,8 @@ export default function CapitalPreservationSchedule({
   monthlyWithdrawal,
   withdrawalStartYearB,
   growthMatrixB,
+  primaryWithdrawalLabel = "A",
+  secondaryWithdrawalLabel = "B",
 }: CapitalPreservationScheduleProps) {
   const [granularity, setGranularity] = useState<"yearly" | "monthly">(
     "yearly",
@@ -413,7 +419,7 @@ export default function CapitalPreservationSchedule({
                             color: "var(--colors-purple)",
                           }}
                         >
-                          ← A withdrawal start
+                          ← {primaryWithdrawalLabel} withdrawal start
                         </span>
                       )}
                       {isWithdrawalRowB && (
@@ -424,7 +430,7 @@ export default function CapitalPreservationSchedule({
                             color: "var(--colors-green)",
                           }}
                         >
-                          ← B withdrawal start
+                          ← {secondaryWithdrawalLabel} withdrawal start
                         </span>
                       )}
                     </Td>

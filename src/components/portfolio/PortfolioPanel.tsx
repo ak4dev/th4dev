@@ -507,10 +507,18 @@ export default function PortfolioPanel({
       <CapitalPreservationSchedule
         growthMatrix={activeGrowthMatrix}
         holdings={holdings}
-        withdrawalStartYear={withdrawalStartYear}
+        withdrawalStartYear={
+          activeInvestment === "B"
+            ? (withdrawalStartYearB ?? 0)
+            : withdrawalStartYear
+        }
         monthlyWithdrawal={activeMonthlyWithdrawal}
-        withdrawalStartYearB={withdrawalStartYearB}
+        withdrawalStartYearB={
+          activeInvestment === "B" ? withdrawalStartYear : withdrawalStartYearB
+        }
         growthMatrixB={activeGrowthMatrixB}
+        primaryWithdrawalLabel={activeInvestment === "B" ? "B" : "A"}
+        secondaryWithdrawalLabel={activeInvestment === "B" ? "A" : "B"}
       />
     </Wrapper>
   );
