@@ -826,6 +826,17 @@ export default function InvestmentCalculatorRadixModern({
             toggles.advanced ? sliders.withdrawalStartYearB || 0 : undefined
           }
           growthMatrixB={toggles.advanced ? calcB.getGrowthMatrix() : undefined}
+          defaultPortfolioValueB={toggles.advanced ? totalB : undefined}
+          monthlyWithdrawalB={
+            toggles.advanced
+              ? sliders.monthlyWithdrawalB || MIN_VALUE
+              : undefined
+          }
+          yearsForwardB={
+            toggles.advanced
+              ? sliders.yearsOfGrowthB || DEFAULT_YEARS_OF_GROWTH
+              : undefined
+          }
         />
       )}
     </Container>

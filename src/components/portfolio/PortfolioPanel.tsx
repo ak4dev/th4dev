@@ -163,9 +163,36 @@ const PortfolioValueInput = styled("input", {
   "&:focus": { borderColor: "$purple" },
 });
 
-/* ==================================================
- * Props
- * ================================================== */
+const InvestmentToggleGroup = styled("div", {
+  display: "flex",
+  gap: "4px",
+});
+
+const InvestmentToggleButton = styled("button", {
+  all: "unset",
+  cursor: "pointer",
+  fontSize: "0.72rem",
+  padding: "3px 10px",
+  borderRadius: 4,
+  border: "1px solid $comment",
+  color: "$comment",
+  variants: {
+    active: {
+      true: {
+        backgroundColor: "$purple",
+        borderColor: "$purple",
+        color: "$background",
+        fontWeight: 600,
+      },
+    },
+  },
+});
+
+const SectionTitleRow = styled("div", {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+});
 
 interface PortfolioPanelProps {
   /** Holdings state (symbol + allocation + optional fetched price) */
@@ -197,6 +224,12 @@ interface PortfolioPanelProps {
   withdrawalStartYearB?: number;
   /** Optional Investment B growth matrix for the second withdrawal indicator */
   growthMatrixB?: LineGraphEntry[];
+  /** Optional Investment B default portfolio value */
+  defaultPortfolioValueB?: number;
+  /** Optional Investment B monthly withdrawal */
+  monthlyWithdrawalB?: number;
+  /** Optional Investment B years of growth */
+  yearsForwardB?: number;
 }
 
 /* ==================================================
@@ -251,9 +284,38 @@ export default function PortfolioPanel({
   growthMatrix,
   withdrawalStartYearB,
   growthMatrixB,
+  defaultPortfolioValueB,
+  monthlyWithdrawalB,
+  yearsForwardB,
 }: PortfolioPanelProps) {
+  const hasB = !!growthMatrixB;
+  const [selectedInvestment, setSelectedInvestment] = useState<"A" | "B">("A");
+
+  // Reset to A if B becomes unavailable
+  const activeInvestment = hasB ? selectedInvestment : "A";
+
+  const activeDefaultPortfolioValue =
+    activeInvestment === "B" && defaultPortfolioValueB != null
+      ? defaultPortfolioValueB
+      : defaultPortfolioValue;
+  const activeMonthlyWithdrawal =
+    activeInvestment === "B" && monthlyWithdrawalB != null
+      ? monthlyWithdrawalB
+      : monthlyWithdrawal;
+  const activeYearsForward =
+    activeInvestment === "B" && yearsForwardB != null
+      ? yearsForwardB
+      : yearsForward;
+
+  // When B is selected, B's matrix is primary; A's is passed as secondary so
+  // both withdrawal-start rows are highlighted in the preservation schedule.
+  const activeGrowthMatrix =
+    activeInvestment === "B" && growthMatrixB ? growthMatrixB : growthMatrix;
+  const activeGrowthMatrixB =
+    activeInvestment === "B" ? growthMatrix : growthMatrixB;
+
   const [portfolioValue, setPortfolioValue] = useState<number>(
-    defaultPortfolioValue,
+    activeDefaultPortfolioValue,
   );
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -311,8 +373,8 @@ export default function PortfolioPanel({
       ? computePortfolioProjection({
           holdings: holdingsWithPrice,
           totalPortfolioValue: portfolioValue,
-          monthlyWithdrawal,
-          yearsForward,
+          monthlyWithdrawal: activeMonthlyWithdrawal,
+          yearsForward: activeYearsForward,
         })
       : {};
 
@@ -320,7 +382,33 @@ export default function PortfolioPanel({
 
   return (
     <Wrapper>
-      <SectionTitle>Portfolio Capital Preservation</SectionTitle>
+      <SectionTitleRow>
+        <SectionTitle>Portfolio Capital Preservation</SectionTitle>
+        {hasB && (
+          <InvestmentToggleGroup>
+            <InvestmentToggleButton
+              active={activeInvestment === "A"}
+              onClick={() => {
+                setSelectedInvestment("A");
+                setPortfolioValue(defaultPortfolioValue);
+              }}
+            >
+              Investment A
+            </InvestmentToggleButton>
+            <InvestmentToggleButton
+              active={activeInvestment === "B"}
+              onClick={() => {
+                setSelectedInvestment("B");
+                setPortfolioValue(
+                  defaultPortfolioValueB ?? defaultPortfolioValue,
+                );
+              }}
+            >
+              Investment B
+            </InvestmentToggleButton>
+          </InvestmentToggleGroup>
+        )}
+      </SectionTitleRow>
 
       {/* Portfolio total value override */}
       <PortfolioValueRow>
@@ -336,8 +424,8 @@ export default function PortfolioPanel({
           placeholder={String(defaultPortfolioValue)}
         />
         <InfoText>
-          Monthly withdrawal: ${monthlyWithdrawal.toLocaleString()} · Horizon:{" "}
-          {yearsForward} yrs
+          Monthly withdrawal: ${activeMonthlyWithdrawal.toLocaleString()} ·
+          Horizon: {activeYearsForward} yrs
         </InfoText>
       </PortfolioValueRow>
 
@@ -417,12 +505,12 @@ export default function PortfolioPanel({
 
       {/* Capital preservation schedule — requires fetched prices */}
       <CapitalPreservationSchedule
-        growthMatrix={growthMatrix}
+        growthMatrix={activeGrowthMatrix}
         holdings={holdings}
         withdrawalStartYear={withdrawalStartYear}
-        monthlyWithdrawal={monthlyWithdrawal}
+        monthlyWithdrawal={activeMonthlyWithdrawal}
         withdrawalStartYearB={withdrawalStartYearB}
-        growthMatrixB={growthMatrixB}
+        growthMatrixB={activeGrowthMatrixB}
       />
     </Wrapper>
   );
