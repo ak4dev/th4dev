@@ -1,13 +1,14 @@
 /* ==================================================
  * Investment Calculator Component
  * ================================================== */
+import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import * as Slider from "@radix-ui/react-slider";
 import * as Switch from "@radix-ui/react-switch";
 import { styled, keyframes } from "../../stitches.config";
 import { InvestmentCalculator } from "../common/helpers/investment-growth-calculator";
-import { solveForGain } from "../common/helpers/solve-for-gain";
+import { solveForWithdrawal } from "../common/helpers/solve-for-withdrawal";
 import DateAmountTable from "./date-amount-table";
 import { InvestmentLineChart } from "./investment-line-chart";
 import PortfolioPanel from "./portfolio/PortfolioPanel";
@@ -179,11 +180,30 @@ function CurrencyInput({
   value?: string;
   onChange: (v: string) => void;
 }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const editing = draft !== null;
+
+  const display = editing
+    ? draft
+    : value
+      ? `$${parseInt(value).toLocaleString()}`
+      : "";
+
   return (
     <InputField
       type="text"
-      value={value ? `$${parseInt(value).toLocaleString()}` : ""}
-      onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, ""))}
+      value={display}
+      onFocus={() => setDraft(value?.replace(/[^0-9]/g, "") ?? "")}
+      onChange={(e) => {
+        const raw = e.target.value.replace(/[^0-9]/g, "");
+        setDraft(raw);
+      }}
+      onBlur={() => {
+        if (draft !== null) {
+          onChange(draft);
+          setDraft(null);
+        }
+      }}
     />
   );
 }
@@ -340,27 +360,31 @@ export default function InvestmentCalculatorRadixModern({
   // ---------------- Target Value Handlers ----------------
 
   /**
-   * When the user sets a target value, solve for the gain % required to reach it
-   * and update the projected gain slider accordingly. Changing gain directly does
-   * NOT update the target (no feedback loop).
+   * When the user sets a target value, solve for the monthly withdrawal that
+   * results in that ending balance (at the current return %). The gain % slider
+   * is NOT modified.
    */
   const handleTargetA = (target: number) => {
     updateSlider("targetValueA", target);
     if (target > 0) {
-      const { projectedGain: _ignored, ...baseProps } = invAProps;
-      void _ignored;
-      const gain = solveForGain(baseProps, target, toggles.showInflation);
-      updateSlider("projectedGainA", gain);
+      const withdrawal = solveForWithdrawal(
+        invAProps,
+        target,
+        toggles.showInflation,
+      );
+      updateSlider("monthlyWithdrawalA", withdrawal);
     }
   };
 
   const handleTargetB = (target: number) => {
     updateSlider("targetValueB", target);
     if (target > 0) {
-      const { projectedGain: _ignored, ...baseProps } = invBProps;
-      void _ignored;
-      const gain = solveForGain(baseProps, target, toggles.showInflation);
-      updateSlider("projectedGainB", gain);
+      const withdrawal = solveForWithdrawal(
+        invBProps,
+        target,
+        toggles.showInflation,
+      );
+      updateSlider("monthlyWithdrawalB", withdrawal);
     }
   };
 
@@ -551,9 +575,9 @@ export default function InvestmentCalculatorRadixModern({
               />
             </>
           )}
-          {/* Target value — sets the required return % to reach this balance */}
+          {/* Target value — sets the monthly withdrawal to reach this balance */}
           <div>
-            <Label>Target Value (sets Return %)</Label>
+            <Label>Target Value (sets Withdrawal)</Label>
             <CurrencyInput
               value={String(sliders.targetValueA || 0)}
               onChange={(v) => handleTargetA(Number(v))}
@@ -563,6 +587,7 @@ export default function InvestmentCalculatorRadixModern({
               min={0}
               max={MAX_TARGET_VALUE}
               step={targetStepA}
+              onValueChange={(val) => handleTargetA(val[0])}
             >
               <SliderTrack>
                 <SliderRange />
@@ -623,7 +648,7 @@ export default function InvestmentCalculatorRadixModern({
             />
             {/* Target value for Investment B */}
             <div>
-              <Label>Target Value (sets Return %)</Label>
+              <Label>Target Value (sets Withdrawal)</Label>
               <CurrencyInput
                 value={String(sliders.targetValueB || 0)}
                 onChange={(v) => handleTargetB(Number(v))}
