@@ -3,7 +3,7 @@
  * ================================================== */
 
 import { useState, useEffect } from "react";
-import { styled, themeClasses, globalStyles } from "../stitches.config";
+import { styled, themeClasses } from "../stitches.config";
 import { ThemeSelector } from "./components/ThemeSwitcher";
 import StateIOPopover from "./components/sidebar/StateIOPopover";
 import SubdomainRouter from "./components/SubdomainRouter";
@@ -64,8 +64,7 @@ const defaultState: TH4State = {
     monthlyWithdrawalB: DEFAULT_MONTHLY_WITHDRAWAL,
     withdrawalStartYearA: DEFAULT_WITHDRAWAL_START_YEAR,
     withdrawalStartYearB: DEFAULT_WITHDRAWAL_START_YEAR,
-    yearlyInflationA: DEFAULT_INFLATION_RATE,
-    yearlyInflationB: DEFAULT_INFLATION_RATE,
+    yearlyInflation: DEFAULT_INFLATION_RATE,
   },
   inputs: {
     currentAmountA: String(DEFAULT_INITIAL_AMOUNT),
@@ -91,13 +90,6 @@ export default function App() {
   const [sliders, setSliders] = useState(defaultState.sliders);
   const [inputs, setInputs] = useState(defaultState.inputs);
   const [toggles, setToggles] = useState(defaultState.toggles);
-
-  /**
-   * Initialize global styles on component mount
-   */
-  useEffect(() => {
-    globalStyles();
-  }, []);
 
   /**
    * Apply theme changes to document body

@@ -91,7 +91,7 @@ export default function DateAmountTable({
           </tr>
         </thead>
         <tbody>
-          {matrix.map((entry, idx) => {
+          {matrix.map((entry) => {
             if (!entry || entry.y === undefined) return null;
 
             const year = new Date(entry.x).getFullYear();
@@ -101,7 +101,7 @@ export default function DateAmountTable({
               initial !== 0 ? ((nominal - initial) / initial) * 100 : 0;
 
             return (
-              <tr key={idx}>
+              <tr key={year}>
                 <Td>{year}</Td>
                 <Td style={{ color: getColor(nominal) }}>
                   ${nominal.toLocaleString()}
