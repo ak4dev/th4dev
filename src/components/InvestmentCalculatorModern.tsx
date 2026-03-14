@@ -23,7 +23,6 @@ import {
   MAX_MONTHLY_CONTRIBUTION,
   MAX_MONTHLY_WITHDRAWAL,
   MAX_INFLATION_RATE,
-  MAX_TARGET_VALUE,
   MIN_VALUE,
 } from "../common/constants/app-constants";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
@@ -445,6 +444,16 @@ export default function InvestmentCalculatorRadixModern({
     Math.max(2, Math.floor(Math.log10(Math.max(totalB, 1000))) - 1),
   );
 
+  // Slider max = the ending balance if no withdrawal is taken (true ceiling)
+  const maxTargetA = new InvestmentCalculator({
+    ...invAProps,
+    monthlyWithdrawal: 0,
+  }).calculateGrowth(toggles.showInflation).numeric;
+  const maxTargetB = new InvestmentCalculator({
+    ...invBProps,
+    monthlyWithdrawal: 0,
+  }).calculateGrowth(toggles.showInflation).numeric;
+
   const infoItems = [
     {
       label: "(A) Withdrawal Start",
@@ -594,9 +603,9 @@ export default function InvestmentCalculatorRadixModern({
               onChange={(v) => handleTargetA(Number(v))}
             />
             <SliderRoot
-              value={[Math.min(sliders.targetValueA || 0, MAX_TARGET_VALUE)]}
+              value={[Math.min(sliders.targetValueA || 0, maxTargetA)]}
               min={0}
-              max={MAX_TARGET_VALUE}
+              max={maxTargetA}
               step={targetStepA}
               onValueChange={(val) => handleTargetA(val[0])}
             >
@@ -665,9 +674,9 @@ export default function InvestmentCalculatorRadixModern({
                 onChange={(v) => handleTargetB(Number(v))}
               />
               <SliderRoot
-                value={[Math.min(sliders.targetValueB || 0, MAX_TARGET_VALUE)]}
+                value={[Math.min(sliders.targetValueB || 0, maxTargetB)]}
                 min={0}
-                max={MAX_TARGET_VALUE}
+                max={maxTargetB}
                 step={targetStepB}
                 onValueChange={(val) => handleTargetB(val[0])}
               >
@@ -775,6 +784,10 @@ export default function InvestmentCalculatorRadixModern({
           withdrawalStartYear={sliders.withdrawalStartYearA || 0}
           yearsForward={sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH}
           growthMatrix={calcA.getGrowthMatrix()}
+          withdrawalStartYearB={
+            toggles.advanced ? sliders.withdrawalStartYearB || 0 : undefined
+          }
+          growthMatrixB={toggles.advanced ? calcB.getGrowthMatrix() : undefined}
         />
       )}
     </Container>

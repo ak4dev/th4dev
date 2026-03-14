@@ -135,6 +135,12 @@ const Td = styled("td", {
         color: "$comment",
       },
     },
+    highlightB: {
+      true: {
+        backgroundColor: "rgba(80,250,123,0.08)",
+        fontWeight: 600,
+      },
+    },
   },
 });
 
@@ -191,12 +197,16 @@ interface CapitalPreservationScheduleProps {
   /** Holdings — those with currentPrice are included in the schedule */
   holdings: PortfolioHolding[];
   /**
-   * Year offset at which withdrawals begin (from sliders).
-   * This row is highlighted in the schedule as the critical withdrawal date.
+   * Year offset at which Investment A withdrawals begin.
+   * This row is highlighted in purple.
    */
   withdrawalStartYear: number;
   /** Monthly withdrawal amount — used to compute "safe withdrawal" status */
   monthlyWithdrawal: number;
+  /** Optional Investment B withdrawal start year — highlighted in cyan */
+  withdrawalStartYearB?: number;
+  /** Optional Investment B growth matrix — its withdrawal start row uses its own value */
+  growthMatrixB?: LineGraphEntry[];
 }
 
 /* ==================================================
@@ -222,6 +232,7 @@ export default function CapitalPreservationSchedule({
   holdings,
   withdrawalStartYear,
   monthlyWithdrawal,
+  withdrawalStartYearB,
 }: CapitalPreservationScheduleProps) {
   const [granularity, setGranularity] = useState<"yearly" | "monthly">(
     "yearly",
@@ -249,11 +260,20 @@ export default function CapitalPreservationSchedule({
   const matrix =
     granularity === "monthly" ? interpolateMonthly(growthMatrix) : growthMatrix;
 
-  // Find the row closest to the withdrawal start date
+  // Find the row closest to the withdrawal start date (A)
   const withdrawalRowIdx = Math.min(
     withdrawalStartYear * (granularity === "monthly" ? 12 : 1),
     matrix.length - 1,
   );
+
+  // Find the row for Investment B withdrawal start (optional)
+  const withdrawalRowIdxB =
+    withdrawalStartYearB != null && withdrawalStartYearB > 0
+      ? Math.min(
+          withdrawalStartYearB * (granularity === "monthly" ? 12 : 1),
+          matrix.length - 1,
+        )
+      : -1;
 
   const withdrawalEntry = matrix[withdrawalRowIdx];
 
@@ -349,6 +369,9 @@ export default function CapitalPreservationSchedule({
                   : format(entry.x, "yyyy");
               const isWithdrawalRow =
                 idx === withdrawalRowIdx && withdrawalStartYear > 0;
+              const isWithdrawalRowB =
+                idx === withdrawalRowIdxB &&
+                withdrawalRowIdxB !== withdrawalRowIdx;
               const isExpanded =
                 granularity === "monthly" && expandedMonths.has(idx);
               const nextEntry = matrix[idx + 1];
@@ -362,7 +385,10 @@ export default function CapitalPreservationSchedule({
               return (
                 <>
                   <tr key={idx}>
-                    <Td highlight={isWithdrawalRow}>
+                    <Td
+                      highlight={isWithdrawalRow}
+                      highlightB={isWithdrawalRowB}
+                    >
                       {granularity === "monthly" && nextEntry && (
                         <ExpandBtn
                           title={isExpanded ? "Collapse days" : "Expand days"}
@@ -380,12 +406,24 @@ export default function CapitalPreservationSchedule({
                             color: "var(--colors-purple)",
                           }}
                         >
-                          ← withdrawal start
+                          ← A withdrawal start
+                        </span>
+                      )}
+                      {isWithdrawalRowB && (
+                        <span
+                          style={{
+                            marginLeft: 6,
+                            fontSize: "0.65rem",
+                            color: "var(--colors-green)",
+                          }}
+                        >
+                          ← B withdrawal start
                         </span>
                       )}
                     </Td>
                     <Td
                       highlight={isWithdrawalRow}
+                      highlightB={isWithdrawalRowB}
                       style={{ color: "var(--colors-foreground)" }}
                     >
                       {usd.format(entry.y)}
@@ -399,6 +437,7 @@ export default function CapitalPreservationSchedule({
                         <Td
                           key={h.symbol}
                           highlight={isWithdrawalRow}
+                          highlightB={isWithdrawalRowB}
                           style={{ color: growthColor(pct) }}
                         >
                           {usd.format(required)}

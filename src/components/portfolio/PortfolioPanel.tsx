@@ -190,6 +190,13 @@ interface PortfolioPanelProps {
    * required stock price at each projected year (capital preservation schedule).
    */
   growthMatrix: LineGraphEntry[];
+  /**
+   * Optional Investment B withdrawal start year — shown as a second indicator
+   * in the capital preservation schedule when advanced mode is active.
+   */
+  withdrawalStartYearB?: number;
+  /** Optional Investment B growth matrix for the second withdrawal indicator */
+  growthMatrixB?: LineGraphEntry[];
 }
 
 /* ==================================================
@@ -242,6 +249,8 @@ export default function PortfolioPanel({
   withdrawalStartYear,
   yearsForward,
   growthMatrix,
+  withdrawalStartYearB,
+  growthMatrixB,
 }: PortfolioPanelProps) {
   const [portfolioValue, setPortfolioValue] = useState<number>(
     defaultPortfolioValue,
@@ -412,6 +421,8 @@ export default function PortfolioPanel({
         holdings={holdings}
         withdrawalStartYear={withdrawalStartYear}
         monthlyWithdrawal={monthlyWithdrawal}
+        withdrawalStartYearB={withdrawalStartYearB}
+        growthMatrixB={growthMatrixB}
       />
     </Wrapper>
   );
