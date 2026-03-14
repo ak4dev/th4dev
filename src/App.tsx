@@ -117,8 +117,6 @@ export default function App() {
    * Update application state from imported data
    */
   const setAppState = (state: TH4State): void => {
-    if (!state) return;
-
     if (state.theme) {
       setTheme(state.theme);
     }
