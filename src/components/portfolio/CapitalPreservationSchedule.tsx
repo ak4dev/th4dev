@@ -233,6 +233,7 @@ export default function CapitalPreservationSchedule({
   withdrawalStartYear,
   monthlyWithdrawal,
   withdrawalStartYearB,
+  growthMatrixB,
 }: CapitalPreservationScheduleProps) {
   const [granularity, setGranularity] = useState<"yearly" | "monthly">(
     "yearly",
@@ -254,11 +255,17 @@ export default function CapitalPreservationSchedule({
 
   if (growthMatrix.length === 0 || pricedHoldings.length === 0) return null;
 
-  const initialValue = growthMatrix[0]?.y;
+  // Extend A's timeline with B's tail entries when B runs longer
+  const baseMatrix =
+    growthMatrixB && growthMatrixB.length > growthMatrix.length
+      ? [...growthMatrix, ...growthMatrixB.slice(growthMatrix.length)]
+      : growthMatrix;
+
+  const initialValue = baseMatrix[0]?.y;
   if (!initialValue) return null;
 
   const matrix =
-    granularity === "monthly" ? interpolateMonthly(growthMatrix) : growthMatrix;
+    granularity === "monthly" ? interpolateMonthly(baseMatrix) : baseMatrix;
 
   // Find the row closest to the withdrawal start date (A)
   const withdrawalRowIdx = Math.min(
