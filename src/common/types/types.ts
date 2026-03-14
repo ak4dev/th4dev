@@ -75,3 +75,21 @@ export interface DateAmountPair {
   /** The inflation-adjusted amount */
   inflationAdjustedAmount: number;
 }
+
+/**
+ * Top-level application state shape, used for persistence and routing
+ */
+export interface TH4State {
+  /** Active theme key */
+  theme: string;
+  /** All slider values keyed by slider name */
+  sliders: Record<string, number>;
+  /** All text-input values keyed by input name */
+  inputs: Record<string, string>;
+  /** Boolean toggle switches */
+  toggles: {
+    advanced: boolean;
+    rollover: boolean;
+    showInflation: boolean;
+  };
+}

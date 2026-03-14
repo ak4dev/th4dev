@@ -9,6 +9,7 @@ import {
   FILE_EXPORT_PREFIX,
   FILE_EXPORT_EXTENSION,
 } from "../../common/constants/app-constants";
+import type { TH4State } from "../../common/types/types";
 
 /* ==================================================
  * Styled Components
@@ -43,9 +44,9 @@ const FileInput = styled("input", {
  */
 interface Props {
   /** Function to get current application state */
-  getState: () => any;
+  getState: () => TH4State;
   /** Function to set application state from imported data */
-  setState: (state: any) => void;
+  setState: (state: TH4State) => void;
 }
 
 /* ==================================================

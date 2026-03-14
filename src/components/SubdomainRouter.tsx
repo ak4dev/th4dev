@@ -4,17 +4,7 @@
 
 import { type JSX } from "react";
 import InvestmentCalculatorRadixModern from "./InvestmentCalculatorModern";
-import React from "react";
-import type { TH4State } from "../App";
-
-/* ==================================================
- * Subdomain Component Mapping
- * ================================================== */
-
-const subdomainToComponent: { [key: string]: JSX.Element } = {
-  f: <InvestmentCalculatorRadixModern />,
-  // Add more subdomain-to-component mappings here
-};
+import type { TH4State } from "../common/types/types";
 
 /* ==================================================
  * Types
@@ -40,13 +30,30 @@ interface SubdomainRouterProps {
   setToggles: React.Dispatch<React.SetStateAction<TH4State["toggles"]>>;
 }
 
+type SharedProps = Omit<SubdomainRouterProps, "subdomain">;
+
+/* ==================================================
+ * Subdomain Component Mapping
+ * ================================================== */
+
+/**
+ * Maps subdomain keys to component factory functions.
+ * Each factory receives the shared state props and returns a JSX element.
+ * Add new subdomain-to-component mappings here.
+ */
+const subdomainToComponent: Record<
+  string,
+  (props: SharedProps) => JSX.Element
+> = {
+  f: (props) => <InvestmentCalculatorRadixModern {...props} />,
+};
+
 /* ==================================================
  * Component
  * ================================================== */
 
 /**
- * Routes to different components based on subdomain
- * Clones the component and passes down props
+ * Routes to different components based on the current subdomain
  */
 const SubdomainRouter = ({
   subdomain,
@@ -57,17 +64,17 @@ const SubdomainRouter = ({
   toggles,
   setToggles,
 }: SubdomainRouterProps) => {
-  const currentComponent = subdomainToComponent[subdomain] || <div></div>;
-
-  // Clone the component and pass down props correctly
-  return React.cloneElement(currentComponent, {
+  const factory = subdomainToComponent[subdomain];
+  const sharedProps: SharedProps = {
     sliders,
     setSliders,
     inputs,
     setInputs,
     toggles,
     setToggles,
-  });
+  };
+
+  return factory ? factory(sharedProps) : <div />;
 };
 
 export default SubdomainRouter;

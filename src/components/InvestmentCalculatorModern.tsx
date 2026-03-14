@@ -1,4 +1,5 @@
 // src/components/InvestmentCalculatorRadixModern.tsx
+import type { Dispatch, SetStateAction } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import * as Slider from "@radix-ui/react-slider";
 import * as Switch from "@radix-ui/react-switch";
@@ -212,6 +213,22 @@ function SwitchButton({
   );
 }
 
+/* ---------------- Types ---------------- */
+interface TogglesState {
+  advanced: boolean;
+  rollover: boolean;
+  showInflation: boolean;
+}
+
+interface InvestmentCalculatorModernProps {
+  sliders: Record<string, number>;
+  setSliders: Dispatch<SetStateAction<Record<string, number>>>;
+  inputs: Record<string, string>;
+  setInputs: Dispatch<SetStateAction<Record<string, string>>>;
+  toggles: TogglesState;
+  setToggles: Dispatch<SetStateAction<TogglesState>>;
+}
+
 /* ---------------- Main Component ---------------- */
 export default function InvestmentCalculatorRadixModern({
   sliders,
@@ -220,8 +237,7 @@ export default function InvestmentCalculatorRadixModern({
   setInputs,
   toggles,
   setToggles,
-}: any) {
-  //TODO: FIX
+}: InvestmentCalculatorModernProps) {
   const updateSlider = (key: string, val: number) =>
     setSliders({ ...sliders, [key]: val });
   const updateInput = (key: string, val: string) =>
@@ -525,7 +541,6 @@ export default function InvestmentCalculatorRadixModern({
         growthMatrixB={toggles.advanced ? calcB.getGrowthMatrix() : undefined}
         advanced={toggles.advanced}
         yearOfRollover={toggles.rollover ? sliders.yearsOfGrowthA : undefined}
-        //maxYears={maxYears}
       />
     </Container>
   );

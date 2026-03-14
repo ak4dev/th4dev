@@ -17,24 +17,9 @@ import {
   DEFAULT_WITHDRAWAL_START_YEAR,
   DEFAULT_INFLATION_RATE,
 } from "./common/constants/app-constants";
+import type { TH4State } from "./common/types/types";
 
-/* ==================================================
- * Types
- * ================================================== */
-
-/**
- * Application state interface
- */
-export interface TH4State {
-  theme: string;
-  sliders: Record<string, number>;
-  inputs: Record<string, string>;
-  toggles: {
-    advanced: boolean;
-    rollover: boolean;
-    showInflation: boolean;
-  };
-}
+export type { TH4State };
 
 /* ==================================================
  * Styled Components

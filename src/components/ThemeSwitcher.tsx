@@ -2,7 +2,7 @@
  * Theme Switcher Component
  * ================================================== */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { styled, themeObjects } from "../../stitches.config";
 import * as Icons from "@radix-ui/react-icons";
@@ -102,19 +102,12 @@ export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
   const themeKeys = Object.keys(themeObjects) as Array<
     keyof typeof themeObjects
   >;
-  const [activeTheme, setActiveTheme] = useState<string>(themeKeys[0]);
-
-  /**
-   * Detect current theme on mount by checking body classes
-   */
-  useEffect(() => {
+  const [activeTheme, setActiveTheme] = useState<string>(() => {
     const current = themeKeys.find((key) =>
       document.body.classList.contains(`${key}-theme`),
     );
-    if (current) {
-      setActiveTheme(current);
-    }
-  }, [themeKeys]);
+    return current ?? themeKeys[0];
+  });
 
   /**
    * Switch to a new theme

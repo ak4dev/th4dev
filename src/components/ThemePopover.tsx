@@ -1,5 +1,5 @@
 // src/components/sidebar/ThemePopover.tsx
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { styled, keyframes, themeObjects } from "../../stitches.config";
 import * as Icons from "@radix-ui/react-icons";
@@ -90,15 +90,12 @@ export function ThemePopover() {
   const themeKeys = Object.keys(themeObjects) as Array<
     keyof typeof themeObjects
   >;
-  const [activeTheme, setActiveTheme] = useState<string>(themeKeys[0]);
-
-  // Detect currently applied theme on mount
-  useEffect(() => {
+  const [activeTheme, setActiveTheme] = useState<string>(() => {
     const current = themeKeys.find((key) =>
       document.body.classList.contains(`${key}-theme`),
     );
-    if (current) setActiveTheme(current);
-  }, [themeKeys]);
+    return current ?? themeKeys[0];
+  });
 
   const switchTheme = (themeKey: string) => {
     const body = document.body;

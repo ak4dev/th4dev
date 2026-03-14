@@ -191,8 +191,10 @@ export function InvestmentLineChart({
             }}
           />
           <Tooltip
-            formatter={(value: any) =>
-              value !== null && value !== undefined
+            formatter={(
+              value: number | string | (string | number)[] | undefined,
+            ) =>
+              typeof value === "number"
                 ? `$${numberFormatter.format(value)}`
                 : ""
             }
