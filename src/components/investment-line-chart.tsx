@@ -1,4 +1,7 @@
-// src/components/investment-line-chart.tsx
+/* ==================================================
+ * Investment Line Chart Component
+ * ================================================== */
+
 import {
   ResponsiveContainer,
   LineChart,
@@ -12,13 +15,15 @@ import {
 import { format } from "date-fns";
 import type { LineGraphEntry } from "../common/types/types";
 import { styled } from "../../stitches.config";
+import { CHART_HEIGHT } from "../common/constants/app-constants";
 
-// ==================================================
-// Styled container
-// ==================================================
+/* ==================================================
+ * Styled Components
+ * ================================================== */
+
 const ChartContainer = styled("div", {
   width: "100%",
-  height: 350,
+  height: CHART_HEIGHT,
   marginTop: 32,
   backgroundColor: "$currentLine",
   borderRadius: "8px",
@@ -26,18 +31,35 @@ const ChartContainer = styled("div", {
   transition: "background-color 0.25s ease",
 });
 
-// ==================================================
-// Format large numbers compactly (1.4M, 2.7B)
-// ==================================================
+/* ==================================================
+ * Constants
+ * ================================================== */
+
+const CHART_PADDING_MULTIPLIER = 1.05;
+const COMPACT_MAX_FRACTION_DIGITS = 1;
+
+/* ==================================================
+ * Number Formatting
+ * ================================================== */
+
 const numberFormatter = new Intl.NumberFormat("en-US", {
   notation: "compact",
   compactDisplay: "short",
-  maximumFractionDigits: 1,
+  maximumFractionDigits: COMPACT_MAX_FRACTION_DIGITS,
 });
 
-// ==================================================
-// Prepare chart data
-// ==================================================
+/* ==================================================
+ * Data Preparation
+ * ================================================== */
+
+/**
+ * Prepares chart data from investment growth matrices
+ * @param matrixA - Growth matrix for investment A
+ * @param matrixB - Growth matrix for investment B (optional)
+ * @param advanced - Whether advanced mode is enabled
+ * @param yearOfRollover - Year when rollover occurs (optional)
+ * @returns Array of chart data points
+ */
 function prepareChartData(
   matrixA: LineGraphEntry[],
   matrixB?: LineGraphEntry[],
@@ -56,6 +78,7 @@ function prepareChartData(
     const investmentA = entryA ? entryA.y : null;
     let investmentBValue = entryB?.y ?? null;
 
+    // Apply rollover amount to investment B in the rollover year
     if (yearOfRollover !== undefined && year === yearOfRollover && entryA) {
       investmentBValue = (investmentBValue ?? 0) + entryA.y;
     }
@@ -68,37 +91,61 @@ function prepareChartData(
   });
 }
 
-// ==================================================
-// Performance color helper
-// ==================================================
+/* ==================================================
+ * Color Helpers
+ * ================================================== */
+
+/**
+ * Determines line color based on investment performance
+ * @param matrix - Growth matrix for the investment
+ * @param defaultColor - Default color to use for positive performance
+ * @returns CSS color value
+ */
 function getPerformanceColor(
   matrix: LineGraphEntry[] | undefined,
   defaultColor: string,
-) {
+): string {
   if (!matrix || matrix.length === 0) return defaultColor;
+  
   const start = matrix[0].y;
   const end = matrix[matrix.length - 1].y;
   const red = "var(--colors-red)";
   const orange = "var(--colors-orange)";
+  
   if (end < 0) return red;
   if (end < start) return orange;
+  
   return defaultColor;
 }
 
-// ==================================================
-// Chart Component
-// ==================================================
+/* ==================================================
+ * Chart Component
+ * ================================================== */
+
+/**
+ * Props for the InvestmentLineChart component
+ */
+interface InvestmentLineChartProps {
+  /** Growth matrix for investment A */
+  growthMatrixA: LineGraphEntry[];
+  /** Growth matrix for investment B (optional) */
+  growthMatrixB?: LineGraphEntry[];
+  /** Whether advanced mode is enabled */
+  advanced?: boolean;
+  /** Year when rollover occurs (optional) */
+  yearOfRollover?: number;
+}
+
+/**
+ * Line chart component for visualizing investment growth over time
+ * Supports dual investment tracking with performance-based color coding
+ */
 export function InvestmentLineChart({
   growthMatrixA,
   growthMatrixB,
   advanced = false,
   yearOfRollover,
-}: {
-  growthMatrixA: LineGraphEntry[];
-  growthMatrixB?: LineGraphEntry[];
-  advanced?: boolean;
-  yearOfRollover?: number;
-}) {
+}: InvestmentLineChartProps) {
   const data = prepareChartData(
     growthMatrixA,
     growthMatrixB,
@@ -106,19 +153,21 @@ export function InvestmentLineChart({
     yearOfRollover,
   );
 
+  // CSS color variables
   const fg = "var(--colors-foreground)";
   const cyan = "var(--colors-cyan)";
   const green = "var(--colors-green)";
 
+  // Determine line colors based on performance
   const investmentAColor = getPerformanceColor(growthMatrixA, cyan);
   const investmentBColor = getPerformanceColor(growthMatrixB, green);
 
-  // Determine max value for axis scaling (5% padding above)
+  // Calculate max value for Y-axis scaling (with 5% padding)
   const allValues = [
     ...data.map((d) => d.investmentA ?? 0),
     ...(advanced ? data.map((d) => d.investmentB ?? 0) : []),
   ];
-  const maxValue = Math.max(...allValues) * 1.05;
+  const maxValue = Math.max(...allValues) * CHART_PADDING_MULTIPLIER;
 
   return (
     <ChartContainer>
@@ -165,7 +214,7 @@ export function InvestmentLineChart({
             wrapperStyle={{ color: fg }}
           />
 
-          {/* Investment A */}
+          {/* Investment A Line */}
           <Line
             type="monotone"
             dataKey="investmentA"
@@ -175,7 +224,7 @@ export function InvestmentLineChart({
             name="Investment A"
           />
 
-          {/* Investment B */}
+          {/* Investment B Line */}
           {advanced && growthMatrixB && (
             <Line
               type="monotone"

@@ -1,10 +1,18 @@
-// src/components/date-amount-table.tsx
+/* ==================================================
+ * Date Amount Table Component
+ * ================================================== */
+
 import { styled } from "../../stitches.config";
 import type { InvestmentCalculator } from "../common/helpers/investment-growth-calculator";
 import type { LineGraphEntry } from "../common/types/types";
+import { TABLE_MAX_HEIGHT } from "../common/constants/app-constants";
+
+/* ==================================================
+ * Styled Components
+ * ================================================== */
 
 const TableContainer = styled("div", {
-  maxHeight: "320px", // ~10 rows visible
+  maxHeight: TABLE_MAX_HEIGHT,
   overflowY: "auto",
 });
 
@@ -29,20 +37,43 @@ const Td = styled("td", {
   borderBottom: "1px solid $comment",
 });
 
+/* ==================================================
+ * Types
+ * ================================================== */
+
+/**
+ * Props for the DateAmountTable component
+ */
 interface DateAmountTableProps {
+  /** Investment calculator instance containing growth data */
   investmentCalc: InvestmentCalculator;
 }
 
+/* ==================================================
+ * Component
+ * ================================================== */
+
+/**
+ * Table component displaying investment growth data over time
+ * Shows year-by-year breakdown with nominal and inflation-adjusted amounts
+ */
 export default function DateAmountTable({
   investmentCalc,
 }: DateAmountTableProps) {
   const matrix: LineGraphEntry[] = investmentCalc?.getGrowthMatrix() ?? [];
-  if (!matrix || matrix.length === 0) return <div>No data available</div>;
+  
+  if (!matrix || matrix.length === 0) {
+    return <div>No data available</div>;
+  }
 
   const initial = matrix[0]?.y ?? 0;
 
-  // Determine row color like chart
-  const getColor = (val: number) => {
+  /**
+   * Determines text color based on value relative to initial amount
+   * @param val - Current value to evaluate
+   * @returns CSS color variable
+   */
+  const getColor = (val: number): string => {
     if (val < 0) return "var(--colors-red)";
     if (val < initial) return "var(--colors-orange)";
     return "var(--colors-green)";
@@ -62,11 +93,13 @@ export default function DateAmountTable({
         <tbody>
           {matrix.map((entry, idx) => {
             if (!entry || entry.y === undefined) return null;
+            
             const year = new Date(entry.x).getFullYear();
             const nominal = entry.y;
             const adjusted = entry.alternateY ?? nominal;
-            const pctChange =
-              initial !== 0 ? ((nominal - initial) / initial) * 100 : 0;
+            const pctChange = initial !== 0 
+              ? ((nominal - initial) / initial) * 100 
+              : 0;
 
             return (
               <tr key={idx}>

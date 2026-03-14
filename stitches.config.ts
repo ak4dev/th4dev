@@ -1,9 +1,17 @@
-// src/stitches.config.ts
-import { createStitches } from "@stitches/react";
+/* ==================================================
+ * Stitches Configuration
+ * ================================================== */
 
-/* ------------------------------------------------ */
-/* Theme Definitions */
-/* ------------------------------------------------ */
+import { createStitches } from "@stitches/react";
+import { DEFAULT_THEME } from "./src/common/constants/app-constants";
+
+/* ==================================================
+ * Theme Definitions
+ * ================================================== */
+
+/**
+ * Theme color definitions for all available themes
+ */
 export const themeObjects = {
   dracula: {
     name: "dracula",
@@ -229,23 +237,30 @@ export const themeObjects = {
       yellow: "#df8e1d",
     },
   },
-  // Add more themes here modularly
 };
 
-/* ------------------------------------------------ */
-/* Stitches Setup */
-/* ------------------------------------------------ */
+/* ==================================================
+ * Stitches Setup
+ * ================================================== */
+
+/**
+ * Create Stitches instance with default theme and configuration
+ */
 export const { styled, css, globalCss, createTheme, keyframes } =
   createStitches({
     theme: {
-      colors: themeObjects.gruvbox.colors, // default
+      colors: themeObjects[DEFAULT_THEME].colors,
       fonts: { body: "Fira Code, monospace" },
     },
   });
 
-/* ------------------------------------------------ */
-/* Create theme classes dynamically */
-/* ------------------------------------------------ */
+/* ==================================================
+ * Theme Classes
+ * ================================================== */
+
+/**
+ * Dynamically create theme classes for all defined themes
+ */
 export const themeClasses: Record<string, string> = Object.fromEntries(
   Object.entries(themeObjects).map(([key, themeObj]) => [
     key,
@@ -253,11 +268,19 @@ export const themeClasses: Record<string, string> = Object.fromEntries(
   ]),
 );
 
-/* ------------------------------------------------ */
-/* Global Styles */
-/* ------------------------------------------------ */
+/* ==================================================
+ * Global Styles
+ * ================================================== */
+
+/**
+ * Global CSS styles applied to the entire application
+ */
 export const globalStyles = globalCss({
-  "*": { boxSizing: "border-box", margin: 0, padding: 0 },
+  "*": { 
+    boxSizing: "border-box", 
+    margin: 0, 
+    padding: 0 
+  },
   body: {
     fontFamily: "$body",
     backgroundColor: "$background",

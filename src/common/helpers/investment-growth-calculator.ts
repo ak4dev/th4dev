@@ -1,5 +1,10 @@
+/* ==================================================
+ * Investment Growth Calculator
+ * ================================================== */
+
 import { addYears } from "date-fns";
 import type { InvestmentCalculatorProps, LineGraphEntry } from "../types/types";
+import { MONTHS_PER_YEAR, PERCENTAGE_DIVISOR } from "../constants/app-constants";
 
 /**
  * Investment Growth Calculator
@@ -16,22 +21,24 @@ export class InvestmentCalculator {
   private readonly today: Date = new Date();
   private readonly currentMonth: number = this.today.getMonth();
 
+  /**
+   * Creates an instance of InvestmentCalculator
+   * @param investmentCalculatorProps - Configuration for investment calculations
+   */
   constructor(investmentCalculatorProps: InvestmentCalculatorProps) {
     this.props = investmentCalculatorProps;
   }
 
-  // ============================================================================
-  // Public Methods
-  // ============================================================================
+  /* ==================================================
+   * Public Methods
+   * ================================================== */
 
   /**
    * Calculates the final investment value after all growth, contributions, and withdrawals
-   *
    * @param showInflation - Whether to return inflation-adjusted value
    * @returns Formatted currency string of the final investment value
    */
   public calculateGrowth(showInflation: boolean): string {
-    // Validate required inputs
     if (!this.isValidInput()) {
       return "";
     }
@@ -71,6 +78,8 @@ export class InvestmentCalculator {
 
   /**
    * Returns inflation-adjusted amount for a given value
+   * @param amount - The amount to adjust for inflation
+   * @returns The inflation-adjusted amount
    */
   public getInflationAdjusted(amount: number): number {
     const depreciation = this.calculateDepreciation(
@@ -82,6 +91,7 @@ export class InvestmentCalculator {
 
   /**
    * Returns the growth matrix data for charting
+   * @returns Array of line graph entries containing date and value data
    */
   public getGrowthMatrix(): LineGraphEntry[] {
     return this.props.growthMatrix;
@@ -89,6 +99,7 @@ export class InvestmentCalculator {
 
   /**
    * Returns the investment identifier
+   * @returns The unique identifier for this investment
    */
   public getInvestmentId(): string {
     return this.props.investmentId;
@@ -96,21 +107,25 @@ export class InvestmentCalculator {
 
   /**
    * Calculates percentage change between two amounts
+   * @param originalAmount - The original amount
+   * @param newAmount - The new amount
+   * @returns Percentage change as an integer
    */
   public getPercentageChange(
     originalAmount: number,
     newAmount: number,
   ): number {
     if (originalAmount === 0) return 0;
-    return Math.floor(((newAmount - originalAmount) / originalAmount) * 100);
+    return Math.floor(((newAmount - originalAmount) / originalAmount) * PERCENTAGE_DIVISOR);
   }
 
-  // ============================================================================
-  // Private Calculation Methods
-  // ============================================================================
+  /* ==================================================
+   * Private Calculation Methods
+   * ================================================== */
 
   /**
    * Validates that required inputs are present and valid
+   * @returns True if inputs are valid, false otherwise
    */
   private isValidInput(): boolean {
     return !!(
@@ -122,6 +137,7 @@ export class InvestmentCalculator {
 
   /**
    * Gets the initial investment amount as a number
+   * @returns The initial investment amount
    */
   private getInitialAmount(): number {
     return parseInt(this.props.currentAmount || "0") || 0;
@@ -129,13 +145,19 @@ export class InvestmentCalculator {
 
   /**
    * Calculates monthly growth rate from annual percentage
+   * @returns Monthly growth rate as a decimal
    */
   private getMonthlyGrowthRate(): number {
-    return this.props.projectedGain / 100 / 12;
+    return this.props.projectedGain / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
   }
 
   /**
    * Calculates growth for a single year including all monthly operations
+   * @param year - The year number (0-based)
+   * @param startingNominal - Starting nominal amount
+   * @param startingInflationAdjusted - Starting inflation-adjusted amount
+   * @param monthlyGrowthRate - Monthly growth rate as decimal
+   * @returns Object containing nominal and inflation-adjusted amounts
    */
   private calculateYearGrowth(
     year: number,
@@ -150,7 +172,7 @@ export class InvestmentCalculator {
     const startMonth = year === 0 ? this.currentMonth : 0;
 
     // Process each month in the year
-    for (let month = startMonth; month < 12; month++) {
+    for (let month = startMonth; month < MONTHS_PER_YEAR; month++) {
       // Apply withdrawals first
       if (this.shouldApplyWithdrawal(year, month)) {
         nominal -= this.props.monthlyWithdrawal;
@@ -192,6 +214,10 @@ export class InvestmentCalculator {
 
   /**
    * Adds a data point to the growth matrix for charting
+   * @param year - The year number
+   * @param nominal - Nominal amount
+   * @param inflationAdjusted - Inflation-adjusted amount
+   * @param showInflation - Whether inflation view is active
    */
   private addGrowthDataPoint(
     year: number,
@@ -206,12 +232,15 @@ export class InvestmentCalculator {
     });
   }
 
-  // ============================================================================
-  // Private Condition Checking Methods
-  // ============================================================================
+  /* ==================================================
+   * Private Condition Checking Methods
+   * ================================================== */
 
   /**
    * Determines if withdrawals should be applied for a given year and month
+   * @param year - The year number (0-based)
+   * @param month - The month number (0-based)
+   * @returns True if withdrawals should be applied
    */
   private shouldApplyWithdrawal(year: number, month: number): boolean {
     // Withdrawals only apply in advanced mode with a withdrawal amount set
@@ -243,6 +272,9 @@ export class InvestmentCalculator {
 
   /**
    * Determines if contributions should be applied for a given year and month
+   * @param year - The year number (0-based)
+   * @param month - The month number (0-based)
+   * @returns True if contributions should be applied
    */
   private shouldApplyContribution(year: number, month: number): boolean {
     // If not in advanced mode or no contribution stop year set, always contribute
@@ -264,6 +296,8 @@ export class InvestmentCalculator {
 
   /**
    * Determines if a rollover should be applied for a given year
+   * @param year - The year number (0-based)
+   * @returns True if rollover should be applied
    */
   private shouldApplyRollover(year: number): boolean {
     return !!(
@@ -275,22 +309,27 @@ export class InvestmentCalculator {
     );
   }
 
-  // ============================================================================
-  // Private Utility Methods
-  // ============================================================================
+  /* ==================================================
+   * Private Utility Methods
+   * ================================================== */
 
   /**
    * Calculates depreciation amount based on percentage and principal
+   * @param amount - The principal amount
+   * @param depreciationRate - The annual depreciation rate as a percentage
+   * @returns The depreciation amount
    */
   private calculateDepreciation(
     amount: number,
     depreciationRate: number,
   ): number {
-    return amount * (depreciationRate / 100);
+    return amount * (depreciationRate / PERCENTAGE_DIVISOR);
   }
 
   /**
    * Formats a number as currency string
+   * @param amount - The amount to format
+   * @returns Formatted currency string (e.g., "$1,234")
    */
   private formatCurrency(amount: number): string {
     return `$${amount.toLocaleString()}`;

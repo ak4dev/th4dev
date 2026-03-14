@@ -1,12 +1,17 @@
-// src/components/sidebar/ThemeSelector.tsx
+/* ==================================================
+ * Theme Switcher Component
+ * ================================================== */
+
 import { useState, useEffect } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { styled, themeObjects } from "../../stitches.config";
 import * as Icons from "@radix-ui/react-icons";
+import { SCROLLABLE_THEME_ITEMS, THEME_ITEM_HEIGHT } from "../common/constants/app-constants";
 
-// =======================
-// Styled Components
-// =======================
+/* ==================================================
+ * Styled Components
+ * ================================================== */
+
 const TriggerButton = styled(DropdownMenu.Trigger, {
   all: "unset",
   cursor: "pointer",
@@ -36,7 +41,7 @@ const ScrollArea = styled("div", {
   display: "flex",
   flexDirection: "column",
   gap: "6px",
-  maxHeight: "calc(4 * 44px + 12px)", // ~4 items visible, then scroll
+  maxHeight: `calc(${SCROLLABLE_THEME_ITEMS} * ${THEME_ITEM_HEIGHT}px + 12px)`,
   overflowY: "auto",
   paddingRight: "4px",
 });
@@ -70,31 +75,58 @@ const ColorSwatch = styled("span", {
   boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
 });
 
-// =======================
-// Component
-// =======================
+/* ==================================================
+ * Types
+ * ================================================== */
+
+/**
+ * Props for the ThemeSelector component
+ */
 type ThemeSelectorProps = {
+  /** Callback function invoked when theme changes */
   onThemeChange: (themeName: string) => void;
 };
 
+/* ==================================================
+ * Component
+ * ================================================== */
+
+/**
+ * Theme selector dropdown component
+ * Allows users to switch between available color themes
+ */
 export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
   const themeKeys = Object.keys(themeObjects) as Array<
     keyof typeof themeObjects
   >;
   const [activeTheme, setActiveTheme] = useState<string>(themeKeys[0]);
 
-  // Detect current body theme on mount
+  /**
+   * Detect current theme on mount by checking body classes
+   */
   useEffect(() => {
     const current = themeKeys.find((key) =>
       document.body.classList.contains(`${key}-theme`),
     );
-    if (current) setActiveTheme(current);
+    if (current) {
+      setActiveTheme(current);
+    }
   }, [themeKeys]);
 
+  /**
+   * Switch to a new theme
+   * @param themeKey - The key of the theme to switch to
+   */
   const switchTheme = (themeKey: string) => {
     const body = document.body;
+    
+    // Remove all theme classes
     themeKeys.forEach((key) => body.classList.remove(`${key}-theme`));
+    
+    // Add new theme class
     body.classList.add(`${themeKey}-theme`);
+    
+    // Update state and notify parent
     setActiveTheme(themeKey);
     onThemeChange(themeKey);
   };

@@ -1,13 +1,30 @@
-// src/App.tsx
+/* ==================================================
+ * Main Application Component
+ * ================================================== */
+
 import { useState, useEffect } from "react";
 import { styled, themeClasses, globalStyles } from "../stitches.config";
 import { ThemeSelector } from "./components/ThemeSwitcher";
 import StateIOPopover from "./components/sidebar/StateIOPopover";
 import SubdomainRouter from "./components/SubdomainRouter";
+import {
+  DEFAULT_THEME,
+  DEFAULT_INITIAL_AMOUNT,
+  DEFAULT_PROJECTED_GAIN,
+  DEFAULT_YEARS_OF_GROWTH,
+  DEFAULT_MONTHLY_CONTRIBUTION,
+  DEFAULT_MONTHLY_WITHDRAWAL,
+  DEFAULT_WITHDRAWAL_START_YEAR,
+  DEFAULT_INFLATION_RATE,
+} from "./common/constants/app-constants";
 
-/* ------------------------------------------------ */
-/* Types */
-/* ------------------------------------------------ */
+/* ==================================================
+ * Types
+ * ================================================== */
+
+/**
+ * Application state interface
+ */
 export interface TH4State {
   theme: string;
   sliders: Record<string, number>;
@@ -19,9 +36,10 @@ export interface TH4State {
   };
 }
 
-/* ------------------------------------------------ */
-/* Layout */
-/* ------------------------------------------------ */
+/* ==================================================
+ * Styled Components
+ * ================================================== */
+
 const Container = styled("div", {
   display: "flex",
   height: "100vh",
@@ -42,30 +60,31 @@ const Content = styled("div", {
   padding: "1rem",
 });
 
-/* ------------------------------------------------ */
-/* Default State */
-/* ------------------------------------------------ */
+/* ==================================================
+ * Default State
+ * ================================================== */
+
 const defaultState: TH4State = {
-  theme: "gruvbox",
+  theme: DEFAULT_THEME,
   sliders: {
-    investmentA: 10000,
-    investmentB: 10000,
-    projectedGainA: 10,
-    projectedGainB: 10,
-    yearsOfGrowthA: 30,
-    yearsOfGrowthB: 30,
-    monthlyContributionA: 0,
-    monthlyContributionB: 0,
-    monthlyWithdrawalA: 0,
-    monthlyWithdrawalB: 0,
-    withdrawalStartYearA: 0,
-    withdrawalStartYearB: 0,
-    yearlyInflationA: 2.5,
-    yearlyInflationB: 2.5,
+    investmentA: DEFAULT_INITIAL_AMOUNT,
+    investmentB: DEFAULT_INITIAL_AMOUNT,
+    projectedGainA: DEFAULT_PROJECTED_GAIN,
+    projectedGainB: DEFAULT_PROJECTED_GAIN,
+    yearsOfGrowthA: DEFAULT_YEARS_OF_GROWTH,
+    yearsOfGrowthB: DEFAULT_YEARS_OF_GROWTH,
+    monthlyContributionA: DEFAULT_MONTHLY_CONTRIBUTION,
+    monthlyContributionB: DEFAULT_MONTHLY_CONTRIBUTION,
+    monthlyWithdrawalA: DEFAULT_MONTHLY_WITHDRAWAL,
+    monthlyWithdrawalB: DEFAULT_MONTHLY_WITHDRAWAL,
+    withdrawalStartYearA: DEFAULT_WITHDRAWAL_START_YEAR,
+    withdrawalStartYearB: DEFAULT_WITHDRAWAL_START_YEAR,
+    yearlyInflationA: DEFAULT_INFLATION_RATE,
+    yearlyInflationB: DEFAULT_INFLATION_RATE,
   },
   inputs: {
-    currentAmountA: "10000",
-    currentAmountB: "10000",
+    currentAmountA: String(DEFAULT_INITIAL_AMOUNT),
+    currentAmountB: String(DEFAULT_INITIAL_AMOUNT),
   },
   toggles: {
     advanced: false,
@@ -74,50 +93,69 @@ const defaultState: TH4State = {
   },
 };
 
-/* ------------------------------------------------ */
-/* App Component */
-/* ------------------------------------------------ */
+/* ==================================================
+ * Main Component
+ * ================================================== */
+
+/**
+ * Main application component that manages investment calculator state
+ * and provides theme switching and state persistence functionality
+ */
 export default function App() {
   const [theme, setTheme] = useState(defaultState.theme);
   const [sliders, setSliders] = useState(defaultState.sliders);
   const [inputs, setInputs] = useState(defaultState.inputs);
   const [toggles, setToggles] = useState(defaultState.toggles);
 
-  /* ------------------------------------------------ */
-  /* Mount */
+  /**
+   * Initialize global styles on component mount
+   */
   useEffect(() => {
-    globalStyles(); // apply global styles
+    globalStyles();
   }, []);
 
-  /* ------------------------------------------------ */
-  /* Apply Theme */
+  /**
+   * Apply theme changes to document body
+   */
   useEffect(() => {
-    // Remove all theme classes
+    // Remove all existing theme classes
     Object.values(themeClasses).forEach((cls) =>
       document.body.classList.remove(cls),
     );
-    // Add current theme class
+
+    // Apply current theme class
     const cls = themeClasses[theme];
-    if (cls) document.body.classList.add(cls);
+    if (cls) {
+      document.body.classList.add(cls);
+    }
   }, [theme]);
 
-  /* ------------------------------------------------ */
-  /* Subdomain Detection (if needed for routing) */
+  /**
+   * Extract subdomain from current hostname for routing
+   */
   const hostname = window.location.hostname;
-  const subdomain = hostname.split(".")[0]; // Extract subdomain from URL
+  const subdomain = hostname.split(".")[0];
 
-  /* ------------------------------------------------ */
-  /* Set App State Function */
-  const setAppState = (state: TH4State) => {
+  /**
+   * Update application state from imported data
+   */
+  const setAppState = (state: TH4State): void => {
     if (!state) return;
-    if (state.theme) setTheme(state.theme);
-    if (state.sliders) setSliders((prev) => ({ ...prev, ...state.sliders }));
-    if (state.inputs) setInputs((prev) => ({ ...prev, ...state.inputs }));
-    if (state.toggles) setToggles((prev) => ({ ...prev, ...state.toggles }));
+
+    if (state.theme) {
+      setTheme(state.theme);
+    }
+    if (state.sliders) {
+      setSliders((prev) => ({ ...prev, ...state.sliders }));
+    }
+    if (state.inputs) {
+      setInputs((prev) => ({ ...prev, ...state.inputs }));
+    }
+    if (state.toggles) {
+      setToggles((prev) => ({ ...prev, ...state.toggles }));
+    }
   };
 
-  /* ------------------------------------------------ */
-  /* Render */
   return (
     <Container>
       <Content>

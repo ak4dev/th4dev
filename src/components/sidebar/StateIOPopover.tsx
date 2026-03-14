@@ -1,9 +1,15 @@
-// src/components/sidebar/StateIOButtons.tsx
+/* ==================================================
+ * State Import/Export Popover Component
+ * ================================================== */
+
 import React from "react";
 import * as Icons from "@radix-ui/react-icons";
 import { styled } from "../../../stitches.config";
+import { FILE_EXPORT_PREFIX, FILE_EXPORT_EXTENSION } from "../../common/constants/app-constants";
 
-/* ---------------- STYLES ---------------- */
+/* ==================================================
+ * Styled Components
+ * ================================================== */
 
 const SidebarButton = styled("button", {
   all: "unset",
@@ -16,7 +22,6 @@ const SidebarButton = styled("button", {
   alignItems: "center",
   justifyContent: "center",
   transition: "background-color 0.2s ease",
-
   "&:hover": {
     backgroundColor: "$purple",
   },
@@ -26,24 +31,39 @@ const FileInput = styled("input", {
   display: "none",
 });
 
-/* ---------------- TYPES ---------------- */
+/* ==================================================
+ * Types
+ * ================================================== */
 
+/**
+ * Props for the StateIOButtons component
+ */
 interface Props {
+  /** Function to get current application state */
   getState: () => any;
+  /** Function to set application state from imported data */
   setState: (state: any) => void;
 }
 
-/* ---------------- COMPONENT ---------------- */
+/* ==================================================
+ * Component
+ * ================================================== */
 
+/**
+ * State import/export buttons component
+ * Allows users to save and load application state as JSON files
+ */
 export default function StateIOButtons({ getState, setState }: Props) {
-  /* -------- EXPORT -------- */
+  /**
+   * Exports current application state as a JSON file
+   */
   const handleExport = () => {
     const data = getState();
     const timestamp = new Date()
       .toISOString()
       .replace(/[:.-]/g, "")
-      .slice(0, 15); // YYYYMMDDTHHMMSS
-    const filename = `th4_${timestamp}.json`;
+      .slice(0, 15); // Format: YYYYMMDDTHHMMSS
+    const filename = `${FILE_EXPORT_PREFIX}_${timestamp}.${FILE_EXPORT_EXTENSION}`;
 
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: "application/json",
@@ -59,7 +79,10 @@ export default function StateIOButtons({ getState, setState }: Props) {
     URL.revokeObjectURL(url);
   };
 
-  /* -------- IMPORT -------- */
+  /**
+   * Imports application state from a JSON file
+   * @param e - File input change event
+   */
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -90,7 +113,11 @@ export default function StateIOButtons({ getState, setState }: Props) {
         <SidebarButton as="span" title="Import JSON">
           <Icons.UploadIcon width={20} height={20} />
         </SidebarButton>
-        <FileInput type="file" accept=".json" onChange={handleImport} />
+        <FileInput 
+          type="file" 
+          accept={`.${FILE_EXPORT_EXTENSION}`} 
+          onChange={handleImport} 
+        />
       </label>
     </div>
   );
