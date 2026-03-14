@@ -7,6 +7,7 @@ import { styled, themeClasses } from "../stitches.config";
 import { ThemeSelector } from "./components/ThemeSwitcher";
 import StateIOPopover from "./components/sidebar/StateIOPopover";
 import SubdomainRouter from "./components/SubdomainRouter";
+import StockModal from "./components/StockModal";
 import {
   DEFAULT_THEME,
   DEFAULT_INITIAL_AMOUNT,
@@ -49,6 +50,9 @@ const Content = styled("div", {
  * Default State
  * ================================================== */
 
+const DEFAULT_STOCK_API_URL =
+  "https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey=demo";
+
 const defaultState: TH4State = {
   theme: DEFAULT_THEME,
   sliders: {
@@ -75,6 +79,10 @@ const defaultState: TH4State = {
     rollover: false,
     showInflation: false,
   },
+  stock: {
+    apiUrl: DEFAULT_STOCK_API_URL,
+    symbols: ["IBM"],
+  },
 };
 
 /* ==================================================
@@ -90,6 +98,9 @@ export default function App() {
   const [sliders, setSliders] = useState(defaultState.sliders);
   const [inputs, setInputs] = useState(defaultState.inputs);
   const [toggles, setToggles] = useState(defaultState.toggles);
+  const [stockApiUrl, setStockApiUrl] = useState(defaultState.stock!.apiUrl);
+  const [stockSymbols, setStockSymbols] = useState(defaultState.stock!.symbols);
+  const [stockModalOpen, setStockModalOpen] = useState(false);
 
   /**
    * Apply theme changes to document body
@@ -106,6 +117,20 @@ export default function App() {
       document.body.classList.add(cls);
     }
   }, [theme]);
+
+  /**
+   * Ctrl+Shift+S (all OSes) opens the stock data modal
+   */
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === "S") {
+        e.preventDefault();
+        setStockModalOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   /**
    * Extract subdomain from current hostname for routing
@@ -129,6 +154,10 @@ export default function App() {
     if (state.toggles) {
       setToggles((prev) => ({ ...prev, ...state.toggles }));
     }
+    if (state.stock) {
+      setStockApiUrl(state.stock.apiUrl);
+      setStockSymbols(state.stock.symbols);
+    }
   };
 
   return (
@@ -148,10 +177,25 @@ export default function App() {
       <Sidebar>
         <ThemeSelector onThemeChange={setTheme} />
         <StateIOPopover
-          getState={() => ({ theme, sliders, inputs, toggles })}
+          getState={() => ({
+            theme,
+            sliders,
+            inputs,
+            toggles,
+            stock: { apiUrl: stockApiUrl, symbols: stockSymbols },
+          })}
           setState={setAppState}
         />
       </Sidebar>
+
+      <StockModal
+        open={stockModalOpen}
+        onOpenChange={setStockModalOpen}
+        apiUrl={stockApiUrl}
+        setApiUrl={setStockApiUrl}
+        symbols={stockSymbols}
+        setSymbols={setStockSymbols}
+      />
     </Container>
   );
 }

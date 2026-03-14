@@ -90,4 +90,11 @@ export interface TH4State {
     rollover: boolean;
     showInflation: boolean;
   };
+  /** Stock data fetcher configuration */
+  stock?: {
+    /** API URL template — use {symbol} as the ticker placeholder */
+    apiUrl: string;
+    /** List of ticker symbols to fetch */
+    symbols: string[];
+  };
 }
