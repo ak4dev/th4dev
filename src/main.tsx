@@ -2,16 +2,16 @@
  * Application Entry Point
  * ================================================== */
 
-import React from "react";
+import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { globalStyles } from "../stitches.config";
 
-// Apply global styles
+// Apply global styles before first render
 globalStyles();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
+  <StrictMode>
     <App />
-  </React.StrictMode>,
+  </StrictMode>,
 );

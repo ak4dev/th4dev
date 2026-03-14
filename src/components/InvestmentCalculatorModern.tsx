@@ -1,4 +1,6 @@
-// src/components/InvestmentCalculatorRadixModern.tsx
+/* ==================================================
+ * Investment Calculator Component
+ * ================================================== */
 import type { Dispatch, SetStateAction } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import * as Slider from "@radix-ui/react-slider";
@@ -8,6 +10,18 @@ import { InvestmentCalculator } from "../common/helpers/investment-growth-calcul
 import DateAmountTable from "./date-amount-table";
 import { InvestmentLineChart } from "./investment-line-chart";
 import { addYears } from "date-fns";
+import {
+  DEFAULT_INITIAL_AMOUNT,
+  DEFAULT_PROJECTED_GAIN,
+  DEFAULT_YEARS_OF_GROWTH,
+  DEFAULT_INFLATION_RATE,
+  MAX_PROJECTED_GAIN,
+  MAX_YEARS_OF_GROWTH,
+  MAX_MONTHLY_CONTRIBUTION,
+  MAX_MONTHLY_WITHDRAWAL,
+  MAX_INFLATION_RATE,
+  MIN_VALUE,
+} from "../common/constants/app-constants";
 
 /* ---------------- Styles & Animations ---------------- */
 const fadeInUp = keyframes({
@@ -147,6 +161,11 @@ const InfoRow = styled("div", {
   fontWeight: 500,
   color: "$comment",
 });
+const SwitchRow = styled("div", {
+  display: "flex",
+  gap: "12px",
+  alignItems: "center",
+});
 
 /* ---------------- Helpers ---------------- */
 function CurrencyInput({
@@ -247,72 +266,68 @@ export default function InvestmentCalculatorRadixModern({
 
   // ---------------- Investment A ----------------
   const invAProps = {
-    currentAmount: inputs.currentAmountA || "10000",
-    projectedGain: sliders.projectedGainA || 10,
-    yearsOfGrowth: sliders.yearsOfGrowthA || 30,
-    monthlyContribution: sliders.monthlyContributionA || 0,
-    monthlyWithdrawal: sliders.monthlyWithdrawalA || 0,
+    currentAmount: inputs.currentAmountA || String(DEFAULT_INITIAL_AMOUNT),
+    projectedGain: sliders.projectedGainA || DEFAULT_PROJECTED_GAIN,
+    yearsOfGrowth: sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH,
+    monthlyContribution: sliders.monthlyContributionA || MIN_VALUE,
+    monthlyWithdrawal: sliders.monthlyWithdrawalA || MIN_VALUE,
     yearContributionsStop:
       sliders.contributionStopYearA ?? sliders.yearsOfGrowthA,
-    yearWithdrawalsBegin: sliders.withdrawalStartYearA || 0,
+    yearWithdrawalsBegin: sliders.withdrawalStartYearA || MIN_VALUE,
     advanced: toggles.advanced,
-    depreciationRate: sliders.yearlyInflation || 2.5,
+    depreciationRate: sliders.yearlyInflation || DEFAULT_INFLATION_RATE,
     rollOver: false,
     investmentId: "investmentA",
     growthMatrix: [],
     setCurrentAmount: (v: string | undefined) =>
-      updateInput("currentAmountA", v ?? ""), // Added default value for undefined
-    setProjectedGain: (v: number) => updateSlider("projectedGainA", v ?? 0), // Added default value for undefined
-    setYearsOfGrowth: (v: number) => updateSlider("yearsOfGrowthA", v ?? 0),
+      updateInput("currentAmountA", v ?? ""),
+    setProjectedGain: (v: number) => updateSlider("projectedGainA", v),
+    setYearsOfGrowth: (v: number) => updateSlider("yearsOfGrowthA", v),
     setMonthlyContribution: (v: number) =>
-      updateSlider("monthlyContributionA", v ?? 0),
-    setMonthlyWithdrawal: (v: number) =>
-      updateSlider("monthlyWithdrawalA", v ?? 0),
+      updateSlider("monthlyContributionA", v),
+    setMonthlyWithdrawal: (v: number) => updateSlider("monthlyWithdrawalA", v),
     setYearWithdrawalsBegin: (v: number) =>
-      updateSlider("withdrawalStartYearA", v ?? 0),
+      updateSlider("withdrawalStartYearA", v),
     setYearContributionsStop: (v: number | undefined) =>
-      updateSlider("contributionStopYearA", v ?? 0), // Added default value for undefined
-    maxMonthlyWithdrawal: 10000, // max limit set for the withdrawal
+      updateSlider("contributionStopYearA", v ?? 0),
+    maxMonthlyWithdrawal: MAX_MONTHLY_WITHDRAWAL,
   };
   const calcA = new InvestmentCalculator(invAProps);
-  calcA.getGrowthMatrix();
   const totalA = parseInt(
     calcA.calculateGrowth(toggles.showInflation).replace(/[^0-9.-]+/g, ""),
   );
 
   // ---------------- Investment B ----------------
   const invBProps = {
-    currentAmount: inputs.currentAmountB || "10000",
-    projectedGain: sliders.projectedGainB || 10,
-    yearsOfGrowth: sliders.yearsOfGrowthB || 30,
-    monthlyContribution: sliders.monthlyContributionB || 0,
-    monthlyWithdrawal: sliders.monthlyWithdrawalB || 0,
+    currentAmount: inputs.currentAmountB || String(DEFAULT_INITIAL_AMOUNT),
+    projectedGain: sliders.projectedGainB || DEFAULT_PROJECTED_GAIN,
+    yearsOfGrowth: sliders.yearsOfGrowthB || DEFAULT_YEARS_OF_GROWTH,
+    monthlyContribution: sliders.monthlyContributionB || MIN_VALUE,
+    monthlyWithdrawal: sliders.monthlyWithdrawalB || MIN_VALUE,
     yearContributionsStop:
       sliders.contributionStopYearB ?? sliders.yearsOfGrowthB,
-    yearWithdrawalsBegin: sliders.withdrawalStartYearB || 0,
+    yearWithdrawalsBegin: sliders.withdrawalStartYearB || MIN_VALUE,
     advanced: toggles.advanced,
-    depreciationRate: sliders.yearlyInflation || 2.5,
+    depreciationRate: sliders.yearlyInflation || DEFAULT_INFLATION_RATE,
     rollOver: toggles.rollover,
     investmentToRoll: toggles.rollover ? totalA : 0,
     yearOfRollover: toggles.rollover ? sliders.yearsOfGrowthA : undefined,
     investmentId: "investmentB",
     growthMatrix: [],
     setCurrentAmount: (v: string | undefined) =>
-      updateInput("currentAmountB", v ?? ""), // Added default value for undefined
-    setProjectedGain: (v: number) => updateSlider("projectedGainB", v ?? 0), // Added default value for undefined
-    setYearsOfGrowth: (v: number) => updateSlider("yearsOfGrowthB", v ?? 0),
+      updateInput("currentAmountB", v ?? ""),
+    setProjectedGain: (v: number) => updateSlider("projectedGainB", v),
+    setYearsOfGrowth: (v: number) => updateSlider("yearsOfGrowthB", v),
     setMonthlyContribution: (v: number) =>
-      updateSlider("monthlyContributionB", v ?? 0),
-    setMonthlyWithdrawal: (v: number) =>
-      updateSlider("monthlyWithdrawalB", v ?? 0),
+      updateSlider("monthlyContributionB", v),
+    setMonthlyWithdrawal: (v: number) => updateSlider("monthlyWithdrawalB", v),
     setYearWithdrawalsBegin: (v: number) =>
-      updateSlider("withdrawalStartYearB", v ?? 0),
+      updateSlider("withdrawalStartYearB", v),
     setYearContributionsStop: (v: number | undefined) =>
-      updateSlider("contributionStopYearB", v ?? 0), // Added default value for undefined
-    maxMonthlyWithdrawal: 10000, // max limit set for the withdrawal
+      updateSlider("contributionStopYearB", v ?? 0),
+    maxMonthlyWithdrawal: MAX_MONTHLY_WITHDRAWAL,
   };
   const calcB = new InvestmentCalculator(invBProps);
-  calcB.getGrowthMatrix();
   const totalB = parseInt(
     calcB.calculateGrowth(toggles.showInflation).replace(/[^0-9.-]+/g, ""),
   );
@@ -358,7 +373,7 @@ export default function InvestmentCalculatorRadixModern({
       label: "Rollover Amount",
       value: toggles.rollover ? `$${totalA.toLocaleString()}` : "N/A",
     },
-    { label: "Inflation Rate", value: `${sliders.yearlyInflation || 2.5}%` },
+    { label: "Inflation Rate", value: `${sliders.yearlyInflation || DEFAULT_INFLATION_RATE}%` },
   ];
 
   return (
@@ -373,15 +388,15 @@ export default function InvestmentCalculatorRadixModern({
           <InvestmentSlider
             label="Return (%)"
             value={sliders.projectedGainA}
-            min={0}
-            max={30}
+            min={MIN_VALUE}
+            max={MAX_PROJECTED_GAIN}
             onChange={(v) => updateSlider("projectedGainA", v)}
           />
           <InvestmentSlider
             label="Years"
             value={sliders.yearsOfGrowthA}
-            min={0}
-            max={100}
+            min={MIN_VALUE}
+            max={MAX_YEARS_OF_GROWTH}
             onChange={(v) => updateSlider("yearsOfGrowthA", v)}
           />
           {toggles.advanced && (
@@ -389,28 +404,28 @@ export default function InvestmentCalculatorRadixModern({
               <InvestmentSlider
                 label="Monthly Contribution"
                 value={sliders.monthlyContributionA}
-                min={0}
-                max={5000}
+                min={MIN_VALUE}
+                max={MAX_MONTHLY_CONTRIBUTION}
                 onChange={(v) => updateSlider("monthlyContributionA", v)}
               />
               <InvestmentSlider
                 label="Contribution Stop Year"
                 value={sliders.contributionStopYearA}
-                min={0}
+                min={MIN_VALUE}
                 max={sliders.yearsOfGrowthA}
                 onChange={(v) => updateSlider("contributionStopYearA", v)}
               />
               <InvestmentSlider
                 label="Monthly Withdrawal"
                 value={sliders.monthlyWithdrawalA}
-                min={0}
-                max={10000}
+                min={MIN_VALUE}
+                max={MAX_MONTHLY_WITHDRAWAL}
                 onChange={(v) => updateSlider("monthlyWithdrawalA", v)}
               />
               <InvestmentSlider
                 label="Withdrawal Start Year"
-                value={sliders.withdrawalStartYearA || 0}
-                min={0}
+                value={sliders.withdrawalStartYearA || MIN_VALUE}
+                min={MIN_VALUE}
                 max={sliders.yearsOfGrowthA}
                 onChange={(v) => updateSlider("withdrawalStartYearA", v)}
               />
@@ -428,42 +443,42 @@ export default function InvestmentCalculatorRadixModern({
             <InvestmentSlider
               label="Return (%)"
               value={sliders.projectedGainB}
-              min={0}
-              max={30}
+              min={MIN_VALUE}
+              max={MAX_PROJECTED_GAIN}
               onChange={(v) => updateSlider("projectedGainB", v)}
             />
             <InvestmentSlider
               label="Years"
               value={sliders.yearsOfGrowthB}
-              min={0}
-              max={100}
+              min={MIN_VALUE}
+              max={MAX_YEARS_OF_GROWTH}
               onChange={(v) => updateSlider("yearsOfGrowthB", v)}
             />
             <InvestmentSlider
               label="Monthly Contribution"
               value={sliders.monthlyContributionB}
-              min={0}
-              max={5000}
+              min={MIN_VALUE}
+              max={MAX_MONTHLY_CONTRIBUTION}
               onChange={(v) => updateSlider("monthlyContributionB", v)}
             />
             <InvestmentSlider
               label="Contribution Stop Year"
               value={sliders.contributionStopYearB}
-              min={0}
+              min={MIN_VALUE}
               max={sliders.yearsOfGrowthB}
               onChange={(v) => updateSlider("contributionStopYearB", v)}
             />
             <InvestmentSlider
               label="Monthly Withdrawal"
               value={sliders.monthlyWithdrawalB}
-              min={0}
-              max={10000}
+              min={MIN_VALUE}
+              max={MAX_MONTHLY_WITHDRAWAL}
               onChange={(v) => updateSlider("monthlyWithdrawalB", v)}
             />
             <InvestmentSlider
               label="Withdrawal Start Year"
-              value={sliders.withdrawalStartYearB || 0}
-              min={0}
+              value={sliders.withdrawalStartYearB || MIN_VALUE}
+              min={MIN_VALUE}
               max={sliders.yearsOfGrowthB}
               onChange={(v) => updateSlider("withdrawalStartYearB", v)}
             />
@@ -472,32 +487,32 @@ export default function InvestmentCalculatorRadixModern({
 
         {/* Info / Global Settings Panel */}
         <Panel>
-          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          <SwitchRow>
             <Label>Advanced:</Label>
             <SwitchButton
               checked={toggles.advanced}
               onCheckedChange={(v) => updateToggle("advanced", v)}
             />
-          </div>
-          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          </SwitchRow>
+          <SwitchRow>
             <Label>Rollover:</Label>
             <SwitchButton
               checked={toggles.rollover}
               onCheckedChange={(v) => updateToggle("rollover", v)}
             />
-          </div>
-          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-            <Label>Inflated :</Label>
+          </SwitchRow>
+          <SwitchRow>
+            <Label>Inflated:</Label>
             <SwitchButton
               checked={toggles.showInflation}
               onCheckedChange={(v) => updateToggle("showInflation", v)}
             />
-          </div>
+          </SwitchRow>
           <InvestmentSlider
             label="Inflation (%)"
-            value={sliders.yearlyInflation || 2.5}
-            min={0}
-            max={10}
+            value={sliders.yearlyInflation || DEFAULT_INFLATION_RATE}
+            min={MIN_VALUE}
+            max={MAX_INFLATION_RATE}
             step={0.1}
             onChange={(v) => updateSlider("yearlyInflation", v)}
           />
