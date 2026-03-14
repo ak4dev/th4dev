@@ -46,8 +46,6 @@ export interface InvestmentCalculatorProps {
   yearContributionsStop?: number;
   /** Function to update contribution stop year */
   setYearContributionsStop: (value: number | undefined) => void;
-  /** Array storing the growth data points */
-  growthMatrix: LineGraphEntry[];
   /** Whether advanced mode is enabled */
   advanced?: boolean;
   /** Whether rollover is enabled */

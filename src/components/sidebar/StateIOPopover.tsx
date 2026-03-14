@@ -3,6 +3,7 @@
  * ================================================== */
 
 import React from "react";
+import { format } from "date-fns";
 import * as Icons from "@radix-ui/react-icons";
 import { styled } from "../../../stitches.config";
 import {
@@ -36,6 +37,31 @@ const FileInput = styled("input", {
 });
 
 /* ==================================================
+ * Type Guard
+ * ================================================== */
+
+/**
+ * Runtime type guard that verifies an unknown value conforms to the TH4State shape.
+ * Prevents applying malformed or incompatible JSON files as application state.
+ * @param value - The parsed JSON value to validate
+ * @returns True if value is a valid TH4State object
+ */
+function isTH4State(value: unknown): value is TH4State {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v["theme"] !== "string") return false;
+  if (typeof v["sliders"] !== "object" || v["sliders"] === null) return false;
+  if (typeof v["inputs"] !== "object" || v["inputs"] === null) return false;
+  if (typeof v["toggles"] !== "object" || v["toggles"] === null) return false;
+  const t = v["toggles"] as Record<string, unknown>;
+  return (
+    typeof t["advanced"] === "boolean" &&
+    typeof t["rollover"] === "boolean" &&
+    typeof t["showInflation"] === "boolean"
+  );
+}
+
+/* ==================================================
  * Types
  * ================================================== */
 
@@ -63,10 +89,8 @@ export default function StateIOButtons({ getState, setState }: Props) {
    */
   const handleExport = () => {
     const data = getState();
-    const timestamp = new Date()
-      .toISOString()
-      .replace(/[:.-]/g, "")
-      .slice(0, 15); // Format: YYYYMMDDTHHMMSS
+    // Use compact ISO 8601 basic format (colons and dots omitted for filename safety)
+    const timestamp = format(new Date(), "yyyyMMdd'T'HHmmss");
     const filename = `${FILE_EXPORT_PREFIX}_${timestamp}.${FILE_EXPORT_EXTENSION}`;
 
     const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -84,7 +108,8 @@ export default function StateIOButtons({ getState, setState }: Props) {
   };
 
   /**
-   * Imports application state from a JSON file
+   * Imports application state from a JSON file.
+   * Validates that the parsed JSON matches the expected TH4State shape before applying.
    * @param e - File input change event
    */
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,10 +120,16 @@ export default function StateIOButtons({ getState, setState }: Props) {
 
     reader.onload = (event) => {
       try {
-        const parsed = JSON.parse(event.target?.result as string);
+        const parsed: unknown = JSON.parse(event.target?.result as string);
+        if (!isTH4State(parsed)) {
+          alert(
+            "Invalid state file: the JSON does not match the expected format.",
+          );
+          return;
+        }
         setState(parsed);
       } catch {
-        alert("Invalid JSON file");
+        alert("Invalid JSON file: the file could not be parsed.");
       }
     };
 
