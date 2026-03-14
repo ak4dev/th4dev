@@ -7,6 +7,8 @@ import type { InvestmentCalculatorProps, LineGraphEntry } from "../types/types";
 import {
   MONTHS_PER_YEAR,
   PERCENTAGE_DIVISOR,
+  MAX_PROJECTED_GAIN,
+  MAX_YEARS_OF_GROWTH,
 } from "../constants/app-constants";
 
 /**
@@ -23,6 +25,7 @@ export class InvestmentCalculator {
   private readonly props: InvestmentCalculatorProps;
   private readonly today: Date = new Date();
   private readonly currentMonth: number = this.today.getMonth();
+  private readonly growthMatrix: LineGraphEntry[] = [];
 
   /**
    * Creates an instance of InvestmentCalculator
@@ -39,15 +42,18 @@ export class InvestmentCalculator {
   /**
    * Calculates the final investment value after all growth, contributions, and withdrawals
    * @param showInflation - Whether to return inflation-adjusted value
-   * @returns Formatted currency string of the final investment value
+   * @returns Object containing both the formatted currency string and the raw numeric value
    */
-  public calculateGrowth(showInflation: boolean): string {
+  public calculateGrowth(showInflation: boolean): {
+    formatted: string;
+    numeric: number;
+  } {
     if (!this.isValidInput()) {
-      return "";
+      return { formatted: "", numeric: 0 };
     }
 
-    // Clear any existing growth data
-    this.props.growthMatrix.length = 0;
+    // Reset growth data for this calculation run
+    this.growthMatrix.length = 0;
 
     // Initialize calculation variables
     let nominalAmount = this.getInitialAmount();
@@ -76,7 +82,8 @@ export class InvestmentCalculator {
     }
 
     const finalAmount = showInflation ? inflationAdjustedAmount : nominalAmount;
-    return this.formatCurrency(Math.floor(finalAmount));
+    const numeric = Math.floor(finalAmount);
+    return { formatted: this.formatCurrency(numeric), numeric };
   }
 
   /**
@@ -97,7 +104,7 @@ export class InvestmentCalculator {
    * @returns Array of line graph entries containing date and value data
    */
   public getGrowthMatrix(): LineGraphEntry[] {
-    return this.props.growthMatrix;
+    return this.growthMatrix;
   }
 
   /**
@@ -129,15 +136,30 @@ export class InvestmentCalculator {
    * ================================================== */
 
   /**
-   * Validates that required inputs are present and valid
+   * Validates that required inputs are present and within acceptable bounds
    * @returns True if inputs are valid, false otherwise
    */
   private isValidInput(): boolean {
-    return !!(
-      this.props.currentAmount &&
-      this.props.projectedGain !== undefined &&
-      this.props.yearsOfGrowth !== undefined
+    if (!InvestmentCalculator.isValidNumericString(this.props.currentAmount)) {
+      return false;
+    }
+    const amount = Number(this.props.currentAmount);
+    return (
+      amount >= 0 &&
+      this.props.projectedGain >= 0 &&
+      this.props.projectedGain <= MAX_PROJECTED_GAIN &&
+      this.props.yearsOfGrowth >= 0 &&
+      this.props.yearsOfGrowth <= MAX_YEARS_OF_GROWTH
     );
+  }
+
+  /**
+   * Checks whether a value is a non-empty string that parses to a finite number
+   * @param value - The value to check
+   * @returns True if the value represents a valid numeric string
+   */
+  private static isValidNumericString(value: string | undefined): boolean {
+    return value !== undefined && value !== "" && !isNaN(Number(value));
   }
 
   /**
@@ -230,7 +252,7 @@ export class InvestmentCalculator {
     inflationAdjusted: number,
     showInflation: boolean,
   ): void {
-    this.props.growthMatrix.push({
+    this.growthMatrix.push({
       x: addYears(this.today, year),
       y: Math.floor(showInflation ? inflationAdjusted : nominal),
       alternateY: Math.floor(showInflation ? nominal : inflationAdjusted),

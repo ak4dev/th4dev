@@ -181,7 +181,9 @@ export function InvestmentLineChart({
           />
           <YAxis
             domain={[0, maxValue]}
-            tickFormatter={(value) => `$${numberFormatter.format(value)}`}
+            tickFormatter={(value: number) =>
+              `$${numberFormatter.format(value)}`
+            }
             tick={{ fontSize: 12, fill: fg }}
             label={{
               value: "Value",

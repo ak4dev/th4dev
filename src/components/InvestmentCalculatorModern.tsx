@@ -99,7 +99,7 @@ const PopoverContent = styled(Popover.Content, {
   padding: "16px",
   minWidth: "200px",
   boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
-  animation: `${fadeInUp} 0.2s ease`,
+  animation: `${fadeInUp.toString()} 0.2s ease`,
 });
 const SliderRoot = styled(Slider.Root, {
   position: "relative",
@@ -278,7 +278,6 @@ export default function InvestmentCalculatorRadixModern({
     depreciationRate: sliders.yearlyInflation || DEFAULT_INFLATION_RATE,
     rollOver: false,
     investmentId: "investmentA",
-    growthMatrix: [],
     setCurrentAmount: (v: string | undefined) =>
       updateInput("currentAmountA", v ?? ""),
     setProjectedGain: (v: number) => updateSlider("projectedGainA", v),
@@ -293,9 +292,7 @@ export default function InvestmentCalculatorRadixModern({
     maxMonthlyWithdrawal: MAX_MONTHLY_WITHDRAWAL,
   };
   const calcA = new InvestmentCalculator(invAProps);
-  const totalA = parseInt(
-    calcA.calculateGrowth(toggles.showInflation).replace(/[^0-9.-]+/g, ""),
-  );
+  const totalA = calcA.calculateGrowth(toggles.showInflation).numeric;
 
   // ---------------- Investment B ----------------
   const invBProps = {
@@ -313,7 +310,6 @@ export default function InvestmentCalculatorRadixModern({
     investmentToRoll: toggles.rollover ? totalA : 0,
     yearOfRollover: toggles.rollover ? sliders.yearsOfGrowthA : undefined,
     investmentId: "investmentB",
-    growthMatrix: [],
     setCurrentAmount: (v: string | undefined) =>
       updateInput("currentAmountB", v ?? ""),
     setProjectedGain: (v: number) => updateSlider("projectedGainB", v),
@@ -328,9 +324,7 @@ export default function InvestmentCalculatorRadixModern({
     maxMonthlyWithdrawal: MAX_MONTHLY_WITHDRAWAL,
   };
   const calcB = new InvestmentCalculator(invBProps);
-  const totalB = parseInt(
-    calcB.calculateGrowth(toggles.showInflation).replace(/[^0-9.-]+/g, ""),
-  );
+  const totalB = calcB.calculateGrowth(toggles.showInflation).numeric;
 
   /* ---------------- Compute Info Panel Values ---------------- */
   const infoItems = [
@@ -373,7 +367,10 @@ export default function InvestmentCalculatorRadixModern({
       label: "Rollover Amount",
       value: toggles.rollover ? `$${totalA.toLocaleString()}` : "N/A",
     },
-    { label: "Inflation Rate", value: `${sliders.yearlyInflation || DEFAULT_INFLATION_RATE}%` },
+    {
+      label: "Inflation Rate",
+      value: `${sliders.yearlyInflation || DEFAULT_INFLATION_RATE}%`,
+    },
   ];
 
   return (
