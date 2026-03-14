@@ -67,6 +67,14 @@ const ThemeButton = styled(DropdownMenu.Item, {
     outline: "none",
     backgroundColor: "$comment",
   },
+  variants: {
+    active: {
+      true: {
+        backgroundColor: "$purple",
+        color: "$background",
+      },
+    },
+  },
 });
 
 const ColorSwatch = styled("span", {
@@ -143,10 +151,7 @@ export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
                 <ThemeButton
                   key={key}
                   onSelect={() => switchTheme(key)}
-                  style={{
-                    backgroundColor: isActive ? "$purple" : undefined,
-                    color: isActive ? "$background" : undefined,
-                  }}
+                  active={isActive}
                 >
                   <ColorSwatch
                     style={{ backgroundColor: theme.colors.background }}
