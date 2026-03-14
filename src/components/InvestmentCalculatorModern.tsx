@@ -365,37 +365,29 @@ export default function InvestmentCalculatorRadixModern({
    * clobbering.
    */
   const handleTargetA = (target: number) => {
-    if (target > 0) {
-      const withdrawal = solveForWithdrawal(
-        invAProps,
-        target,
-        toggles.showInflation,
-      );
-      setSliders((prev) => ({
-        ...prev,
-        targetValueA: target,
-        monthlyWithdrawalA: withdrawal,
-      }));
-    } else {
-      setSliders((prev) => ({ ...prev, targetValueA: 0 }));
-    }
+    const withdrawal = solveForWithdrawal(
+      invAProps,
+      target,
+      toggles.showInflation,
+    );
+    setSliders((prev) => ({
+      ...prev,
+      targetValueA: target,
+      monthlyWithdrawalA: withdrawal,
+    }));
   };
 
   const handleTargetB = (target: number) => {
-    if (target > 0) {
-      const withdrawal = solveForWithdrawal(
-        invBProps,
-        target,
-        toggles.showInflation,
-      );
-      setSliders((prev) => ({
-        ...prev,
-        targetValueB: target,
-        monthlyWithdrawalB: withdrawal,
-      }));
-    } else {
-      setSliders((prev) => ({ ...prev, targetValueB: 0 }));
-    }
+    const withdrawal = solveForWithdrawal(
+      invBProps,
+      target,
+      toggles.showInflation,
+    );
+    setSliders((prev) => ({
+      ...prev,
+      targetValueB: target,
+      monthlyWithdrawalB: withdrawal,
+    }));
   };
 
   /* ---------------- Compute Info Panel Values ---------------- */

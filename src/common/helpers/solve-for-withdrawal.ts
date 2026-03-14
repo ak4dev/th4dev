@@ -27,7 +27,7 @@ export function solveForWithdrawal(
   targetValue: number,
   showInflation: boolean,
 ): number {
-  if (targetValue <= 0) return 0;
+  if (targetValue < 0) return 0;
 
   // If even 0 withdrawal can't reach the target, the target is above projection
   const atZero = new InvestmentCalculator({ ...props, monthlyWithdrawal: 0 });
@@ -35,11 +35,9 @@ export function solveForWithdrawal(
     return 0;
   }
 
-  // Upper bound: a very large withdrawal that will definitely reduce to target
-  // Use principal + total contributions as a generous ceiling
-  const months = props.yearsOfGrowth * 12;
-  const principal = parseFloat(props.currentAmount || "0");
-  const ceiling = principal / months + props.monthlyContribution;
+  // Upper bound: use the maximum allowed monthly withdrawal as the ceiling so
+  // the binary search can find the withdrawal that drains the portfolio to 0.
+  const ceiling = props.maxMonthlyWithdrawal;
 
   const atCeiling = new InvestmentCalculator({
     ...props,
@@ -47,13 +45,8 @@ export function solveForWithdrawal(
   });
   const floorResult = atCeiling.calculateGrowth(showInflation).numeric;
 
-  let lo = floorResult >= targetValue ? 0 : 0;
-  let hi = floorResult >= targetValue ? 0 : ceiling;
-
-  if (hi === 0) {
-    // Even the ceiling withdrawal exceeds the target — binary-search wider
-    hi = ceiling * 10;
-  }
+  let lo = 0;
+  let hi = floorResult >= targetValue ? ceiling * 10 : ceiling;
 
   for (let i = 0; i < ITERATIONS; i++) {
     const mid = (lo + hi) / 2;
