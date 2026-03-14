@@ -391,25 +391,44 @@ export default function InvestmentCalculatorRadixModern({
   };
 
   /**
-   * When the inflation toggle changes, re-solve withdrawals for any active
-   * target values using the new showInflation flag so the withdrawal amount
-   * stays consistent with the selected projection mode.
+   * When the inflation toggle changes, scale any active target values by the
+   * ratio between the new and old zero-withdrawal projections, then re-solve
+   * the monthly withdrawal for the scaled target.
    */
   const handleInflationToggle = (nextShowInflation: boolean) => {
+    const baseA0 = new InvestmentCalculator({
+      ...invAProps,
+      monthlyWithdrawal: 0,
+    });
+    const baseB0 = new InvestmentCalculator({
+      ...invBProps,
+      monthlyWithdrawal: 0,
+    });
+    const ratioA =
+      baseA0.calculateGrowth(nextShowInflation).numeric /
+      (baseA0.calculateGrowth(toggles.showInflation).numeric || 1);
+    const ratioB =
+      baseB0.calculateGrowth(nextShowInflation).numeric /
+      (baseB0.calculateGrowth(toggles.showInflation).numeric || 1);
+
     updateToggle("showInflation", nextShowInflation);
     setSliders((prev) => {
       const updates: Record<string, number> = {};
       if (prev.targetValueA) {
+        const newTarget = Math.round(prev.targetValueA * ratioA);
+        updates.targetValueA = newTarget;
         updates.monthlyWithdrawalA = solveForWithdrawal(
           invAProps,
-          prev.targetValueA,
+          newTarget,
           nextShowInflation,
         );
       }
       if (prev.targetValueB) {
+        const newTarget = Math.round(prev.targetValueB * ratioB);
+        updates.targetValueB = newTarget;
         updates.monthlyWithdrawalB = solveForWithdrawal(
           invBProps,
-          prev.targetValueB,
+          newTarget,
           nextShowInflation,
         );
       }
