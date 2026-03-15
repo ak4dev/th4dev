@@ -33,3 +33,75 @@ export async function fetchStockData(
     }),
   );
 }
+
+/**
+ * Normalize ticker symbols for matching across imported state, UI input, and
+ * API responses that may differ in case or surrounding whitespace.
+ */
+export function normalizeStockSymbol(symbol: string | undefined): string {
+  return (symbol ?? "").trim().toUpperCase();
+}
+
+/**
+ * Extract the quote symbol from a stock API response when present.
+ */
+export function extractQuoteSymbol(data: unknown): string | undefined {
+  if (typeof data !== "object" || data === null) return undefined;
+
+  const globalQuote = (data as Record<string, unknown>)["Global Quote"];
+  if (typeof globalQuote === "object" && globalQuote !== null) {
+    const symbolKey = Object.keys(globalQuote as object).find((k) =>
+      k.toLowerCase().includes("symbol"),
+    );
+    if (symbolKey) {
+      const symbol = normalizeStockSymbol(
+        String((globalQuote as Record<string, unknown>)[symbolKey]),
+      );
+      if (symbol) return symbol;
+    }
+  }
+
+  const topLevelSymbolKey = Object.keys(data as object).find((k) =>
+    k.toLowerCase().includes("symbol"),
+  );
+  if (topLevelSymbolKey) {
+    const symbol = normalizeStockSymbol(
+      String((data as Record<string, unknown>)[topLevelSymbolKey]),
+    );
+    if (symbol) return symbol;
+  }
+
+  return undefined;
+}
+
+/**
+ * Extract a numeric price from a stock quote response.
+ */
+export function extractStockPrice(data: unknown): number | undefined {
+  if (typeof data !== "object" || data === null) return undefined;
+
+  const globalQuote = (data as Record<string, unknown>)["Global Quote"];
+  if (typeof globalQuote === "object" && globalQuote !== null) {
+    const priceKey = Object.keys(globalQuote as object).find((k) =>
+      k.toLowerCase().includes("price"),
+    );
+    if (priceKey) {
+      const value = parseFloat(
+        String((globalQuote as Record<string, unknown>)[priceKey]),
+      );
+      if (!Number.isNaN(value)) return value;
+    }
+  }
+
+  const topLevelPriceKey = Object.keys(data as object).find((k) =>
+    k.toLowerCase().includes("price"),
+  );
+  if (topLevelPriceKey) {
+    const value = parseFloat(
+      String((data as Record<string, unknown>)[topLevelPriceKey]),
+    );
+    if (!Number.isNaN(value)) return value;
+  }
+
+  return undefined;
+}

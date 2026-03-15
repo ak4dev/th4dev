@@ -32,6 +32,14 @@ const ChartContainer = styled("div", {
   transition: "background-color 0.25s ease",
 });
 
+const ChartTitle = styled("h4", {
+  margin: 0,
+  marginBottom: "10px",
+  fontSize: "0.875rem",
+  fontWeight: 600,
+  color: "$foreground",
+});
+
 /* ==================================================
  * Constants
  * ================================================== */
@@ -180,7 +188,8 @@ export function InvestmentLineChart({
 
   return (
     <ChartContainer>
-      <ResponsiveContainer width="100%" height="100%">
+      <ChartTitle>Investment Growth Projection</ChartTitle>
+      <ResponsiveContainer width="100%" height="92%">
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#55555533" />
           <XAxis

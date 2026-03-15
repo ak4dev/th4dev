@@ -5,7 +5,13 @@
 import { useState } from "react";
 import * as Icons from "@radix-ui/react-icons";
 import { styled } from "../../../stitches.config";
-import { fetchStockData } from "../../common/helpers/stock-client";
+import { compactModernInputStyles } from "../../common/constants/input-styles";
+import {
+  extractQuoteSymbol,
+  extractStockPrice,
+  fetchStockData,
+  normalizeStockSymbol,
+} from "../../common/helpers/stock-client";
 import { computePortfolioProjection } from "../../common/helpers/portfolio-projection";
 import type { PortfolioHolding } from "../../common/types/portfolio-types";
 import type { LineGraphEntry } from "../../common/types/types";
@@ -41,14 +47,14 @@ const HoldingsTable = styled("div", {
 
 const HoldingRow = styled("div", {
   display: "grid",
-  gridTemplateColumns: "6rem 1fr 1fr auto",
+  gridTemplateColumns: "6rem 7.25rem minmax(8rem, 1fr) auto",
   gap: "8px",
   alignItems: "center",
 });
 
 const HeaderRow = styled("div", {
   display: "grid",
-  gridTemplateColumns: "6rem 1fr 1fr auto",
+  gridTemplateColumns: "6rem 7.25rem minmax(8rem, 1fr) auto",
   gap: "8px",
   paddingBottom: "4px",
   borderBottom: "1px solid $comment",
@@ -67,17 +73,11 @@ const SymbolTag = styled("span", {
 });
 
 const NumberInput = styled("input", {
-  all: "unset",
+  ...compactModernInputStyles,
   width: "100%",
-  boxSizing: "border-box",
-  backgroundColor: "$background",
-  color: "$foreground",
-  border: "1px solid transparent",
-  borderRadius: 4,
-  padding: "4px 8px",
-  fontSize: "0.8rem",
+  maxWidth: "7.25rem",
+  minWidth: 0,
   textAlign: "right",
-  "&:focus": { borderColor: "$purple" },
 });
 
 const PriceDisplay = styled("span", {
@@ -145,22 +145,18 @@ const PortfolioValueRow = styled("div", {
   alignItems: "center",
 });
 
-const PortfolioLabel = styled("label", {
+const PortfolioLabel = styled("span", {
   fontSize: "0.75rem",
   color: "$comment",
   whiteSpace: "nowrap",
 });
 
-const PortfolioValueInput = styled("input", {
-  all: "unset",
-  backgroundColor: "$background",
-  color: "$foreground",
-  border: "1px solid transparent",
-  borderRadius: 4,
-  padding: "4px 8px",
-  fontSize: "0.875rem",
-  width: 140,
-  "&:focus": { borderColor: "$purple" },
+const PortfolioValueValue = styled("span", {
+  ...compactModernInputStyles,
+  width: 160,
+  textAlign: "right",
+  fontSize: "0.88rem",
+  color: "$cyan",
 });
 
 const InvestmentToggleGroup = styled("div", {
@@ -202,8 +198,7 @@ interface PortfolioPanelProps {
   /** API URL template with {symbol} placeholder */
   stockApiUrl: string;
   /**
-   * Default total portfolio value in USD, derived from investment calculator.
-   * The user can override this inline.
+    * Total portfolio value in USD, derived from investment calculator.
    */
   defaultPortfolioValue: number;
   /** Monthly withdrawal amount from the investment calculator */
@@ -230,43 +225,6 @@ interface PortfolioPanelProps {
   monthlyWithdrawalB?: number;
   /** Optional Investment B years of growth */
   yearsForwardB?: number;
-}
-
-/* ==================================================
- * Helpers
- * ================================================== */
-
-/**
- * Extracts a price from an Alpha Vantage GLOBAL_QUOTE response or any object
- * that contains a numeric field whose key contains "price" (case-insensitive).
- */
-function extractPrice(data: unknown): number | undefined {
-  if (typeof data !== "object" || data === null) return undefined;
-
-  // Alpha Vantage: { "Global Quote": { "05. price": "123.45", ... } }
-  const globalQuote = (data as Record<string, unknown>)["Global Quote"];
-  if (typeof globalQuote === "object" && globalQuote !== null) {
-    const priceKey = Object.keys(globalQuote as object).find((k) =>
-      k.toLowerCase().includes("price"),
-    );
-    if (priceKey) {
-      const val = parseFloat(
-        String((globalQuote as Record<string, unknown>)[priceKey]),
-      );
-      if (!isNaN(val)) return val;
-    }
-  }
-
-  // Fallback: search top-level keys for a "price" field
-  const topKey = Object.keys(data as object).find((k) =>
-    k.toLowerCase().includes("price"),
-  );
-  if (topKey) {
-    const val = parseFloat(String((data as Record<string, unknown>)[topKey]));
-    if (!isNaN(val)) return val;
-  }
-
-  return undefined;
 }
 
 /* ==================================================
@@ -314,16 +272,10 @@ export default function PortfolioPanel({
   const activeGrowthMatrixB =
     activeInvestment === "B" ? growthMatrix : growthMatrixB;
 
-  const [portfolioValue, setPortfolioValue] = useState<number>(
-    activeDefaultPortfolioValue,
-  );
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Keep portfolioValue in sync when the calculator's total changes
-  // (only if the user hasn't manually overridden it)
-  // We use a simple comparison: if portfolioValue is still at defaultPortfolioValue,
-  // update it. We achieve this by only showing the default if portfolioValue === 0.
+  const activePortfolioValue = activeDefaultPortfolioValue;
 
   const updateAllocation = (symbol: string, pct: number) => {
     setHoldings(
@@ -346,10 +298,21 @@ export default function PortfolioPanel({
       const symbols = holdings.map((h) => h.symbol);
       const results = await fetchStockData(stockApiUrl, symbols);
 
+      const resultBySymbol = new Map(
+        results.map((result) => {
+          const responseSymbol =
+            result.data != null ? extractQuoteSymbol(result.data) : undefined;
+          return [
+            normalizeStockSymbol(responseSymbol || result.symbol),
+            result,
+          ] as const;
+        }),
+      );
+
       const updated = holdings.map((h) => {
-        const result = results.find((r) => r.symbol === h.symbol);
+        const result = resultBySymbol.get(normalizeStockSymbol(h.symbol));
         if (!result || result.error || !result.data) return h;
-        const price = extractPrice(result.data);
+        const price = extractStockPrice(result.data);
         return price !== undefined ? { ...h, currentPrice: price } : h;
       });
 
@@ -369,10 +332,10 @@ export default function PortfolioPanel({
   );
 
   const projection =
-    holdingsWithPrice.length > 0 && portfolioValue > 0
+    holdingsWithPrice.length > 0 && activePortfolioValue > 0
       ? computePortfolioProjection({
           holdings: holdingsWithPrice,
-          totalPortfolioValue: portfolioValue,
+          totalPortfolioValue: activePortfolioValue,
           monthlyWithdrawal: activeMonthlyWithdrawal,
           yearsForward: activeYearsForward,
         })
@@ -390,7 +353,6 @@ export default function PortfolioPanel({
               active={activeInvestment === "A"}
               onClick={() => {
                 setSelectedInvestment("A");
-                setPortfolioValue(defaultPortfolioValue);
               }}
             >
               Investment A
@@ -399,9 +361,6 @@ export default function PortfolioPanel({
               active={activeInvestment === "B"}
               onClick={() => {
                 setSelectedInvestment("B");
-                setPortfolioValue(
-                  defaultPortfolioValueB ?? defaultPortfolioValue,
-                );
               }}
             >
               Investment B
@@ -412,17 +371,10 @@ export default function PortfolioPanel({
 
       {/* Portfolio total value override */}
       <PortfolioValueRow>
-        <PortfolioLabel htmlFor="portfolio-value">
-          Total Portfolio Value ($)
-        </PortfolioLabel>
-        <PortfolioValueInput
-          id="portfolio-value"
-          type="number"
-          min={0}
-          value={portfolioValue || ""}
-          onChange={(e) => setPortfolioValue(parseFloat(e.target.value) || 0)}
-          placeholder={String(defaultPortfolioValue)}
-        />
+        <PortfolioLabel>Total Portfolio Value ($)</PortfolioLabel>
+        <PortfolioValueValue aria-live="polite">
+          {Math.max(0, activePortfolioValue).toLocaleString("en-US")}
+        </PortfolioValueValue>
         <InfoText>
           Monthly withdrawal: ${activeMonthlyWithdrawal.toLocaleString()} ·
           Horizon: {activeYearsForward} yrs
@@ -442,15 +394,16 @@ export default function PortfolioPanel({
             <HoldingRow key={h.symbol}>
               <SymbolTag>{h.symbol}</SymbolTag>
               <NumberInput
-                type="number"
-                min={0}
-                max={100}
-                step={0.1}
+                type="text"
+                inputMode="decimal"
                 value={h.allocationPct || ""}
                 onChange={(e) =>
                   updateAllocation(
                     h.symbol,
-                    Math.min(100, parseFloat(e.target.value) || 0),
+                    Math.min(
+                      100,
+                      parseFloat(e.target.value.replace(/[^0-9.]/g, "")) || 0,
+                    ),
                   )
                 }
                 placeholder="0"

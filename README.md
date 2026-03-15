@@ -71,3 +71,15 @@ export default defineConfig([
   },
 ]);
 ```
+
+## Local Subdomain Testing
+
+This project supports subdomain-based routing in development.
+
+- Run the dev server: `npm run dev`
+- Open your mapped host with HTTPS, for example: `https://f.local.dev:5173`
+
+Why HTTPS is required:
+
+- Browsers enforce HTTPS for `.dev` domains via HSTS preload.
+- If you use HTTP with a `.dev` hostname, browsers will try TLS anyway and can show SSL errors.

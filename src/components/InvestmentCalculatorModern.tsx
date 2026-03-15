@@ -25,6 +25,7 @@ import {
   MAX_INFLATION_RATE,
   MIN_VALUE,
 } from "../common/constants/app-constants";
+import { compactModernInputStyles } from "../common/constants/input-styles";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
 
 /* ---------------- Styles & Animations ---------------- */
@@ -63,18 +64,66 @@ const Label = styled("label", {
   fontWeight: 500,
 });
 const InputField = styled("input", {
-  backgroundColor: "$currentLine",
-  color: "$foreground",
-  border: "1px solid $green",
-  borderRadius: "6px",
-  padding: "8px 12px",
-  fontSize: "1rem",
+  ...compactModernInputStyles,
+  width: "24%",
+  minWidth: "74px",
+  maxWidth: "144px",
+  variants: {
+    align: {
+      left: { textAlign: "left" },
+      center: { textAlign: "center" },
+      right: { textAlign: "right" },
+    },
+  },
+  defaultVariants: {
+    align: "right",
+  },
+});
+const FullWidthInputField = styled(InputField, {
+  display: "block",
   width: "100%",
-  transition: "all 0.2s ease",
-  "&:focus": {
-    borderColor: "$cyan",
-    outline: "none",
-    boxShadow: "0 0 0 3px $cyan",
+  minWidth: 0,
+  maxWidth: "none",
+  alignSelf: "stretch",
+});
+const SliderControlRow = styled("div", {
+  display: "flex",
+  gap: "10px",
+  alignItems: "flex-end",
+});
+const SliderInputGroup = styled("div", {
+  display: "flex",
+  flexDirection: "column",
+  gap: "4px",
+  flexShrink: 0,
+  minWidth: 0,
+  variants: {
+    size: {
+      default: { width: "24%", minWidth: "78px" },
+      narrow: { width: "19%", minWidth: "62px" },
+    },
+  },
+  defaultVariants: { size: "default" },
+});
+const SliderInlineLabel = styled("label", {
+  fontSize: "0.7rem",
+  color: "$comment",
+  fontWeight: 500,
+  whiteSpace: "nowrap",
+});
+const SliderValueInput = styled("input", {
+  ...compactModernInputStyles,
+  width: "100%",
+  minWidth: 0,
+  maxWidth: "none",
+  variants: {
+    align: {
+      left: { textAlign: "left" },
+      right: { textAlign: "right" },
+    },
+  },
+  defaultVariants: {
+    align: "right",
   },
 });
 const AmountsGrid = styled("div", {
@@ -109,8 +158,11 @@ const SliderRoot = styled(Slider.Root, {
   position: "relative",
   display: "flex",
   alignItems: "center",
-  width: "100%",
+  flex: 1,
+  minWidth: 0,
   height: "24px",
+  alignSelf: "flex-end",
+  marginBottom: "4px",
 });
 const SliderTrack = styled(Slider.Track, {
   backgroundColor: "$cyan",
@@ -185,9 +237,15 @@ const TogglesGrid = styled("div", {
 function CurrencyInput({
   value,
   onChange,
+  placeholder,
+  fullWidth = false,
+  align = "right",
 }: {
   value?: string;
   onChange: (v: string) => void;
+  placeholder?: string;
+  fullWidth?: boolean;
+  align?: "left" | "center" | "right";
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const editing = draft !== null;
@@ -198,10 +256,14 @@ function CurrencyInput({
       ? `$${parseInt(value).toLocaleString()}`
       : "";
 
+  const InputComponent = fullWidth ? FullWidthInputField : InputField;
+
   return (
-    <InputField
+    <InputComponent
+      align={align}
       type="text"
       value={display}
+      placeholder={placeholder}
       onFocus={() => setDraft(value?.replace(/[^0-9]/g, "") ?? "")}
       onChange={(e) => {
         const raw = e.target.value.replace(/[^0-9]/g, "");
@@ -223,6 +285,8 @@ function InvestmentSlider({
   max,
   step = 1,
   onChange,
+  inputAlign = "right",
+  inputGroupSize = "default",
 }: {
   label: string;
   value: number;
@@ -230,14 +294,32 @@ function InvestmentSlider({
   max: number;
   step?: number;
   onChange: (v: number) => void;
+  inputAlign?: "left" | "right";
+  inputGroupSize?: "default" | "narrow";
 }) {
+  const numericValue = Number.isFinite(value) ? value : 0;
+
   return (
-    <div>
-      <Label>
-        {label}: {value}
-      </Label>
+    <SliderControlRow>
+      <SliderInputGroup size={inputGroupSize}>
+        <SliderInlineLabel>{label}</SliderInlineLabel>
+        <SliderValueInput
+          align={inputAlign}
+          type="text"
+          inputMode="decimal"
+          aria-label={label}
+          value={String(numericValue)}
+          onChange={(e) => {
+            const cleaned = e.target.value.replace(/[^0-9.]/g, "");
+            const parsed = parseFloat(cleaned);
+            if (Number.isNaN(parsed)) return;
+            const clamped = Math.min(max, Math.max(min, parsed));
+            onChange(clamped);
+          }}
+        />
+      </SliderInputGroup>
       <SliderRoot
-        value={[value]}
+        value={[numericValue]}
         min={min}
         max={max}
         step={step}
@@ -248,7 +330,7 @@ function InvestmentSlider({
         </SliderTrack>
         <SliderThumb />
       </SliderRoot>
-    </div>
+    </SliderControlRow>
   );
 }
 function SwitchButton({
@@ -415,29 +497,81 @@ export default function InvestmentCalculatorRadixModern({
    * and converted to display units by the render layer.
    */
   const handleInflationToggle = (nextShowInflation: boolean) => {
-    updateToggle("showInflation", nextShowInflation);
+    setToggles((prev) => ({ ...prev, showInflation: nextShowInflation }));
     setSliders((prev) => {
       const updates: Record<string, number> = {};
+
+      const invAPropsFromPrev = {
+        ...invAProps,
+        projectedGain: prev.projectedGainA || DEFAULT_PROJECTED_GAIN,
+        yearsOfGrowth: prev.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH,
+        monthlyContribution: prev.monthlyContributionA || MIN_VALUE,
+        monthlyWithdrawal: prev.monthlyWithdrawalA || MIN_VALUE,
+        yearContributionsStop:
+          prev.contributionStopYearA ?? prev.yearsOfGrowthA,
+        yearWithdrawalsBegin: prev.withdrawalStartYearA || MIN_VALUE,
+      };
+
+      const baseA0ForMax = new InvestmentCalculator({
+        ...invAPropsFromPrev,
+        monthlyWithdrawal: 0,
+      });
+      const nominalMaxAForToggle =
+        baseA0ForMax.calculateGrowth(false).numeric || 1;
+      const inflatedMaxAForToggle = baseA0ForMax.calculateGrowth(true).numeric;
+
       if (prev.targetValueA) {
-        const displayTarget = nextShowInflation
-          ? Math.round(prev.targetValueA * (inflatedMaxA / nominalMaxA))
+        const displayTargetAForToggle = nextShowInflation
+          ? Math.round(
+              prev.targetValueA *
+                (inflatedMaxAForToggle / nominalMaxAForToggle),
+            )
           : prev.targetValueA;
         updates.monthlyWithdrawalA = solveForWithdrawal(
-          invAProps,
-          displayTarget,
+          invAPropsFromPrev,
+          displayTargetAForToggle,
           nextShowInflation,
         );
       }
+
+      const totalAForRollover = new InvestmentCalculator(
+        invAPropsFromPrev,
+      ).calculateGrowth(nextShowInflation).numeric;
+
+      const invBPropsFromPrev = {
+        ...invBProps,
+        projectedGain: prev.projectedGainB || DEFAULT_PROJECTED_GAIN,
+        yearsOfGrowth: prev.yearsOfGrowthB || DEFAULT_YEARS_OF_GROWTH,
+        monthlyContribution: prev.monthlyContributionB || MIN_VALUE,
+        monthlyWithdrawal: prev.monthlyWithdrawalB || MIN_VALUE,
+        yearContributionsStop:
+          prev.contributionStopYearB ?? prev.yearsOfGrowthB,
+        yearWithdrawalsBegin: prev.withdrawalStartYearB || MIN_VALUE,
+        investmentToRoll: toggles.rollover ? totalAForRollover : 0,
+      };
+
+      const baseB0ForMax = new InvestmentCalculator({
+        ...invBPropsFromPrev,
+        monthlyWithdrawal: 0,
+      });
+      const nominalMaxBForToggle =
+        baseB0ForMax.calculateGrowth(false).numeric || 1;
+      const inflatedMaxBForToggle = baseB0ForMax.calculateGrowth(true).numeric;
+
       if (prev.targetValueB) {
-        const displayTarget = nextShowInflation
-          ? Math.round(prev.targetValueB * (inflatedMaxB / nominalMaxB))
+        const displayTargetBForToggle = nextShowInflation
+          ? Math.round(
+              prev.targetValueB *
+                (inflatedMaxBForToggle / nominalMaxBForToggle),
+            )
           : prev.targetValueB;
         updates.monthlyWithdrawalB = solveForWithdrawal(
-          invBProps,
-          displayTarget,
+          invBPropsFromPrev,
+          displayTargetBForToggle,
           nextShowInflation,
         );
       }
+
       return { ...prev, ...updates };
     });
   };
@@ -612,6 +746,8 @@ export default function InvestmentCalculatorRadixModern({
           <CurrencyInput
             value={inputs.currentAmountA}
             onChange={(v) => updateInput("currentAmountA", v)}
+            fullWidth
+            align="center"
           />
           <InvestmentSlider
             label="Return (%)"
@@ -660,12 +796,21 @@ export default function InvestmentCalculatorRadixModern({
             </>
           )}
           {/* Target value — sets the monthly withdrawal to reach this balance */}
-          <div>
-            <Label>Target Value (sets Withdrawal)</Label>
-            <CurrencyInput
-              value={String(displayTargetA)}
-              onChange={(v) => handleTargetA(Number(v))}
-            />
+          <SliderControlRow>
+            <SliderInputGroup>
+              <SliderInlineLabel>Target Value</SliderInlineLabel>
+              <SliderValueInput
+                type="text"
+                inputMode="numeric"
+                aria-label="Target Value"
+                value={displayTargetA ? String(displayTargetA) : ""}
+                onChange={(e) =>
+                  handleTargetA(
+                    Number(e.target.value.replace(/[^0-9]/g, "")) || 0,
+                  )
+                }
+              />
+            </SliderInputGroup>
             <SliderRoot
               value={[Math.min(displayTargetA, maxTargetA)]}
               min={0}
@@ -678,7 +823,7 @@ export default function InvestmentCalculatorRadixModern({
               </SliderTrack>
               <SliderThumb />
             </SliderRoot>
-          </div>
+          </SliderControlRow>
         </Panel>
 
         {/* Investment B Panel */}
@@ -687,6 +832,8 @@ export default function InvestmentCalculatorRadixModern({
             <CurrencyInput
               value={inputs.currentAmountB}
               onChange={(v) => updateInput("currentAmountB", v)}
+              fullWidth
+              align="center"
             />
             <InvestmentSlider
               label="Return (%)"
@@ -731,12 +878,21 @@ export default function InvestmentCalculatorRadixModern({
               onChange={(v) => updateSlider("withdrawalStartYearB", v)}
             />
             {/* Target value for Investment B */}
-            <div>
-              <Label>Target Value (sets Withdrawal)</Label>
-              <CurrencyInput
-                value={String(displayTargetB)}
-                onChange={(v) => handleTargetB(Number(v))}
-              />
+            <SliderControlRow>
+              <SliderInputGroup>
+                <SliderInlineLabel>Target Value</SliderInlineLabel>
+                <SliderValueInput
+                  type="text"
+                  inputMode="numeric"
+                  aria-label="Target Value"
+                  value={displayTargetB ? String(displayTargetB) : ""}
+                  onChange={(e) =>
+                    handleTargetB(
+                      Number(e.target.value.replace(/[^0-9]/g, "")) || 0,
+                    )
+                  }
+                />
+              </SliderInputGroup>
               <SliderRoot
                 value={[Math.min(displayTargetB, maxTargetB)]}
                 min={0}
@@ -749,7 +905,7 @@ export default function InvestmentCalculatorRadixModern({
                 </SliderTrack>
                 <SliderThumb />
               </SliderRoot>
-            </div>
+            </SliderControlRow>
           </Panel>
         )}
 
@@ -791,6 +947,8 @@ export default function InvestmentCalculatorRadixModern({
             min={MIN_VALUE}
             max={MAX_INFLATION_RATE}
             step={0.1}
+            inputAlign="left"
+            inputGroupSize="narrow"
             onChange={(v) => updateSlider("yearlyInflation", v)}
           />
 

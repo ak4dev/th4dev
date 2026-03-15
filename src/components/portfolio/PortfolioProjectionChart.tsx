@@ -30,6 +30,14 @@ const ChartContainer = styled("div", {
   padding: "16px",
 });
 
+const ChartTitle = styled("h4", {
+  margin: 0,
+  marginBottom: "10px",
+  fontSize: "0.82rem",
+  fontWeight: 600,
+  color: "$comment",
+});
+
 /* ==================================================
  * Constants
  * ================================================== */
@@ -99,7 +107,8 @@ export default function PortfolioProjectionChart({
 
   return (
     <ChartContainer>
-      <ResponsiveContainer width="100%" height="100%">
+      <ChartTitle>Required Share Price Projection</ChartTitle>
+      <ResponsiveContainer width="100%" height="92%">
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#55555533" />
           <XAxis

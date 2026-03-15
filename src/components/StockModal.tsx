@@ -6,7 +6,13 @@ import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Icons from "@radix-ui/react-icons";
 import { styled, keyframes } from "../../stitches.config";
-import { fetchStockData } from "../common/helpers/stock-client";
+import { compactModernInputStyles } from "../common/constants/input-styles";
+import {
+  extractQuoteSymbol,
+  extractStockPrice,
+  fetchStockData,
+  normalizeStockSymbol,
+} from "../common/helpers/stock-client";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
 
 /* ==================================================
@@ -67,19 +73,10 @@ const Label = styled("label", {
 });
 
 const Input = styled("input", {
-  all: "unset",
-  display: "block",
-  width: "100%",
-  boxSizing: "border-box",
-  backgroundColor: "$currentLine",
-  color: "$foreground",
-  borderRadius: 5,
-  padding: "0.5rem 0.75rem",
-  fontSize: "0.875rem",
+  ...compactModernInputStyles,
+  borderRadius: 7,
+  padding: "0.5rem 0.7rem",
   marginBottom: "1rem",
-  border: "1px solid transparent",
-  "&:focus": { borderColor: "$purple" },
-  "&::placeholder": { color: "$comment" },
 });
 
 const Row = styled("div", {
@@ -232,6 +229,29 @@ export default function StockModal({
     setResults(null);
     try {
       const data = await fetchStockData(apiUrl, symbols);
+      const resultBySymbol = new Map(
+        data.map((result) => {
+          const responseSymbol =
+            result.data != null ? extractQuoteSymbol(result.data) : undefined;
+          return [
+            normalizeStockSymbol(responseSymbol || result.symbol),
+            result,
+          ] as const;
+        }),
+      );
+
+      setHoldings(
+        holdings.map((holding) => {
+          const result = resultBySymbol.get(normalizeStockSymbol(holding.symbol));
+          if (!result || result.error || !result.data) return holding;
+
+          const price = extractStockPrice(result.data);
+          return price !== undefined
+            ? { ...holding, currentPrice: price }
+            : holding;
+        }),
+      );
+
       setResults(JSON.stringify(data, null, 2));
     } catch (err) {
       setError(String(err));
