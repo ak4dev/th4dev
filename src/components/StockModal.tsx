@@ -242,7 +242,9 @@ export default function StockModal({
 
       setHoldings(
         holdings.map((holding) => {
-          const result = resultBySymbol.get(normalizeStockSymbol(holding.symbol));
+          const result = resultBySymbol.get(
+            normalizeStockSymbol(holding.symbol),
+          );
           if (!result || result.error || !result.data) return holding;
 
           const price = extractStockPrice(result.data);

@@ -21,7 +21,8 @@ export const compactModernInputStyles = {
   appearance: "none" as const,
   MozAppearance: "textfield" as const,
   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
-  transition: "border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease",
+  transition:
+    "border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease",
   "&::placeholder": {
     color: "$comment",
     opacity: 0.8,

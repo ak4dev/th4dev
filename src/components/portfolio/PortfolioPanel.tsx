@@ -74,8 +74,8 @@ const SymbolTag = styled("span", {
 
 const NumberInput = styled("input", {
   ...compactModernInputStyles,
-  width: "100%",
-  maxWidth: "7.25rem",
+  width: "5ch",
+  maxWidth: "5ch",
   minWidth: 0,
   textAlign: "right",
 });
@@ -152,11 +152,18 @@ const PortfolioLabel = styled("span", {
 });
 
 const PortfolioValueValue = styled("span", {
-  ...compactModernInputStyles,
-  width: 160,
-  textAlign: "right",
-  fontSize: "0.88rem",
-  color: "$cyan",
+  minWidth: 0,
+  textAlign: "left",
+  fontSize: "0.75rem",
+  fontWeight: 700,
+  letterSpacing: "0.01em",
+  color: "$green",
+});
+
+const PortfolioMeta = styled("span", {
+  marginLeft: "8px",
+  color: "$comment",
+  fontSize: "0.75rem",
 });
 
 const InvestmentToggleGroup = styled("div", {
@@ -198,7 +205,7 @@ interface PortfolioPanelProps {
   /** API URL template with {symbol} placeholder */
   stockApiUrl: string;
   /**
-    * Total portfolio value in USD, derived from investment calculator.
+   * Total portfolio value in USD, derived from investment calculator.
    */
   defaultPortfolioValue: number;
   /** Monthly withdrawal amount from the investment calculator */
@@ -371,14 +378,14 @@ export default function PortfolioPanel({
 
       {/* Portfolio total value override */}
       <PortfolioValueRow>
-        <PortfolioLabel>Total Portfolio Value ($)</PortfolioLabel>
+        <PortfolioLabel>Total Portfolio Value</PortfolioLabel>
         <PortfolioValueValue aria-live="polite">
-          {Math.max(0, activePortfolioValue).toLocaleString("en-US")}
+          ${Math.max(0, activePortfolioValue).toLocaleString("en-US")}
         </PortfolioValueValue>
-        <InfoText>
-          Monthly withdrawal: ${activeMonthlyWithdrawal.toLocaleString()} ·
+        <PortfolioMeta>
+          · Monthly withdrawal: ${activeMonthlyWithdrawal.toLocaleString()} ·
           Horizon: {activeYearsForward} yrs
-        </InfoText>
+        </PortfolioMeta>
       </PortfolioValueRow>
 
       {/* Holdings table */}
@@ -386,7 +393,7 @@ export default function PortfolioPanel({
         <HoldingsTable>
           <HeaderRow>
             <ColLabel>Symbol</ColLabel>
-            <ColLabel style={{ textAlign: "right" }}>Allocation %</ColLabel>
+            <ColLabel>Allocation %</ColLabel>
             <ColLabel style={{ textAlign: "right" }}>Current Price</ColLabel>
             <ColLabel />
           </HeaderRow>

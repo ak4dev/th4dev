@@ -4,6 +4,7 @@
 
 import { type JSX } from "react";
 import InvestmentCalculatorRadixModern from "./InvestmentCalculatorModern";
+import LandingReadme from "./LandingReadme";
 import type { TH4State } from "../common/types/types";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
 
@@ -87,7 +88,7 @@ const SubdomainRouter = ({
     setStockHoldings,
   };
 
-  return factory ? factory(sharedProps) : <div />;
+  return factory ? factory(sharedProps) : <LandingReadme />;
 };
 
 export default SubdomainRouter;
