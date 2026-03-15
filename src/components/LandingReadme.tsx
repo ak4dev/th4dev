@@ -106,8 +106,7 @@ const TabButton = styled("button", {
   "&:hover": {
     backgroundColor:
       "color-mix(in srgb, var(--colors-currentLine) 70%, transparent)",
-    borderColor:
-      "color-mix(in srgb, var(--colors-comment) 40%, transparent)",
+    borderColor: "color-mix(in srgb, var(--colors-comment) 40%, transparent)",
     color: "$foreground",
   },
   '&[data-active="true"]': {
@@ -183,7 +182,9 @@ const ActionRow = styled("div", {
   marginTop: "4px",
 });
 
-const ActionLink = styled("a", {
+const ActionButton = styled("button", {
+  all: "unset",
+  cursor: "pointer",
   display: "inline-flex",
   alignItems: "center",
   gap: "10px",
@@ -224,7 +225,8 @@ const SectionGrid = styled("div", {
 });
 
 const Card = styled("section", {
-  border: "1px solid color-mix(in srgb, var(--colors-comment) 35%, transparent)",
+  border:
+    "1px solid color-mix(in srgb, var(--colors-comment) 35%, transparent)",
   borderRadius: "14px",
   padding: "14px",
   backgroundColor:
@@ -354,6 +356,73 @@ const FooterHint = styled("span", {
   color: "$comment",
 });
 
+const StorageToggleBar = styled("div", {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: "14px",
+  padding: "14px 16px",
+  margin: "0 0 4px",
+  borderRadius: "10px",
+  border: "1px solid color-mix(in srgb, var(--colors-orange) 50%, transparent)",
+  backgroundColor: "color-mix(in srgb, var(--colors-orange) 8%, transparent)",
+});
+
+const StorageToggleLabel = styled("div", {
+  flex: 1,
+  display: "flex",
+  flexDirection: "column",
+  gap: "4px",
+});
+
+const StorageToggleTitle = styled("span", {
+  fontSize: "0.82rem",
+  fontWeight: 700,
+  color: "$orange",
+});
+
+const StorageToggleDisclaimer = styled("span", {
+  fontSize: "0.73rem",
+  color: "$comment",
+  lineHeight: 1.5,
+});
+
+const ToggleSwitch = styled("button", {
+  all: "unset",
+  cursor: "pointer",
+  flexShrink: 0,
+  width: "40px",
+  height: "22px",
+  borderRadius: "999px",
+  position: "relative",
+  transition: "background 0.2s",
+  marginTop: "2px",
+  variants: {
+    on: {
+      true: { backgroundColor: "$orange" },
+      false: { backgroundColor: "$comment" },
+    },
+  },
+  defaultVariants: { on: false },
+  "&::after": {
+    content: '""',
+    position: "absolute",
+    top: "3px",
+    width: "16px",
+    height: "16px",
+    borderRadius: "50%",
+    backgroundColor: "$background",
+    transition: "left 0.2s",
+  },
+});
+
+const ToggleSwitchOn = styled(ToggleSwitch, {
+  "&::after": { left: "21px" },
+});
+
+const ToggleSwitchOff = styled(ToggleSwitch, {
+  "&::after": { left: "3px" },
+});
+
 const DOC_TABS = [
   {
     id: "general",
@@ -401,11 +470,20 @@ function getWorkspaceLabel() {
   return firstToken || "workspace";
 }
 
-export default function LandingReadme() {
+export default function LandingReadme({
+  onNavigate,
+  localStorageEnabled = false,
+  onLocalStorageToggle,
+}: {
+  onNavigate?: (page: string) => void;
+  localStorageEnabled?: boolean;
+  onLocalStorageToggle?: (enabled: boolean) => void;
+}) {
   const calculatorUrl = getCalculatorUrl();
   const workspaceLabel = getWorkspaceLabel();
   const [activeTab, setActiveTab] = useState<DocTabId>(DOC_TABS[0].id);
-  const activeDocument = DOC_TABS.find((tab) => tab.id === activeTab) ?? DOC_TABS[0];
+  const activeDocument =
+    DOC_TABS.find((tab) => tab.id === activeTab) ?? DOC_TABS[0];
   const isGeneralTab = activeDocument.id === "general";
 
   return (
@@ -467,11 +545,16 @@ export default function LandingReadme() {
                     tools are added.
                   </Lead>
                   <ActionRow>
-                    {calculatorUrl ? (
-                      <ActionLink href={calculatorUrl}>
+                    {onNavigate ? (
+                      <ActionButton onClick={() => onNavigate("f")}>
                         <Icons.OpenInNewWindowIcon />
                         <span>Open financial workspace</span>
-                      </ActionLink>
+                      </ActionButton>
+                    ) : calculatorUrl ? (
+                      <ActionButton as="a" href={calculatorUrl}>
+                        <Icons.OpenInNewWindowIcon />
+                        <span>Open financial workspace</span>
+                      </ActionButton>
                     ) : (
                       <MutedChip>
                         <Icons.GlobeIcon />
@@ -486,50 +569,84 @@ export default function LandingReadme() {
             </Hero>
 
             {isGeneralTab ? (
-              <Card>
-                <CardTitle>
-                  <Icons.InfoCircledIcon />
-                  <span>General usage and disclaimer</span>
-                </CardTitle>
-                <ReadmeList>
-                  <ReadmeItem>
-                    <Bullet>•</Bullet>
-                    <ItemText>
-                      This section is a guide of general features available in
-                      this application.
-                    </ItemText>
-                  </ReadmeItem>
-                  <ReadmeItem>
-                    <Bullet>•</Bullet>
-                    <ItemText>
-                      <strong>Theme Switcher</strong> applies the selected color
-                      palette immediately.
-                    </ItemText>
-                  </ReadmeItem>
-                  <ReadmeItem>
-                    <Bullet>•</Bullet>
-                    <ItemText>
-                      <strong>Export</strong> saves current state as JSON and
-                      <strong> Import</strong> restores a previously saved
-                      configuration.
-                    </ItemText>
-                  </ReadmeItem>
-                  <ReadmeItem>
-                    <Bullet>•</Bullet>
-                    <ItemText>
-                      <strong>Hotkeys:</strong> Ctrl+Shift+S opens the stock
-                      modal, and Enter submits symbols from the modal input.
-                    </ItemText>
-                  </ReadmeItem>
-                  <ReadmeItem>
-                    <Bullet>•</Bullet>
-                    <ItemText>
-                      Most of this tool is AI generated and should not be
-                      trusted without independent review and verification.
-                    </ItemText>
-                  </ReadmeItem>
-                </ReadmeList>
-              </Card>
+              <>
+                {/* localStorage opt-in toggle — always visible on general tab */}
+                {onLocalStorageToggle && (
+                  <StorageToggleBar>
+                    <StorageToggleLabel>
+                      <StorageToggleTitle>
+                        {localStorageEnabled
+                          ? "⚠ Local storage is ON"
+                          : "Local storage: off (default)"}
+                      </StorageToggleTitle>
+                      <StorageToggleDisclaimer>
+                        {localStorageEnabled
+                          ? "All tool state (inputs, portfolio, theme) is being saved to this browser. Disable to stop storing data and clear what has been saved."
+                          : "No data is stored in this browser. All session data is lost on page reload. Enable to persist your data locally — data stays on your machine only and is never transmitted."}
+                      </StorageToggleDisclaimer>
+                    </StorageToggleLabel>
+                    {localStorageEnabled ? (
+                      <ToggleSwitchOn
+                        on={true}
+                        aria-label="Disable local storage"
+                        onClick={() => onLocalStorageToggle(false)}
+                      />
+                    ) : (
+                      <ToggleSwitchOff
+                        on={false}
+                        aria-label="Enable local storage"
+                        onClick={() => onLocalStorageToggle(true)}
+                      />
+                    )}
+                  </StorageToggleBar>
+                )}
+                <Card>
+                  <CardTitle>
+                    <Icons.InfoCircledIcon />
+                    <span>General usage and disclaimer</span>
+                  </CardTitle>
+                  <ReadmeList>
+                    <ReadmeItem>
+                      <Bullet>•</Bullet>
+                      <ItemText>
+                        This section is a guide of general features available in
+                        this application.
+                      </ItemText>
+                    </ReadmeItem>
+                    <ReadmeItem>
+                      <Bullet>•</Bullet>
+                      <ItemText>
+                        <strong>Theme Switcher</strong> applies the selected
+                        color palette immediately.
+                      </ItemText>
+                    </ReadmeItem>
+                    <ReadmeItem>
+                      <Bullet>•</Bullet>
+                      <ItemText>
+                        <strong>Export</strong> saves current state as JSON and
+                        <strong> Import</strong> restores a previously saved
+                        configuration.
+                      </ItemText>
+                    </ReadmeItem>
+                    <ReadmeItem>
+                      <Bullet>•</Bullet>
+                      <ItemText>
+                        <strong>Hotkeys:</strong> Ctrl+Shift+F opens the
+                        financial workspace from any page, Ctrl+Shift+S opens
+                        the stock modal, Ctrl+Shift+H toggles this help overlay,
+                        and Enter submits symbols from the modal input.
+                      </ItemText>
+                    </ReadmeItem>
+                    <ReadmeItem>
+                      <Bullet>•</Bullet>
+                      <ItemText>
+                        Most of this tool is AI generated and should not be
+                        trusted without independent review and verification.
+                      </ItemText>
+                    </ReadmeItem>
+                  </ReadmeList>
+                </Card>
+              </>
             ) : (
               <SectionGrid>
                 <Card>
@@ -566,8 +683,8 @@ export default function LandingReadme() {
                     <ReadmeItem>
                       <Bullet>4</Bullet>
                       <ItemText>
-                        Toggle <strong>Inflated</strong> for
-                        inflation-adjusted numbers and
+                        Toggle <strong>Inflated</strong> for inflation-adjusted
+                        numbers and
                         <strong> Rollover</strong> to roll A into B at A&apos;s
                         finish year.
                       </ItemText>

@@ -12,7 +12,6 @@ export default defineConfig({
   ],
   server: {
     host: true,
-    https: true,
   },
   resolve: {
     dedupe: ["react", "react-dom"], // <- ensures only one React instance

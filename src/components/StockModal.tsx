@@ -170,6 +170,33 @@ const CloseButton = styled(Dialog.Close, {
   "&:hover": { color: "$foreground" },
 });
 
+const StartPriceTable = styled("div", {
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.35rem",
+  marginBottom: "1rem",
+});
+
+const StartPriceRow = styled("div", {
+  display: "grid",
+  gridTemplateColumns: "5rem 1fr",
+  gap: "0.5rem",
+  alignItems: "center",
+});
+
+const SymbolLabel = styled("span", {
+  fontSize: "0.8rem",
+  fontWeight: 600,
+  color: "$cyan",
+});
+
+const SmallInput = styled("input", {
+  ...compactModernInputStyles,
+  borderRadius: 5,
+  padding: "0.3rem 0.5rem",
+  width: "100%",
+});
+
 const Hint = styled("p", {
   fontSize: "0.7rem",
   color: "$comment",
@@ -249,7 +276,13 @@ export default function StockModal({
 
           const price = extractStockPrice(result.data);
           return price !== undefined
-            ? { ...holding, currentPrice: price }
+            ? {
+                ...holding,
+                currentPrice: price,
+                startPrice: holding.startPrice ?? price,
+                projectionStartDate:
+                  holding.projectionStartDate ?? new Date().toISOString(),
+              }
             : holding;
         }),
       );
@@ -329,6 +362,48 @@ export default function StockModal({
           </Row>
 
           {error && <ErrorText>{error}</ErrorText>}
+
+          {/* Editable projection start prices */}
+          {holdings.length > 0 && (
+            <>
+              <Label>Projection Start Prices</Label>
+              <Hint>
+                Autofilled on first fetch and locked. Edit here to reset the
+                capital-preservation baseline to today.
+              </Hint>
+              <StartPriceTable>
+                {holdings.map((h) => (
+                  <StartPriceRow key={h.symbol}>
+                    <SymbolLabel>{h.symbol}</SymbolLabel>
+                    <SmallInput
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={h.startPrice ?? ""}
+                      onChange={(e) => {
+                        const price = parseFloat(e.target.value);
+                        setHoldings(
+                          holdings.map((holding) =>
+                            holding.symbol === h.symbol
+                              ? {
+                                  ...holding,
+                                  startPrice: isNaN(price) ? undefined : price,
+                                  projectionStartDate: isNaN(price)
+                                    ? undefined
+                                    : new Date().toISOString(),
+                                }
+                              : holding,
+                          ),
+                        );
+                      }}
+                      placeholder="—"
+                    />
+                  </StartPriceRow>
+                ))}
+              </StartPriceTable>
+            </>
+          )}
+
           {results && <Results>{results}</Results>}
         </Content>
       </Dialog.Portal>

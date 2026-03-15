@@ -237,7 +237,6 @@ export default function CapitalPreservationSchedule({
   withdrawalStartYear,
   monthlyWithdrawal,
   withdrawalStartYearB,
-  growthMatrixB,
   primaryWithdrawalLabel = "A",
   secondaryWithdrawalLabel = "B",
 }: CapitalPreservationScheduleProps) {
@@ -261,11 +260,8 @@ export default function CapitalPreservationSchedule({
 
   if (growthMatrix.length === 0 || pricedHoldings.length === 0) return null;
 
-  // Extend A's timeline with B's tail entries when B runs longer
-  const baseMatrix =
-    growthMatrixB && growthMatrixB.length > growthMatrix.length
-      ? [...growthMatrix, ...growthMatrixB.slice(growthMatrix.length)]
-      : growthMatrix;
+  // The active investment's matrix defines the timeline; never extend past it
+  const baseMatrix = growthMatrix;
 
   const initialValue = baseMatrix[0]?.y;
   if (!initialValue) return null;

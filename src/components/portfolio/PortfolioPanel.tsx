@@ -47,14 +47,14 @@ const HoldingsTable = styled("div", {
 
 const HoldingRow = styled("div", {
   display: "grid",
-  gridTemplateColumns: "6rem 7.25rem minmax(8rem, 1fr) auto",
+  gridTemplateColumns: "6rem 7.25rem 6rem 6rem minmax(6rem, 1fr) auto",
   gap: "8px",
   alignItems: "center",
 });
 
 const HeaderRow = styled("div", {
   display: "grid",
-  gridTemplateColumns: "6rem 7.25rem minmax(8rem, 1fr) auto",
+  gridTemplateColumns: "6rem 7.25rem 6rem 6rem minmax(6rem, 1fr) auto",
   gap: "8px",
   paddingBottom: "4px",
   borderBottom: "1px solid $comment",
@@ -83,6 +83,25 @@ const NumberInput = styled("input", {
 const PriceDisplay = styled("span", {
   fontSize: "0.8rem",
   color: "$green",
+  textAlign: "right",
+});
+
+const TargetPriceCell = styled("span", {
+  fontSize: "0.8rem",
+  textAlign: "right",
+  variants: {
+    status: {
+      met: { color: "$green" },
+      unmet: { color: "$red" },
+      unknown: { color: "$comment" },
+    },
+  },
+  defaultVariants: { status: "unknown" },
+});
+
+const RefPriceCell = styled("span", {
+  fontSize: "0.8rem",
+  color: "$comment",
   textAlign: "right",
 });
 
@@ -196,6 +215,40 @@ const SectionTitleRow = styled("div", {
   justifyContent: "space-between",
   alignItems: "center",
 });
+
+/* ==================================================
+ * Helpers
+ * ================================================== */
+
+/**
+ * Computes the minimum required price for a holding at today's date,
+ * based on the start price and time elapsed since the projection was initialised.
+ *
+ * Formula (same as computePortfolioProjection, solved for elapsed fractional years):
+ *   target = startPrice × (1 + elapsedYears × 12 × monthlyWithdrawal / totalPortfolioValue)
+ */
+function computeTargetPriceToday(
+  h: {
+    startPrice?: number;
+    projectionStartDate?: string;
+    currentPrice?: number;
+  },
+  totalPortfolioValue: number,
+  monthlyWithdrawal: number,
+): number | undefined {
+  if (h.startPrice == null) return h.currentPrice;
+  if (!h.projectionStartDate || totalPortfolioValue <= 0) return h.startPrice;
+  const elapsedYears = Math.max(
+    0,
+    (Date.now() - new Date(h.projectionStartDate).getTime()) /
+      (365.25 * 24 * 60 * 60 * 1000),
+  );
+  return Math.max(
+    0,
+    h.startPrice *
+      (1 + (elapsedYears * 12 * monthlyWithdrawal) / totalPortfolioValue),
+  );
+}
 
 interface PortfolioPanelProps {
   /** Holdings state (symbol + allocation + optional fetched price) */
@@ -320,7 +373,15 @@ export default function PortfolioPanel({
         const result = resultBySymbol.get(normalizeStockSymbol(h.symbol));
         if (!result || result.error || !result.data) return h;
         const price = extractStockPrice(result.data);
-        return price !== undefined ? { ...h, currentPrice: price } : h;
+        return price !== undefined
+          ? {
+              ...h,
+              currentPrice: price,
+              startPrice: h.startPrice ?? price,
+              projectionStartDate:
+                h.projectionStartDate ?? new Date().toISOString(),
+            }
+          : h;
       });
 
       setHoldings(updated);
@@ -394,38 +455,63 @@ export default function PortfolioPanel({
           <HeaderRow>
             <ColLabel>Symbol</ColLabel>
             <ColLabel>Allocation %</ColLabel>
+            <ColLabel style={{ textAlign: "right" }}>Target price</ColLabel>
+            <ColLabel style={{ textAlign: "right" }}>Proj. start</ColLabel>
             <ColLabel style={{ textAlign: "right" }}>Current Price</ColLabel>
             <ColLabel />
           </HeaderRow>
-          {holdings.map((h) => (
-            <HoldingRow key={h.symbol}>
-              <SymbolTag>{h.symbol}</SymbolTag>
-              <NumberInput
-                type="text"
-                inputMode="decimal"
-                value={h.allocationPct || ""}
-                onChange={(e) =>
-                  updateAllocation(
-                    h.symbol,
-                    Math.min(
-                      100,
-                      parseFloat(e.target.value.replace(/[^0-9.]/g, "")) || 0,
-                    ),
-                  )
-                }
-                placeholder="0"
-              />
-              <PriceDisplay>
-                {h.currentPrice != null ? `$${h.currentPrice.toFixed(2)}` : "—"}
-              </PriceDisplay>
-              <IconButton
-                onClick={() => removeHolding(h.symbol)}
-                aria-label={`Remove ${h.symbol}`}
-              >
-                <Icons.Cross2Icon width={12} height={12} />
-              </IconButton>
-            </HoldingRow>
-          ))}
+          {holdings.map((h) => {
+            const targetPrice = computeTargetPriceToday(
+              h,
+              activePortfolioValue,
+              activeMonthlyWithdrawal,
+            );
+            const targetMet =
+              targetPrice != null && h.currentPrice != null
+                ? h.currentPrice >= targetPrice
+                : undefined;
+            return (
+              <HoldingRow key={h.symbol}>
+                <SymbolTag>{h.symbol}</SymbolTag>
+                <NumberInput
+                  type="text"
+                  inputMode="decimal"
+                  value={h.allocationPct || ""}
+                  onChange={(e) =>
+                    updateAllocation(
+                      h.symbol,
+                      Math.min(
+                        100,
+                        parseFloat(e.target.value.replace(/[^0-9.]/g, "")) || 0,
+                      ),
+                    )
+                  }
+                  placeholder="0"
+                />
+                <TargetPriceCell
+                  status={
+                    targetMet == null ? "unknown" : targetMet ? "met" : "unmet"
+                  }
+                >
+                  {targetPrice != null ? `$${targetPrice.toFixed(2)}` : "—"}
+                </TargetPriceCell>
+                <RefPriceCell>
+                  {h.startPrice != null ? `$${h.startPrice.toFixed(2)}` : "—"}
+                </RefPriceCell>
+                <PriceDisplay>
+                  {h.currentPrice != null
+                    ? `$${h.currentPrice.toFixed(2)}`
+                    : "—"}
+                </PriceDisplay>
+                <IconButton
+                  onClick={() => removeHolding(h.symbol)}
+                  aria-label={`Remove ${h.symbol}`}
+                >
+                  <Icons.Cross2Icon width={12} height={12} />
+                </IconButton>
+              </HoldingRow>
+            );
+          })}
         </HoldingsTable>
       ) : (
         <InfoText>

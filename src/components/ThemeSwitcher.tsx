@@ -2,7 +2,6 @@
  * Theme Switcher Component
  * ================================================== */
 
-import { useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { styled, themeObjects } from "../../stitches.config";
 import * as Icons from "@radix-ui/react-icons";
@@ -94,6 +93,8 @@ const ColorSwatch = styled("span", {
  * Props for the ThemeSelector component
  */
 type ThemeSelectorProps = {
+  /** The currently active theme key */
+  activeTheme: string;
   /** Callback function invoked when theme changes */
   onThemeChange: (themeName: string) => void;
 };
@@ -106,32 +107,19 @@ type ThemeSelectorProps = {
  * Theme selector dropdown component
  * Allows users to switch between available color themes
  */
-export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
+export function ThemeSelector({
+  activeTheme,
+  onThemeChange,
+}: ThemeSelectorProps) {
   const themeKeys = Object.keys(themeObjects) as Array<
     keyof typeof themeObjects
   >;
-  const [activeTheme, setActiveTheme] = useState<string>(() => {
-    const current = themeKeys.find((key) =>
-      document.body.classList.contains(`${key}-theme`),
-    );
-    return current ?? themeKeys[0];
-  });
 
   /**
    * Switch to a new theme
    * @param themeKey - The key of the theme to switch to
    */
   const switchTheme = (themeKey: string) => {
-    const body = document.body;
-
-    // Remove all theme classes
-    themeKeys.forEach((key) => body.classList.remove(`${key}-theme`));
-
-    // Add new theme class
-    body.classList.add(`${themeKey}-theme`);
-
-    // Update state and notify parent
-    setActiveTheme(themeKey);
     onThemeChange(themeKey);
   };
 

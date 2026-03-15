@@ -12,47 +12,29 @@ import type { PortfolioHolding } from "../common/types/portfolio-types";
  * Types
  * ================================================== */
 
-/**
- * Props for the SubdomainRouter component
- */
 interface SubdomainRouterProps {
-  /** The subdomain extracted from the URL */
-  subdomain: string;
-  /** State for all slider values */
+  activePage: string;
+  onNavigate: (page: string) => void;
   sliders: Record<string, number>;
-  /** Function to update slider values */
   setSliders: React.Dispatch<React.SetStateAction<Record<string, number>>>;
-  /** State for all input field values */
   inputs: Record<string, string>;
-  /** Function to update input values */
   setInputs: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  /** State for all toggle switches */
   toggles: TH4State["toggles"];
-  /** Function to update toggle values */
   setToggles: React.Dispatch<React.SetStateAction<TH4State["toggles"]>>;
-  /** Stock API URL template */
   stockApiUrl: string;
-  /** Portfolio holdings */
   stockHoldings: PortfolioHolding[];
-  /** Setter for portfolio holdings */
   setStockHoldings: React.Dispatch<React.SetStateAction<PortfolioHolding[]>>;
+  localStorageEnabled: boolean;
+  onLocalStorageToggle: (enabled: boolean) => void;
 }
 
-type SharedProps = Omit<SubdomainRouterProps, "subdomain">;
+type SharedProps = Omit<SubdomainRouterProps, "activePage" | "onNavigate">;
 
 /* ==================================================
- * Subdomain Component Mapping
+ * Page Component Mapping
  * ================================================== */
 
-/**
- * Maps subdomain keys to component factory functions.
- * Each factory receives the shared state props and returns a JSX element.
- * Add new subdomain-to-component mappings here.
- */
-const subdomainToComponent: Record<
-  string,
-  (props: SharedProps) => JSX.Element
-> = {
+const pageToComponent: Record<string, (props: SharedProps) => JSX.Element> = {
   f: (props) => <InvestmentCalculatorRadixModern {...props} />,
 };
 
@@ -60,11 +42,9 @@ const subdomainToComponent: Record<
  * Component
  * ================================================== */
 
-/**
- * Routes to different components based on the current subdomain
- */
 const SubdomainRouter = ({
-  subdomain,
+  activePage,
+  onNavigate,
   sliders,
   setSliders,
   inputs,
@@ -74,8 +54,10 @@ const SubdomainRouter = ({
   stockApiUrl,
   stockHoldings,
   setStockHoldings,
+  localStorageEnabled,
+  onLocalStorageToggle,
 }: SubdomainRouterProps) => {
-  const factory = subdomainToComponent[subdomain];
+  const factory = pageToComponent[activePage];
   const sharedProps: SharedProps = {
     sliders,
     setSliders,
@@ -86,9 +68,19 @@ const SubdomainRouter = ({
     stockApiUrl,
     stockHoldings,
     setStockHoldings,
+    localStorageEnabled,
+    onLocalStorageToggle,
   };
 
-  return factory ? factory(sharedProps) : <LandingReadme />;
+  return factory ? (
+    factory(sharedProps)
+  ) : (
+    <LandingReadme
+      onNavigate={onNavigate}
+      localStorageEnabled={localStorageEnabled}
+      onLocalStorageToggle={onLocalStorageToggle}
+    />
+  );
 };
 
 export default SubdomainRouter;
