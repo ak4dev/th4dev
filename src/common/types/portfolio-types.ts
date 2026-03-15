@@ -13,6 +13,10 @@ export interface PortfolioHolding {
   allocationPct: number;
   /** Most recently fetched price per share in USD */
   currentPrice?: number;
+  /** Price per share at the time the projection was first initialised — locked on first fetch */
+  startPrice?: number;
+  /** ISO date string of when startPrice was first captured */
+  projectionStartDate?: string;
 }
 
 /**
