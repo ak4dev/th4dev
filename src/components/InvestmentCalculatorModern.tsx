@@ -14,6 +14,7 @@ import { InvestmentLineChart } from "./investment-line-chart";
 import PortfolioPanel from "./portfolio/PortfolioPanel";
 import FirePanel from "./fire/FirePanel";
 import ScenarioPanel from "./scenarios/ScenarioPanel";
+import PdfExportButton from "./export/PdfExportButton";
 import { addYears } from "date-fns";
 import {
   DEFAULT_INITIAL_AMOUNT,
@@ -1170,6 +1171,21 @@ export default function InvestmentCalculatorRadixModern({
           toggles.advanced ? displayTargetB || undefined : undefined
         }
         mcBandsA={toggles.monteCarlo ? mcBandsA : undefined}
+      />
+
+      {/* PDF Export */}
+      <PdfExportButton
+        chartSelector=".recharts-wrapper"
+        assumptions={[
+          { label: "Initial Amount (A)", value: `$${(parseInt(inputs.currentAmountA || "0") || 0).toLocaleString()}` },
+          { label: "Return Rate (A)", value: `${sliders.projectedGainA || DEFAULT_PROJECTED_GAIN}%` },
+          { label: "Years (A)", value: `${sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH}` },
+          { label: "Monthly Contribution (A)", value: `$${(sliders.monthlyContributionA || 0).toLocaleString()}` },
+          { label: "Monthly Withdrawal (A)", value: `$${(sliders.monthlyWithdrawalA || 0).toLocaleString()}` },
+          { label: "Inflation Rate", value: `${sliders.yearlyInflation || DEFAULT_INFLATION_RATE}%` },
+          ...(toggles.fees ? [{ label: "Annual Fee (A)", value: `${sliders.annualFeeA || 0}%` }] : []),
+        ]}
+        metrics={infoItems}
       />
 
       {/* Portfolio Capital Preservation Panel */}
