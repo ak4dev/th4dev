@@ -7,6 +7,7 @@ TH4Dev is a React + TypeScript investment calculator with:
 - Monte Carlo confidence bands
 - FIRE (Financial Independence, Retire Early) calculator
 - Fee & expense ratio tracking
+- Budget builder with category breakdown
 - Scenario snapshot save/load/compare
 - PDF report export
 - Portfolio capital preservation analysis
@@ -34,7 +35,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 - `style` — Formatting only (no logic change)
 
 ### Scopes
-Use the feature area: `fees`, `monte-carlo`, `fire`, `scenarios`, `pdf`, `portfolio`, `ui`, `infra`, `chart`, etc.
+Use the feature area: `fees`, `monte-carlo`, `fire`, `scenarios`, `budget`, `pdf`, `portfolio`, `ui`, `infra`, `chart`, etc.
 
 ## Code Style
 

@@ -15,6 +15,7 @@ import PortfolioPanel from "./portfolio/PortfolioPanel";
 import FirePanel from "./fire/FirePanel";
 import ScenarioPanel from "./scenarios/ScenarioPanel";
 import PdfExportButton from "./export/PdfExportButton";
+import BudgetPanel from "./budget/BudgetPanel";
 import { addYears } from "date-fns";
 import {
   DEFAULT_INITIAL_AMOUNT,
@@ -381,6 +382,7 @@ interface TogglesState {
   monteCarlo: boolean;
   fire: boolean;
   scenarios: boolean;
+  budget: boolean;
 }
 
 interface InvestmentCalculatorModernProps {
@@ -1102,6 +1104,13 @@ export default function InvestmentCalculatorRadixModern({
                       onCheckedChange={(v) => updateToggle("scenarios", v)}
                     />
                   </SwitchRow>
+                  <SwitchRow>
+                    <Label>Budget:</Label>
+                    <SwitchButton
+                      checked={toggles.budget}
+                      onCheckedChange={(v) => updateToggle("budget", v)}
+                    />
+                  </SwitchRow>
                 </TogglesGrid>
               </>
             )}
@@ -1241,6 +1250,17 @@ export default function InvestmentCalculatorRadixModern({
         <ScenarioPanel
           currentState={currentTH4State}
           onLoadScenario={handleLoadScenario}
+        />
+      )}
+
+      {/* Budget Panel */}
+      {toggles.budget && (
+        <BudgetPanel
+          onAnnualTotalChange={
+            toggles.fire
+              ? (annual) => updateSlider("fireAnnualExpenses", annual)
+              : undefined
+          }
         />
       )}
     </Container>

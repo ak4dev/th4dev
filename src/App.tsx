@@ -121,6 +121,7 @@ const defaultState: TH4State = {
     monteCarlo: false,
     fire: false,
     scenarios: false,
+    budget: false,
   },
   stock: {
     apiUrl: DEFAULT_STOCK_API_URL,
