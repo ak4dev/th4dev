@@ -95,6 +95,7 @@ export interface TH4State {
     fees: boolean;
     monteCarlo: boolean;
     fire: boolean;
+    scenarios: boolean;
   };
   /** Stock API configuration and portfolio holdings */
   stock?: {

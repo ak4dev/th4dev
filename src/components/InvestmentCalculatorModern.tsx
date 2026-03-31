@@ -1,7 +1,7 @@
 /* ==================================================
  * Investment Calculator Component
  * ================================================== */
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import * as Slider from "@radix-ui/react-slider";
@@ -13,6 +13,7 @@ import DateAmountTable from "./date-amount-table";
 import { InvestmentLineChart } from "./investment-line-chart";
 import PortfolioPanel from "./portfolio/PortfolioPanel";
 import FirePanel from "./fire/FirePanel";
+import ScenarioPanel from "./scenarios/ScenarioPanel";
 import { addYears } from "date-fns";
 import {
   DEFAULT_INITIAL_AMOUNT,
@@ -33,6 +34,7 @@ import {
 import { compactModernInputStyles } from "../common/constants/input-styles";
 import { runMonteCarloSimulation, type PercentileBand } from "../common/helpers/monte-carlo";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
+import type { TH4State } from "../common/types/types";
 
 /* ---------------- Styles & Animations ---------------- */
 const fadeInUp = keyframes({
@@ -377,6 +379,7 @@ interface TogglesState {
   fees: boolean;
   monteCarlo: boolean;
   fire: boolean;
+  scenarios: boolean;
 }
 
 interface InvestmentCalculatorModernProps {
@@ -409,6 +412,30 @@ export default function InvestmentCalculatorRadixModern({
     setInputs({ ...inputs, [key]: val });
   const updateToggle = (key: keyof typeof toggles, val: boolean) =>
     setToggles({ ...toggles, [key]: val });
+
+  // Scenario snapshot support
+  const currentTH4State = useMemo(
+    (): TH4State => ({
+      theme: "",
+      sliders,
+      inputs,
+      toggles,
+      stock: { apiUrl: stockApiUrl, holdings: stockHoldings },
+    }),
+    [sliders, inputs, toggles, stockApiUrl, stockHoldings],
+  );
+
+  const handleLoadScenario = useCallback(
+    (state: TH4State) => {
+      setSliders(state.sliders);
+      setInputs(state.inputs);
+      setToggles(state.toggles as TogglesState);
+      if (state.stock) {
+        setStockHoldings(state.stock.holdings);
+      }
+    },
+    [setSliders, setInputs, setToggles, setStockHoldings],
+  );
 
   // ---------------- Investment A ----------------
   const invAProps = {
@@ -1067,6 +1094,13 @@ export default function InvestmentCalculatorRadixModern({
                       onCheckedChange={(v) => updateToggle("fire", v)}
                     />
                   </SwitchRow>
+                  <SwitchRow>
+                    <Label>Scenarios:</Label>
+                    <SwitchButton
+                      checked={toggles.scenarios}
+                      onCheckedChange={(v) => updateToggle("scenarios", v)}
+                    />
+                  </SwitchRow>
                 </TogglesGrid>
               </>
             )}
@@ -1183,6 +1217,14 @@ export default function InvestmentCalculatorRadixModern({
           onSafeWithdrawalRateChange={(v) => updateSlider("fireSWR", v)}
           onCurrentAgeChange={(v) => updateSlider("fireCurrentAge", v)}
           onTargetRetirementAgeChange={(v) => updateSlider("fireRetirementAge", v)}
+        />
+      )}
+
+      {/* Scenario Snapshots Panel */}
+      {toggles.scenarios && (
+        <ScenarioPanel
+          currentState={currentTH4State}
+          onLoadScenario={handleLoadScenario}
         />
       )}
     </Container>
