@@ -18,6 +18,9 @@ export const MAX_YEARS_OF_GROWTH = 100;
 export const MAX_PROJECTED_GAIN = 30;
 export const MAX_INFLATION_RATE = 10;
 export const MAX_ANNUAL_FEE = 3;
+export const DEFAULT_VOLATILITY = 12;
+export const MAX_VOLATILITY = 30;
+export const MONTE_CARLO_SIM_COUNT = 500;
 
 /* ---------- Investment Minimums ---------- */
 export const MIN_VALUE = 0;

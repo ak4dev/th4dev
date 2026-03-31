@@ -24,9 +24,13 @@ import {
   MAX_MONTHLY_WITHDRAWAL,
   MAX_INFLATION_RATE,
   MAX_ANNUAL_FEE,
+  DEFAULT_VOLATILITY,
+  MAX_VOLATILITY,
+  MONTE_CARLO_SIM_COUNT,
   MIN_VALUE,
 } from "../common/constants/app-constants";
 import { compactModernInputStyles } from "../common/constants/input-styles";
+import { runMonteCarloSimulation, type PercentileBand } from "../common/helpers/monte-carlo";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
 
 /* ---------------- Styles & Animations ---------------- */
@@ -370,6 +374,7 @@ interface TogglesState {
   showInflation: boolean;
   portfolio: boolean;
   fees: boolean;
+  monteCarlo: boolean;
 }
 
 interface InvestmentCalculatorModernProps {
@@ -468,6 +473,24 @@ export default function InvestmentCalculatorRadixModern({
   };
   const calcB = new InvestmentCalculator(invBProps);
   const totalB = calcB.calculateGrowth(toggles.showInflation).numeric;
+
+  // ---------------- Monte Carlo Simulation ----------------
+  const mcBandsA: PercentileBand[] = toggles.monteCarlo
+    ? runMonteCarloSimulation({
+        initialAmount: parseInt(invAProps.currentAmount || "0") || 0,
+        projectedGain: invAProps.projectedGain,
+        yearsOfGrowth: invAProps.yearsOfGrowth,
+        monthlyContribution: invAProps.monthlyContribution,
+        monthlyWithdrawal: invAProps.monthlyWithdrawal,
+        withdrawalStartYear: invAProps.yearWithdrawalsBegin,
+        contributionStopYear: invAProps.yearContributionsStop,
+        depreciationRate: invAProps.depreciationRate,
+        annualFee: invAProps.annualFee,
+        showInflation: toggles.showInflation,
+        volatility: sliders.volatilityA || DEFAULT_VOLATILITY,
+        simCount: MONTE_CARLO_SIM_COUNT,
+      })
+    : [];
 
   // ---------------- Target Value Handlers ----------------
 
@@ -773,6 +796,22 @@ export default function InvestmentCalculatorRadixModern({
             : []),
         ]
       : []),
+    ...(toggles.monteCarlo && mcBandsA.length > 0
+      ? [
+          {
+            label: "(A) Median Outcome",
+            value: `$${mcBandsA[mcBandsA.length - 1].p50.toLocaleString()}`,
+          },
+          {
+            label: "(A) Best 10%",
+            value: `$${mcBandsA[mcBandsA.length - 1].p90.toLocaleString()}`,
+          },
+          {
+            label: "(A) Worst 10%",
+            value: `$${mcBandsA[mcBandsA.length - 1].p10.toLocaleString()}`,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -1012,10 +1051,27 @@ export default function InvestmentCalculatorRadixModern({
                       onCheckedChange={(v) => updateToggle("portfolio", v)}
                     />
                   </SwitchRow>
+                  <SwitchRow>
+                    <Label>Monte Carlo:</Label>
+                    <SwitchButton
+                      checked={toggles.monteCarlo}
+                      onCheckedChange={(v) => updateToggle("monteCarlo", v)}
+                    />
+                  </SwitchRow>
                 </TogglesGrid>
               </>
             )}
           </ToggleSection>
+          {toggles.monteCarlo && (
+            <InvestmentSlider
+              label="Volatility (σ %)"
+              value={sliders.volatilityA || DEFAULT_VOLATILITY}
+              min={1}
+              max={MAX_VOLATILITY}
+              step={1}
+              onChange={(v) => updateSlider("volatilityA", v)}
+            />
+          )}
           <InvestmentSlider
             label="Inflation (%)"
             value={sliders.yearlyInflation || DEFAULT_INFLATION_RATE}
@@ -1070,6 +1126,7 @@ export default function InvestmentCalculatorRadixModern({
         targetValueB={
           toggles.advanced ? displayTargetB || undefined : undefined
         }
+        mcBandsA={toggles.monteCarlo ? mcBandsA : undefined}
       />
 
       {/* Portfolio Capital Preservation Panel */}

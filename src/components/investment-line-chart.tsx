@@ -4,8 +4,9 @@
 
 import {
   ResponsiveContainer,
-  LineChart,
+  ComposedChart,
   Line,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -15,6 +16,7 @@ import {
 } from "recharts";
 import { format } from "date-fns";
 import type { LineGraphEntry } from "../common/types/types";
+import type { PercentileBand } from "../common/helpers/monte-carlo";
 import { styled } from "../../stitches.config";
 import { CHART_HEIGHT } from "../common/constants/app-constants";
 
@@ -147,6 +149,8 @@ interface InvestmentLineChartProps {
   targetValueA?: number;
   /** Optional target value for Investment B — rendered as a dashed reference line */
   targetValueB?: number;
+  /** Monte Carlo percentile bands for Investment A */
+  mcBandsA?: PercentileBand[];
 }
 
 /**
@@ -160,6 +164,7 @@ export function InvestmentLineChart({
   yearOfRollover,
   targetValueA,
   targetValueB,
+  mcBandsA,
 }: InvestmentLineChartProps) {
   const data = prepareChartData(
     growthMatrixA,
@@ -167,6 +172,23 @@ export function InvestmentLineChart({
     advanced,
     yearOfRollover,
   );
+
+  // Merge Monte Carlo bands into chart data by index (both are year-indexed)
+  const hasMC = mcBandsA && mcBandsA.length > 0;
+  const mergedData = data.map((d, i) => ({
+    ...d,
+    ...(hasMC && mcBandsA[i]
+      ? {
+          mcP10: mcBandsA[i].p10,
+          mcP25: mcBandsA[i].p25,
+          mcP50: mcBandsA[i].p50,
+          mcP75: mcBandsA[i].p75,
+          mcP90: mcBandsA[i].p90,
+          mcOuter: [mcBandsA[i].p10, mcBandsA[i].p90],
+          mcInner: [mcBandsA[i].p25, mcBandsA[i].p75],
+        }
+      : {}),
+  }));
 
   // CSS color variables
   const fg = "var(--colors-foreground)";
@@ -179,10 +201,11 @@ export function InvestmentLineChart({
 
   // Calculate max value for Y-axis scaling (with 5% padding)
   const allValues = [
-    ...data.map((d) => d.investmentA ?? 0),
-    ...(advanced ? data.map((d) => d.investmentB ?? 0) : []),
+    ...mergedData.map((d) => d.investmentA ?? 0),
+    ...(advanced ? mergedData.map((d) => d.investmentB ?? 0) : []),
     ...(targetValueA ? [targetValueA] : []),
     ...(targetValueB && advanced ? [targetValueB] : []),
+    ...(hasMC ? mcBandsA.map((b) => b.p90) : []),
   ];
   const maxValue = Math.max(...allValues) * CHART_PADDING_MULTIPLIER;
 
@@ -190,7 +213,7 @@ export function InvestmentLineChart({
     <ChartContainer>
       <ChartTitle>Investment Growth Projection</ChartTitle>
       <ResponsiveContainer width="100%" height="92%">
-        <LineChart data={data}>
+        <ComposedChart data={mergedData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#55555533" />
           <XAxis
             dataKey="date"
@@ -266,6 +289,42 @@ export function InvestmentLineChart({
             />
           )}
 
+          {/* Monte Carlo confidence bands (P10–P90 outer, P25–P75 inner) */}
+          {hasMC && (
+            <>
+              <Area
+                type="monotone"
+                dataKey="mcOuter"
+                fill="var(--colors-purple)"
+                fillOpacity={0.08}
+                stroke="none"
+                name="P10–P90"
+                legendType="none"
+                isAnimationActive={false}
+              />
+              <Area
+                type="monotone"
+                dataKey="mcInner"
+                fill="var(--colors-purple)"
+                fillOpacity={0.12}
+                stroke="none"
+                name="P25–P75"
+                legendType="none"
+                isAnimationActive={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="mcP50"
+                stroke="var(--colors-purple)"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+                dot={false}
+                name="Median (MC)"
+                isAnimationActive={false}
+              />
+            </>
+          )}
+
           {/* Investment A Line */}
           <Line
             type="monotone"
@@ -287,7 +346,7 @@ export function InvestmentLineChart({
               name="Investment B"
             />
           )}
-        </LineChart>
+        </ComposedChart>
       </ResponsiveContainer>
     </ChartContainer>
   );

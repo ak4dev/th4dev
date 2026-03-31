@@ -93,6 +93,7 @@ export interface TH4State {
     showInflation: boolean;
     portfolio: boolean;
     fees: boolean;
+    monteCarlo: boolean;
   };
   /** Stock API configuration and portfolio holdings */
   stock?: {

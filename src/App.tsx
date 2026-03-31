@@ -118,6 +118,7 @@ const defaultState: TH4State = {
     showInflation: false,
     portfolio: false,
     fees: false,
+    monteCarlo: false,
   },
   stock: {
     apiUrl: DEFAULT_STOCK_API_URL,
