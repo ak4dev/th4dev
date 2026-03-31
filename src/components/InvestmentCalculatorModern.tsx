@@ -23,6 +23,7 @@ import {
   MAX_MONTHLY_CONTRIBUTION,
   MAX_MONTHLY_WITHDRAWAL,
   MAX_INFLATION_RATE,
+  MAX_ANNUAL_FEE,
   MIN_VALUE,
 } from "../common/constants/app-constants";
 import { compactModernInputStyles } from "../common/constants/input-styles";
@@ -368,6 +369,7 @@ interface TogglesState {
   rollover: boolean;
   showInflation: boolean;
   portfolio: boolean;
+  fees: boolean;
 }
 
 interface InvestmentCalculatorModernProps {
@@ -413,6 +415,7 @@ export default function InvestmentCalculatorRadixModern({
     yearWithdrawalsBegin: sliders.withdrawalStartYearA || MIN_VALUE,
     advanced: toggles.advanced,
     depreciationRate: sliders.yearlyInflation || DEFAULT_INFLATION_RATE,
+    annualFee: toggles.fees ? sliders.annualFeeA || 0 : 0,
     rollOver: false,
     investmentId: "investmentA",
     setCurrentAmount: (v: string | undefined) =>
@@ -444,6 +447,7 @@ export default function InvestmentCalculatorRadixModern({
     yearWithdrawalsBegin: sliders.withdrawalStartYearB || MIN_VALUE,
     advanced: toggles.advanced,
     depreciationRate: sliders.yearlyInflation || DEFAULT_INFLATION_RATE,
+    annualFee: toggles.fees ? sliders.annualFeeB || 0 : 0,
     rollOver: toggles.rollover,
     investmentToRoll: toggles.rollover ? totalA : 0,
     yearOfRollover: toggles.rollover ? sliders.yearsOfGrowthA : undefined,
@@ -753,6 +757,22 @@ export default function InvestmentCalculatorRadixModern({
           },
         ]
       : []),
+    ...(toggles.fees
+      ? [
+          {
+            label: "(A) Fees Paid",
+            value: `$${calcA.getCumulativeFees().toLocaleString()}`,
+          },
+          ...(toggles.advanced
+            ? [
+                {
+                  label: "(B) Fees Paid",
+                  value: `$${calcB.getCumulativeFees().toLocaleString()}`,
+                },
+              ]
+            : []),
+        ]
+      : []),
   ];
 
   return (
@@ -810,6 +830,16 @@ export default function InvestmentCalculatorRadixModern({
                 max={sliders.yearsOfGrowthA}
                 onChange={(v) => updateSlider("withdrawalStartYearA", v)}
               />
+              {toggles.fees && (
+                <InvestmentSlider
+                  label="Annual Fee (%)"
+                  value={sliders.annualFeeA || 0}
+                  min={0}
+                  max={MAX_ANNUAL_FEE}
+                  step={0.01}
+                  onChange={(v) => updateSlider("annualFeeA", v)}
+                />
+              )}
             </>
           )}
           {/* Target value — sets the monthly withdrawal to reach this balance */}
@@ -894,6 +924,16 @@ export default function InvestmentCalculatorRadixModern({
               max={sliders.yearsOfGrowthB}
               onChange={(v) => updateSlider("withdrawalStartYearB", v)}
             />
+            {toggles.fees && (
+              <InvestmentSlider
+                label="Annual Fee (%)"
+                value={sliders.annualFeeB || 0}
+                min={0}
+                max={MAX_ANNUAL_FEE}
+                step={0.01}
+                onChange={(v) => updateSlider("annualFeeB", v)}
+              />
+            )}
             {/* Target value for Investment B */}
             <SliderControlRow>
               <SliderInputGroup>
@@ -956,6 +996,13 @@ export default function InvestmentCalculatorRadixModern({
                     <SwitchButton
                       checked={toggles.rollover}
                       onCheckedChange={(v) => updateToggle("rollover", v)}
+                    />
+                  </SwitchRow>
+                  <SwitchRow>
+                    <Label>Fees:</Label>
+                    <SwitchButton
+                      checked={toggles.fees}
+                      onCheckedChange={(v) => updateToggle("fees", v)}
                     />
                   </SwitchRow>
                   <SwitchRow>

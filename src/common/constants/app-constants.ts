@@ -17,6 +17,7 @@ export const MAX_MONTHLY_WITHDRAWAL = 10000;
 export const MAX_YEARS_OF_GROWTH = 100;
 export const MAX_PROJECTED_GAIN = 30;
 export const MAX_INFLATION_RATE = 10;
+export const MAX_ANNUAL_FEE = 3;
 
 /* ---------- Investment Minimums ---------- */
 export const MIN_VALUE = 0;

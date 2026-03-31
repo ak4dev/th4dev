@@ -26,6 +26,7 @@ export class InvestmentCalculator {
   private readonly today: Date = new Date();
   private readonly currentMonth: number = this.today.getMonth();
   private readonly growthMatrix: LineGraphEntry[] = [];
+  private cumulativeFees: number = 0;
 
   /**
    * Creates an instance of InvestmentCalculator
@@ -54,6 +55,7 @@ export class InvestmentCalculator {
 
     // Reset growth data for this calculation run
     this.growthMatrix.length = 0;
+    this.cumulativeFees = 0;
 
     // Initialize calculation variables
     let nominalAmount = this.getInitialAmount();
@@ -105,6 +107,14 @@ export class InvestmentCalculator {
    */
   public getGrowthMatrix(): LineGraphEntry[] {
     return this.growthMatrix;
+  }
+
+  /**
+   * Returns the cumulative fees paid over the full investment horizon.
+   * Only meaningful after calculateGrowth() has been called.
+   */
+  public getCumulativeFees(): number {
+    return Math.floor(this.cumulativeFees);
   }
 
   /**
@@ -209,6 +219,16 @@ export class InvestmentCalculator {
       // Apply monthly compound growth
       nominal += nominal * monthlyGrowthRate;
       inflationAdjusted += inflationAdjusted * monthlyGrowthRate;
+
+      // Deduct monthly fee (expense ratio)
+      if (this.props.annualFee) {
+        const monthlyFeeRate =
+          this.props.annualFee / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
+        const fee = nominal * monthlyFeeRate;
+        nominal -= fee;
+        inflationAdjusted -= fee;
+        this.cumulativeFees += fee;
+      }
 
       // Apply contributions with immediate growth
       if (this.shouldApplyContribution(year, month)) {

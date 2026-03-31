@@ -58,6 +58,8 @@ export interface InvestmentCalculatorProps {
   maxMonthlyWithdrawal: number;
   /** Annual depreciation (inflation) rate */
   depreciationRate: number;
+  /** Annual expense ratio / management fee as a percentage (e.g. 0.5 = 0.5%) */
+  annualFee?: number;
   /** Unique identifier for this investment */
   investmentId: string;
 }
@@ -90,6 +92,7 @@ export interface TH4State {
     rollover: boolean;
     showInflation: boolean;
     portfolio: boolean;
+    fees: boolean;
   };
   /** Stock API configuration and portfolio holdings */
   stock?: {

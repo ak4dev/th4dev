@@ -393,3 +393,81 @@ describe("edge cases – zero years, large amounts, mixed cashflows", () => {
     expect(withStop0).toBe(withoutStop);
   });
 });
+
+/* ====================================================================
+ * Annual Fee (Expense Ratio) Tests
+ * ==================================================================== */
+
+describe("Annual fee (expense ratio)", () => {
+  it("0% fee produces identical results to no fee", () => {
+    const noFee = new InvestmentCalculator(
+      makeProps({ yearsOfGrowth: 10 }),
+    ).calculateGrowth(false).numeric;
+
+    const zeroFee = new InvestmentCalculator(
+      makeProps({ yearsOfGrowth: 10, annualFee: 0 }),
+    ).calculateGrowth(false).numeric;
+
+    expect(zeroFee).toBe(noFee);
+  });
+
+  it("fee reduces the final value compared to no fee", () => {
+    const noFee = new InvestmentCalculator(
+      makeProps({ yearsOfGrowth: 30 }),
+    ).calculateGrowth(false).numeric;
+
+    const withFee = new InvestmentCalculator(
+      makeProps({ yearsOfGrowth: 30, annualFee: 1 }),
+    ).calculateGrowth(false).numeric;
+
+    expect(withFee).toBeLessThan(noFee);
+  });
+
+  it("higher fee results in lower final value", () => {
+    const lowFee = new InvestmentCalculator(
+      makeProps({ yearsOfGrowth: 20, annualFee: 0.5 }),
+    ).calculateGrowth(false).numeric;
+
+    const highFee = new InvestmentCalculator(
+      makeProps({ yearsOfGrowth: 20, annualFee: 1.5 }),
+    ).calculateGrowth(false).numeric;
+
+    expect(highFee).toBeLessThan(lowFee);
+  });
+
+  it("tracks cumulative fees paid", () => {
+    const calc = new InvestmentCalculator(
+      makeProps({ yearsOfGrowth: 10, annualFee: 1 }),
+    );
+    calc.calculateGrowth(false);
+
+    const fees = calc.getCumulativeFees();
+    expect(fees).toBeGreaterThan(0);
+  });
+
+  it("cumulative fees are 0 when annualFee is 0", () => {
+    const calc = new InvestmentCalculator(
+      makeProps({ yearsOfGrowth: 10, annualFee: 0 }),
+    );
+    calc.calculateGrowth(false);
+
+    expect(calc.getCumulativeFees()).toBe(0);
+  });
+
+  it("fee is mathematically correct for 1 year at 1%", () => {
+    // $10k at 10% return with 1% fee over 1 year
+    // Monthly: growth = 10/100/12, fee = 1/100/12
+    // Effective monthly rate = (10 - 1) / 100 / 12 approximately
+    const withFee = new InvestmentCalculator(
+      makeProps({ yearsOfGrowth: 1, projectedGain: 10, annualFee: 1 }),
+    ).calculateGrowth(false).numeric;
+
+    // Without fee at 9% (approx equivalent to 10% with 1% fee)
+    const atNinePercent = new InvestmentCalculator(
+      makeProps({ yearsOfGrowth: 1, projectedGain: 9, annualFee: 0 }),
+    ).calculateGrowth(false).numeric;
+
+    // They should be very close (not exact due to compounding differences)
+    expect(Math.abs(withFee - atNinePercent)).toBeLessThan(10);
+  });
+});
