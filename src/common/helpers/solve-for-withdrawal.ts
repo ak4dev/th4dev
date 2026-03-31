@@ -46,7 +46,7 @@ export function solveForWithdrawal(
   const floorResult = atCeiling.calculateGrowth(showInflation).numeric;
 
   let lo = 0;
-  let hi = floorResult >= targetValue ? ceiling * 10 : ceiling;
+  let hi = floorResult >= targetValue ? ceiling * 2 : ceiling;
 
   for (let i = 0; i < ITERATIONS; i++) {
     const mid = (lo + hi) / 2;

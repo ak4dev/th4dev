@@ -1,0 +1,12 @@
+{
+  "deployments": [
+    {
+      "id": "prod",
+      "domainName": "app.example.com",
+      "hostedZoneDomain": "example.com",
+      "hostedZoneId": "ZXXXXXXXXXXXXX",
+      "bucketName": "th4dev-prod",
+      "region": "us-east-1"
+    }
+  ]
+}

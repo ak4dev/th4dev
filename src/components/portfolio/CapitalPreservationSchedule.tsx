@@ -201,6 +201,8 @@ interface CapitalPreservationScheduleProps {
    * This row is highlighted in purple.
    */
   withdrawalStartYear: number;
+  /** Annual projected gain percentage (e.g. 10 for 10%) — used for safe-withdrawal status */
+  projectedGain: number;
   /** Monthly withdrawal amount — used to compute "safe withdrawal" status */
   monthlyWithdrawal: number;
   /** Optional secondary withdrawal start year — highlighted in green */
@@ -235,6 +237,7 @@ export default function CapitalPreservationSchedule({
   growthMatrix,
   holdings,
   withdrawalStartYear,
+  projectedGain,
   monthlyWithdrawal,
   withdrawalStartYearB,
   primaryWithdrawalLabel = "A",
@@ -303,10 +306,7 @@ export default function CapitalPreservationSchedule({
   // "Safe today" = at current price, is today's portfolio value on track?
   // Useful summary: can monthly withdrawals be funded purely from growth?
   const portfolioGrowthPerMonth =
-    initialValue *
-    (growthMatrix.length > 1
-      ? growthMatrix[1].y / growthMatrix[0].y - 1
-      : 0.1 / 12);
+    initialValue * ((projectedGain / 100) / 12);
   const withdrawalSafe =
     monthlyWithdrawal > 0 ? portfolioGrowthPerMonth >= monthlyWithdrawal : true;
 

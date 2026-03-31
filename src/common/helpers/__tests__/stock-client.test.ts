@@ -163,3 +163,51 @@ describe("fetchStockData", () => {
     expect(results.map((r) => r.symbol)).toEqual(["AAPL", "MSFT", "GOOG"]);
   });
 });
+
+// ── additional edge cases ─────────────────────────────────────────────────────
+
+describe("normalizeStockSymbol – extra edge cases", () => {
+  it("returns empty string for undefined input", () => {
+    expect(normalizeStockSymbol(undefined)).toBe("");
+  });
+
+  it("trims whitespace-padded input correctly", () => {
+    expect(normalizeStockSymbol("  tsla  ")).toBe("TSLA");
+    expect(normalizeStockSymbol("\t nvda \n")).toBe("NVDA");
+  });
+});
+
+describe("extractStockPrice – extra edge cases", () => {
+  it("extracts price from deeply nested Global Quote structure", () => {
+    const data = {
+      "Global Quote": {
+        "01. symbol": "AMZN",
+        "02. open": "180.00",
+        "05. price": "195.25",
+        "08. previousClose": "190.00",
+      },
+    };
+    expect(extractStockPrice(data)).toBe(195.25);
+  });
+});
+
+describe("extractQuoteSymbol – extra edge cases", () => {
+  it("returns undefined for an empty object", () => {
+    expect(extractQuoteSymbol({})).toBeUndefined();
+  });
+});
+
+describe("fetchStockData – extra edge cases", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns an empty array when given no symbols", async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+
+    const results = await fetchStockData("https://api/{symbol}", []);
+    expect(results).toHaveLength(0);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});

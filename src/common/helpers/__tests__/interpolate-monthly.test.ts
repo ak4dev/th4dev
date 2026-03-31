@@ -76,3 +76,32 @@ describe("interpolateMonthly", () => {
     }
   });
 });
+
+// ── additional edge cases ─────────────────────────────────────────────────────
+
+describe("interpolateMonthly – edge cases", () => {
+  it("handles negative values (portfolio going below 0)", () => {
+    const yearly = [
+      entry(500, 450, new Date("2026-01-01")),
+      entry(-100, -90, new Date("2027-01-01")),
+    ];
+    const result = interpolateMonthly(yearly);
+    expect(result).toHaveLength(13);
+    // First point positive, last point negative
+    expect(result[0].y).toBe(500);
+    expect(result[result.length - 1].y).toBe(-100);
+    // Should cross zero somewhere in between
+    const hasNegative = result.some((p) => p.y < 0);
+    expect(hasNegative).toBe(true);
+  });
+
+  it("single-year horizon (2 entries) produces exactly 13 months", () => {
+    const yearly = [
+      entry(10000, 9000, new Date("2026-06-01")),
+      entry(11000, 9900, new Date("2027-06-01")),
+    ];
+    const result = interpolateMonthly(yearly);
+    // (2-1)×12 + 1 = 13
+    expect(result).toHaveLength(13);
+  });
+});

@@ -84,3 +84,48 @@ describe("solveForWithdrawal", () => {
     expect(high).toBeLessThan(low);
   });
 });
+
+// ── edge cases (ceiling multiplier fix & boundary targets) ────────────────────
+
+describe("solveForWithdrawal – edge cases", () => {
+  it("converges with ceiling*2 upper bound (ceiling multiplier fix)", () => {
+    // The fix changed ceiling*10 to ceiling*2. Verify convergence with the
+    // default maxMonthlyWithdrawal over a longer horizon.
+    const base = makeProps({ yearsOfGrowth: 5 });
+    const noWithdrawResult = new InvestmentCalculator({
+      ...base,
+      monthlyWithdrawal: 0,
+    }).calculateGrowth(false).numeric;
+
+    const target = Math.floor(noWithdrawResult * 0.5);
+    const withdrawal = solveForWithdrawal(base, target, false);
+
+    const calc = new InvestmentCalculator({
+      ...base,
+      monthlyWithdrawal: withdrawal,
+    });
+    const actual = calc.calculateGrowth(false).numeric;
+    expect(actual).toBeGreaterThanOrEqual(target * 0.995);
+    expect(actual).toBeLessThanOrEqual(target * 1.005);
+  });
+
+  it("handles targetValue = 0 without error and returns a positive withdrawal", () => {
+    const result = solveForWithdrawal(makeProps(), 0, false);
+    // Target of 0 means "drain the portfolio"; the solver should return a
+    // positive withdrawal amount (not 0).
+    expect(result).toBeGreaterThan(0);
+  });
+
+  it("returns 0 when targetValue exceeds no-withdrawal portfolio value", () => {
+    const noWithdrawResult = new InvestmentCalculator(
+      makeProps({ monthlyWithdrawal: 0 }),
+    ).calculateGrowth(false).numeric;
+    expect(
+      solveForWithdrawal(makeProps(), noWithdrawResult + 100000, false),
+    ).toBe(0);
+  });
+
+  it("returns 0 for a large negative targetValue", () => {
+    expect(solveForWithdrawal(makeProps(), -999999, false)).toBe(0);
+  });
+});

@@ -263,6 +263,8 @@ interface PortfolioPanelProps {
   defaultPortfolioValue: number;
   /** Monthly withdrawal amount from the investment calculator */
   monthlyWithdrawal: number;
+  /** Annual projected gain percentage for the active investment (e.g. 10 for 10%) */
+  projectedGain: number;
   /** Year offset at which withdrawals begin — forwarded to the preservation schedule */
   withdrawalStartYear: number;
   /** Number of years to project forward */
@@ -297,6 +299,7 @@ export default function PortfolioPanel({
   stockApiUrl,
   defaultPortfolioValue,
   monthlyWithdrawal,
+  projectedGain,
   withdrawalStartYear,
   yearsForward,
   growthMatrix,
@@ -559,6 +562,7 @@ export default function PortfolioPanel({
             : withdrawalStartYear
         }
         monthlyWithdrawal={activeMonthlyWithdrawal}
+        projectedGain={projectedGain}
         withdrawalStartYearB={
           activeInvestment === "B" ? withdrawalStartYear : withdrawalStartYearB
         }

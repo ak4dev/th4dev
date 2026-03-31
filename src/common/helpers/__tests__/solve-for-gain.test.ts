@@ -81,3 +81,20 @@ describe("solveForGain", () => {
     expect(actual).toBeLessThanOrEqual(target * 1.005);
   });
 });
+
+// ── additional edge cases ─────────────────────────────────────────────────────
+
+describe("solveForGain – edge cases", () => {
+  it("returns 0 for targetValue exactly 0", () => {
+    expect(solveForGain(makeBase(), 0, false)).toBe(0);
+  });
+
+  it("returns 0 for negative targetValue", () => {
+    expect(solveForGain(makeBase(), -500, false)).toBe(0);
+  });
+
+  it("returns 0 when initial amount is 0 and target is 0", () => {
+    const base = makeBase({ currentAmount: "0" });
+    expect(solveForGain(base, 0, false)).toBe(0);
+  });
+});

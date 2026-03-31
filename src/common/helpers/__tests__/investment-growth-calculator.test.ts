@@ -327,3 +327,69 @@ describe("getPercentageChange", () => {
     expect(c.getPercentageChange(10000, 10000)).toBe(0);
   });
 });
+
+// ── additional edge cases ─────────────────────────────────────────────────────
+
+describe("edge cases – zero years, large amounts, mixed cashflows", () => {
+  it("zero years of growth returns the initial amount with 0% gain", () => {
+    const c = new InvestmentCalculator(
+      makeProps({ projectedGain: 0, yearsOfGrowth: 0 }),
+    );
+    expect(c.calculateGrowth(false).numeric).toBe(10000);
+    c.calculateGrowth(false);
+    expect(c.getGrowthMatrix()).toHaveLength(1);
+  });
+
+  it("very large initial amount (1 billion) does not overflow", () => {
+    const c = new InvestmentCalculator(
+      makeProps({ currentAmount: "1000000000", projectedGain: 5, yearsOfGrowth: 1 }),
+    );
+    const result = c.calculateGrowth(false).numeric;
+    expect(result).toBeGreaterThan(1_000_000_000);
+    expect(Number.isFinite(result)).toBe(true);
+  });
+
+  it("contributions and withdrawals applied simultaneously", () => {
+    // 0% gain: each month +200 contribution and -100 withdrawal → net +100/month
+    // year 0: 12 months → 10000 + 12*200 - 12*100 = 11200
+    // year 1: 12 months → 11200 + 12*200 - 12*100 = 12400
+    const c = new InvestmentCalculator(
+      makeProps({
+        projectedGain: 0,
+        monthlyContribution: 200,
+        monthlyWithdrawal: 100,
+        yearWithdrawalsBegin: 0,
+        yearsOfGrowth: 1,
+        advanced: true,
+      }),
+    );
+    const result = c.calculateGrowth(false).numeric;
+    // Net contribution is +100/month × 24 months = +2400
+    expect(result).toBe(12400);
+  });
+
+  it("yearContributionsStop of 0 is treated as no-stop (falsy guard)", () => {
+    // The implementation uses `!yearContributionsStop` as a guard, so 0 is
+    // treated the same as undefined — contributions are never stopped.
+    const withStop0 = new InvestmentCalculator(
+      makeProps({
+        projectedGain: 0,
+        monthlyContribution: 500,
+        yearsOfGrowth: 2,
+        advanced: true,
+        yearContributionsStop: 0,
+      }),
+    ).calculateGrowth(false).numeric;
+
+    const withoutStop = new InvestmentCalculator(
+      makeProps({
+        projectedGain: 0,
+        monthlyContribution: 500,
+        yearsOfGrowth: 2,
+        advanced: true,
+      }),
+    ).calculateGrowth(false).numeric;
+
+    expect(withStop0).toBe(withoutStop);
+  });
+});

@@ -121,3 +121,49 @@ describe("computePortfolioProjection", () => {
     });
   });
 });
+
+// ── additional edge cases ─────────────────────────────────────────────────────
+
+describe("computePortfolioProjection – edge cases", () => {
+  it("multiple holdings with allocations summing to 100%", () => {
+    const result = computePortfolioProjection({
+      holdings: [
+        holding({ symbol: "AAPL", allocationPct: 50, currentPrice: 100 }),
+        holding({ symbol: "MSFT", allocationPct: 30, currentPrice: 200 }),
+        holding({ symbol: "GOOG", allocationPct: 20, currentPrice: 150 }),
+      ],
+      totalPortfolioValue: 100000,
+      monthlyWithdrawal: 500,
+      yearsForward: 3,
+    });
+    expect(Object.keys(result)).toHaveLength(3);
+    expect(result["AAPL"]).toHaveLength(4);
+    expect(result["MSFT"]).toHaveLength(4);
+    expect(result["GOOG"]).toHaveLength(4);
+    // Year-0 required prices match current prices
+    expect(result["AAPL"][0].requiredPrice).toBe(100);
+    expect(result["MSFT"][0].requiredPrice).toBe(200);
+    expect(result["GOOG"][0].requiredPrice).toBe(150);
+  });
+
+  it("year-0 requiredPrice equals currentPrice exactly", () => {
+    const result = computePortfolioProjection({
+      holdings: [holding({ currentPrice: 42.5 })],
+      totalPortfolioValue: 5000,
+      monthlyWithdrawal: 200,
+      yearsForward: 5,
+    });
+    expect(result["AAPL"][0].requiredPrice).toBe(42.5);
+  });
+
+  it("zero monthlyWithdrawal keeps requiredPrice constant across all years", () => {
+    const result = computePortfolioProjection({
+      holdings: [holding({ currentPrice: 100 })],
+      totalPortfolioValue: 10000,
+      monthlyWithdrawal: 0,
+      yearsForward: 10,
+    });
+    const prices = result["AAPL"].map((p) => p.requiredPrice);
+    prices.forEach((p) => expect(p).toBe(100));
+  });
+});

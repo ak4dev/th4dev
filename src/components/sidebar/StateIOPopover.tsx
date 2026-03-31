@@ -57,7 +57,8 @@ function isTH4State(value: unknown): value is TH4State {
   return (
     typeof t["advanced"] === "boolean" &&
     typeof t["rollover"] === "boolean" &&
-    typeof t["showInflation"] === "boolean"
+    typeof t["showInflation"] === "boolean" &&
+    typeof t["portfolio"] === "boolean"
   );
 }
 

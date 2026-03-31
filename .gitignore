@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# CDK
+infra/dist
+infra/cdk.out
+infra/deploy-config.json
+*.js.map
+*.d.ts

@@ -409,8 +409,9 @@ export default function InvestmentCalculatorRadixModern({
     setMonthlyWithdrawal: (v: number) => updateSlider("monthlyWithdrawalA", v),
     setYearWithdrawalsBegin: (v: number) =>
       updateSlider("withdrawalStartYearA", v),
-    setYearContributionsStop: (v: number | undefined) =>
-      updateSlider("contributionStopYearA", v ?? 0),
+    setYearContributionsStop: (v: number | undefined) => {
+      if (v !== undefined) updateSlider("contributionStopYearA", v);
+    },
     maxMonthlyWithdrawal: MAX_MONTHLY_WITHDRAWAL,
   };
   const calcA = new InvestmentCalculator(invAProps);
@@ -441,8 +442,9 @@ export default function InvestmentCalculatorRadixModern({
     setMonthlyWithdrawal: (v: number) => updateSlider("monthlyWithdrawalB", v),
     setYearWithdrawalsBegin: (v: number) =>
       updateSlider("withdrawalStartYearB", v),
-    setYearContributionsStop: (v: number | undefined) =>
-      updateSlider("contributionStopYearB", v ?? 0),
+    setYearContributionsStop: (v: number | undefined) => {
+      if (v !== undefined) updateSlider("contributionStopYearB", v);
+    },
     maxMonthlyWithdrawal: MAX_MONTHLY_WITHDRAWAL,
   };
   const calcB = new InvestmentCalculator(invBProps);
@@ -1005,6 +1007,7 @@ export default function InvestmentCalculatorRadixModern({
           stockApiUrl={stockApiUrl}
           defaultPortfolioValue={totalA}
           monthlyWithdrawal={sliders.monthlyWithdrawalA || MIN_VALUE}
+          projectedGain={sliders.projectedGainA || DEFAULT_PROJECTED_GAIN}
           withdrawalStartYear={sliders.withdrawalStartYearA || 0}
           yearsForward={sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH}
           growthMatrix={calcA.getGrowthMatrix()}

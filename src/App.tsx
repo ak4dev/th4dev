@@ -120,11 +120,10 @@ const defaultState: TH4State = {
   },
   stock: {
     apiUrl: DEFAULT_STOCK_API_URL,
-    holdings: [{ symbol: "IBM", allocationPct: 100 }],
+    holdings: [],
   },
 };
 
-/* ==================================================
 /* ==================================================
  * State Persistence (opt-in)
  * ================================================== */

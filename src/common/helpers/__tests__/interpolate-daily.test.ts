@@ -77,3 +77,28 @@ describe("interpolateDailyForMonth", () => {
     });
   });
 });
+
+// ── additional edge cases ─────────────────────────────────────────────────────
+
+describe("interpolateDailyForMonth – edge cases", () => {
+  it("negative growth produces monotonically decreasing values", () => {
+    const result = interpolateDailyForMonth(
+      entry(1000, 900, new Date("2026-03-01")),
+      entry(700, 630, new Date("2026-04-01")),
+    );
+    for (let i = 1; i < result.length; i++) {
+      expect(result[i].y).toBeLessThanOrEqual(result[i - 1].y);
+    }
+  });
+
+  it("equal from/to produces constant values", () => {
+    const result = interpolateDailyForMonth(
+      entry(500, 450, new Date("2026-04-01")),
+      entry(500, 450, new Date("2026-05-01")),
+    );
+    result.forEach((pt) => {
+      expect(pt.y).toBe(500);
+      expect(pt.alternateY).toBe(450);
+    });
+  });
+});

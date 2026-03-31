@@ -1,0 +1,29 @@
+{
+  "name": "th4dev-infra",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest",
+    "cdk": "cdk",
+    "configure": "ts-node bin/configure.ts",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy",
+    "deploy:all": "cdk deploy --all"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.15.0",
+    "aws-cdk": "^2.200.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.3.4",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.7.3"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.200.0",
+    "constructs": "^10.4.2"
+  }
+}
