@@ -60,7 +60,8 @@ function isTH4State(value: unknown): value is TH4State {
     typeof t["showInflation"] === "boolean" &&
     typeof t["portfolio"] === "boolean" &&
     (t["fees"] === undefined || typeof t["fees"] === "boolean") &&
-    (t["monteCarlo"] === undefined || typeof t["monteCarlo"] === "boolean")
+    (t["monteCarlo"] === undefined || typeof t["monteCarlo"] === "boolean") &&
+    (t["fire"] === undefined || typeof t["fire"] === "boolean")
   );
 }
 

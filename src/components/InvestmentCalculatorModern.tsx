@@ -12,6 +12,7 @@ import { solveForWithdrawal } from "../common/helpers/solve-for-withdrawal";
 import DateAmountTable from "./date-amount-table";
 import { InvestmentLineChart } from "./investment-line-chart";
 import PortfolioPanel from "./portfolio/PortfolioPanel";
+import FirePanel from "./fire/FirePanel";
 import { addYears } from "date-fns";
 import {
   DEFAULT_INITIAL_AMOUNT,
@@ -375,6 +376,7 @@ interface TogglesState {
   portfolio: boolean;
   fees: boolean;
   monteCarlo: boolean;
+  fire: boolean;
 }
 
 interface InvestmentCalculatorModernProps {
@@ -1058,6 +1060,13 @@ export default function InvestmentCalculatorRadixModern({
                       onCheckedChange={(v) => updateToggle("monteCarlo", v)}
                     />
                   </SwitchRow>
+                  <SwitchRow>
+                    <Label>FIRE:</Label>
+                    <SwitchButton
+                      checked={toggles.fire}
+                      onCheckedChange={(v) => updateToggle("fire", v)}
+                    />
+                  </SwitchRow>
                 </TogglesGrid>
               </>
             )}
@@ -1156,6 +1165,24 @@ export default function InvestmentCalculatorRadixModern({
               ? sliders.yearsOfGrowthB || DEFAULT_YEARS_OF_GROWTH
               : undefined
           }
+        />
+      )}
+
+      {/* FIRE Calculator Panel */}
+      {toggles.fire && (
+        <FirePanel
+          currentSavings={parseInt(inputs.currentAmountA || "0") || 0}
+          monthlySavings={sliders.monthlyContributionA || 0}
+          annualReturn={sliders.projectedGainA || DEFAULT_PROJECTED_GAIN}
+          inflationRate={sliders.yearlyInflation || DEFAULT_INFLATION_RATE}
+          annualExpenses={sliders.fireAnnualExpenses || 40000}
+          safeWithdrawalRate={sliders.fireSWR || 4}
+          currentAge={sliders.fireCurrentAge || 30}
+          targetRetirementAge={sliders.fireRetirementAge || 65}
+          onAnnualExpensesChange={(v) => updateSlider("fireAnnualExpenses", v)}
+          onSafeWithdrawalRateChange={(v) => updateSlider("fireSWR", v)}
+          onCurrentAgeChange={(v) => updateSlider("fireCurrentAge", v)}
+          onTargetRetirementAgeChange={(v) => updateSlider("fireRetirementAge", v)}
         />
       )}
     </Container>
