@@ -233,6 +233,21 @@ const TogglesGrid = styled("div", {
   },
 });
 
+const ToggleSection = styled("div", {
+  display: "flex",
+  flexDirection: "column",
+  gap: "12px",
+});
+
+const SectionLabel = styled("span", {
+  fontSize: "0.7rem",
+  fontWeight: 600,
+  color: "$comment",
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  opacity: 0.7,
+});
+
 /* ---------------- Helpers ---------------- */
 function CurrencyInput({
   value,
@@ -913,36 +928,47 @@ export default function InvestmentCalculatorRadixModern({
 
         {/* Info / Global Settings Panel */}
         <Panel>
-          <TogglesGrid>
-            <SwitchRow>
-              <Label>Advanced:</Label>
-              <SwitchButton
-                checked={toggles.advanced}
-                onCheckedChange={(v) => updateToggle("advanced", v)}
-              />
-            </SwitchRow>
-            <SwitchRow>
-              <Label>Rollover:</Label>
-              <SwitchButton
-                checked={toggles.rollover}
-                onCheckedChange={(v) => updateToggle("rollover", v)}
-              />
-            </SwitchRow>
-            <SwitchRow>
-              <Label>Inflated:</Label>
-              <SwitchButton
-                checked={toggles.showInflation}
-                onCheckedChange={(v) => handleInflationToggle(v)}
-              />
-            </SwitchRow>
-            <SwitchRow>
-              <Label>Portfolio:</Label>
-              <SwitchButton
-                checked={toggles.portfolio}
-                onCheckedChange={(v) => updateToggle("portfolio", v)}
-              />
-            </SwitchRow>
-          </TogglesGrid>
+          <ToggleSection>
+            <SectionLabel>Core</SectionLabel>
+            <TogglesGrid>
+              <SwitchRow>
+                <Label>Advanced:</Label>
+                <SwitchButton
+                  checked={toggles.advanced}
+                  onCheckedChange={(v) => updateToggle("advanced", v)}
+                />
+              </SwitchRow>
+              <SwitchRow>
+                <Label>Inflated:</Label>
+                <SwitchButton
+                  checked={toggles.showInflation}
+                  onCheckedChange={(v) => handleInflationToggle(v)}
+                />
+              </SwitchRow>
+            </TogglesGrid>
+
+            {toggles.advanced && (
+              <>
+                <SectionLabel>Tools</SectionLabel>
+                <TogglesGrid>
+                  <SwitchRow>
+                    <Label>Rollover:</Label>
+                    <SwitchButton
+                      checked={toggles.rollover}
+                      onCheckedChange={(v) => updateToggle("rollover", v)}
+                    />
+                  </SwitchRow>
+                  <SwitchRow>
+                    <Label>Portfolio:</Label>
+                    <SwitchButton
+                      checked={toggles.portfolio}
+                      onCheckedChange={(v) => updateToggle("portfolio", v)}
+                    />
+                  </SwitchRow>
+                </TogglesGrid>
+              </>
+            )}
+          </ToggleSection>
           <InvestmentSlider
             label="Inflation (%)"
             value={sliders.yearlyInflation || DEFAULT_INFLATION_RATE}
