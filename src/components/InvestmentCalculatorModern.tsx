@@ -37,6 +37,7 @@ import {
 } from "../common/constants/app-constants";
 import { compactModernInputStyles } from "../common/constants/input-styles";
 import { runMonteCarloSimulation, runCombinedSimulation, type PercentileBand } from "../common/helpers/monte-carlo";
+import { normalizeState } from "../common/helpers/state-manager";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
 import type { TH4State } from "../common/types/types";
 
@@ -444,17 +445,14 @@ export default function InvestmentCalculatorRadixModern({
   );
 
   const handleLoadScenario = useCallback(
-    (state: TH4State) => {
-      if (state.theme) setTheme(state.theme);
+    (raw: TH4State) => {
+      const state = normalizeState(raw);
+      setTheme(state.theme);
       setSliders(state.sliders);
       setInputs(state.inputs);
-      setToggles(state.toggles as TogglesState);
-      if (state.stock) {
-        setStockHoldings(state.stock.holdings);
-      }
-      if (state.budgetItems) {
-        setBudgetItems(state.budgetItems);
-      }
+      setToggles(state.toggles);
+      setStockHoldings(state.stock!.holdings);
+      setBudgetItems(state.budgetItems ?? []);
     },
     [setTheme, setSliders, setInputs, setToggles, setStockHoldings, setBudgetItems],
   );

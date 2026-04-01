@@ -10,17 +10,7 @@ import StateIOPopover from "./components/sidebar/StateIOPopover";
 import SubdomainRouter from "./components/SubdomainRouter";
 import StockModal from "./components/StockModal";
 import LandingReadme from "./components/LandingReadme";
-import {
-  DEFAULT_THEME,
-  DEFAULT_INITIAL_AMOUNT,
-  DEFAULT_PROJECTED_GAIN,
-  DEFAULT_YEARS_OF_GROWTH,
-  DEFAULT_MONTHLY_CONTRIBUTION,
-  DEFAULT_MONTHLY_WITHDRAWAL,
-  DEFAULT_WITHDRAWAL_START_YEAR,
-  DEFAULT_INFLATION_RATE,
-  DEFAULT_TARGET_VALUE,
-} from "./common/constants/app-constants";
+import { DEFAULT_STATE, normalizeState } from "./common/helpers/state-manager";
 import type { TH4State } from "./common/types/types";
 import type { PortfolioHolding } from "./common/types/portfolio-types";
 import type { BudgetItem } from "./common/helpers/budget-manager";
@@ -85,52 +75,10 @@ const HelpContent = styled(Dialog.Content, {
 });
 
 /* ==================================================
- * Default State
+ * Default State — imported from state-manager module
  * ================================================== */
 
-const DEFAULT_STOCK_API_URL =
-  "https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey=demo";
-
-const defaultState: TH4State = {
-  theme: DEFAULT_THEME,
-  sliders: {
-    investmentA: DEFAULT_INITIAL_AMOUNT,
-    investmentB: DEFAULT_INITIAL_AMOUNT,
-    projectedGainA: DEFAULT_PROJECTED_GAIN,
-    projectedGainB: DEFAULT_PROJECTED_GAIN,
-    yearsOfGrowthA: DEFAULT_YEARS_OF_GROWTH,
-    yearsOfGrowthB: DEFAULT_YEARS_OF_GROWTH,
-    monthlyContributionA: DEFAULT_MONTHLY_CONTRIBUTION,
-    monthlyContributionB: DEFAULT_MONTHLY_CONTRIBUTION,
-    monthlyWithdrawalA: DEFAULT_MONTHLY_WITHDRAWAL,
-    monthlyWithdrawalB: DEFAULT_MONTHLY_WITHDRAWAL,
-    withdrawalStartYearA: DEFAULT_WITHDRAWAL_START_YEAR,
-    withdrawalStartYearB: DEFAULT_WITHDRAWAL_START_YEAR,
-    yearlyInflation: DEFAULT_INFLATION_RATE,
-    targetValueA: DEFAULT_TARGET_VALUE,
-    targetValueB: DEFAULT_TARGET_VALUE,
-  },
-  inputs: {
-    currentAmountA: String(DEFAULT_INITIAL_AMOUNT),
-    currentAmountB: String(DEFAULT_INITIAL_AMOUNT),
-  },
-  toggles: {
-    advanced: false,
-    rollover: false,
-    showInflation: false,
-    portfolio: false,
-    fees: false,
-    monteCarlo: false,
-    fire: false,
-    scenarios: false,
-    budget: false,
-    monteCarloMode: "combined",
-  },
-  stock: {
-    apiUrl: DEFAULT_STOCK_API_URL,
-    holdings: [],
-  },
-};
+const defaultState = DEFAULT_STATE;
 
 /* ==================================================
  * State Persistence (opt-in)
@@ -242,6 +190,13 @@ if (rootOrigin) {
   window.location.replace(`${rootOrigin}?p=${initialPage}`);
 }
 
+// Clean up the ?p= query param after reading so the URL stays tidy
+if (!rootOrigin && new URLSearchParams(window.location.search).has("p")) {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("p");
+  window.history.replaceState(null, "", url.toString());
+}
+
 /* ==================================================
  * Main Component
  * ================================================== */
@@ -300,16 +255,6 @@ export default function App() {
     if (cls) document.body.classList.add(cls);
   }, [theme]);
 
-  /** Keep URL ?p= param in sync so refresh preserves the active page */
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const current = url.searchParams.get("p") ?? "";
-    if (current !== activePage) {
-      url.searchParams.set("p", activePage);
-      window.history.replaceState(null, "", url.toString());
-    }
-  }, [activePage]);
-
   /** Persist financial state when user has opted in */
   useEffect(() => {
     if (!localStorageEnabled) return;
@@ -357,26 +302,22 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const setAppState = (state: TH4State): void => {
-    if (state.theme) setTheme(state.theme);
-    if (state.sliders) setSliders((prev) => ({ ...prev, ...state.sliders }));
-    if (state.inputs) setInputs((prev) => ({ ...prev, ...state.inputs }));
-    if (state.toggles) setToggles((prev) => ({ ...prev, ...state.toggles }));
-    if (state.budgetItems) setBudgetItems(state.budgetItems);
-    if (state.scenarios) setScenarios(state.scenarios);
-    if (state.activePage) setActivePage(state.activePage);
-    if (state.stock) {
-      setStockApiUrl(state.stock.apiUrl);
-      const legacySymbols = (state.stock as unknown as { symbols?: string[] })
-        .symbols;
-      if (state.stock.holdings) {
-        setStockHoldings(state.stock.holdings);
-      } else if (legacySymbols) {
-        setStockHoldings(
-          legacySymbols.map((s) => ({ symbol: s, allocationPct: 0 })),
-        );
-      }
-    }
+  /**
+   * Applies an imported or loaded TH4State to all React state setters.
+   * Uses normalizeState() to fill any missing fields with defaults,
+   * then does a full replacement (not merge) for every state variable.
+   */
+  const setAppState = (raw: TH4State): void => {
+    const state = normalizeState(raw);
+    setTheme(state.theme);
+    setSliders(state.sliders);
+    setInputs(state.inputs);
+    setToggles(state.toggles);
+    setBudgetItems(state.budgetItems ?? []);
+    setScenarios(state.scenarios ?? []);
+    setActivePage(state.activePage ?? "f");
+    setStockApiUrl(state.stock!.apiUrl);
+    setStockHoldings(state.stock!.holdings);
   };
 
   return (

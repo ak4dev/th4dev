@@ -10,6 +10,7 @@ import {
   FILE_EXPORT_PREFIX,
   FILE_EXPORT_EXTENSION,
 } from "../../common/constants/app-constants";
+import { isValidTH4State } from "../../common/helpers/state-manager";
 import type { TH4State } from "../../common/types/types";
 
 /* ==================================================
@@ -35,53 +36,6 @@ const SidebarButton = styled("button", {
 const FileInput = styled("input", {
   display: "none",
 });
-
-/* ==================================================
- * Type Guard
- * ================================================== */
-
-/**
- * Runtime type guard that verifies an unknown value conforms to the TH4State shape.
- * Prevents applying malformed or incompatible JSON files as application state.
- * @param value - The parsed JSON value to validate
- * @returns True if value is a valid TH4State object
- */
-function isValidBudgetItem(item: unknown): boolean {
-  if (typeof item !== "object" || item === null) return false;
-  const o = item as Record<string, unknown>;
-  return (
-    typeof o["id"] === "string" &&
-    typeof o["name"] === "string" &&
-    typeof o["amount"] === "number" &&
-    typeof o["category"] === "string"
-  );
-}
-
-function isTH4State(value: unknown): value is TH4State {
-  if (typeof value !== "object" || value === null) return false;
-  const v = value as Record<string, unknown>;
-  if (typeof v["theme"] !== "string") return false;
-  if (typeof v["sliders"] !== "object" || v["sliders"] === null) return false;
-  if (typeof v["inputs"] !== "object" || v["inputs"] === null) return false;
-  if (typeof v["toggles"] !== "object" || v["toggles"] === null) return false;
-  const t = v["toggles"] as Record<string, unknown>;
-  return (
-    typeof t["advanced"] === "boolean" &&
-    typeof t["rollover"] === "boolean" &&
-    typeof t["showInflation"] === "boolean" &&
-    typeof t["portfolio"] === "boolean" &&
-    (t["fees"] === undefined || typeof t["fees"] === "boolean") &&
-    (t["monteCarlo"] === undefined || typeof t["monteCarlo"] === "boolean") &&
-    (t["fire"] === undefined || typeof t["fire"] === "boolean") &&
-    (t["scenarios"] === undefined || typeof t["scenarios"] === "boolean") &&
-    (t["budget"] === undefined || typeof t["budget"] === "boolean") &&
-    (t["monteCarloMode"] === undefined || t["monteCarloMode"] === "combined" || t["monteCarloMode"] === "individual") &&
-    (v["budgetItems"] === undefined ||
-      (Array.isArray(v["budgetItems"]) && v["budgetItems"].every(isValidBudgetItem))) &&
-    (v["scenarios"] === undefined || Array.isArray(v["scenarios"])) &&
-    (v["activePage"] === undefined || typeof v["activePage"] === "string")
-  );
-}
 
 /* ==================================================
  * Types
@@ -143,7 +97,7 @@ export default function StateIOButtons({ getState, setState }: Props) {
     reader.onload = (event) => {
       try {
         const parsed: unknown = JSON.parse(event.target?.result as string);
-        if (!isTH4State(parsed)) {
+        if (!isValidTH4State(parsed)) {
           alert(
             "Invalid state file: the JSON does not match the expected format.",
           );
