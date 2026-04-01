@@ -52,11 +52,6 @@ export function loadBudget(): BudgetItem[] {
   }
 }
 
-function persistBudget(items: BudgetItem[]): void {
-  const store: BudgetStore = { items };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-}
-
 /* ---------- CRUD ---------- */
 
 export function addBudgetItem(

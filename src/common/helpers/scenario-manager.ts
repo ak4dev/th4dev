@@ -40,11 +40,6 @@ export function loadScenarios(): ScenarioSnapshot[] {
   }
 }
 
-function persistScenarios(scenarios: ScenarioSnapshot[]): void {
-  const store: ScenariosStore = { scenarios };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-}
-
 /* ---------- CRUD ---------- */
 
 export function saveScenario(

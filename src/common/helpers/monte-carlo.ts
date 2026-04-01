@@ -231,7 +231,6 @@ export function runRolloverSimulation(
   paramsB: MonteCarloParams,
   rolloverYear: number,
 ): PercentileBand[] {
-  const simCount = paramsA.simCount;
   const maxYears = Math.max(paramsA.yearsOfGrowth, paramsB.yearsOfGrowth);
 
   const pathsA = simulateAll(paramsA);
