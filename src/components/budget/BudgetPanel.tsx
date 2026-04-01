@@ -8,9 +8,10 @@
  * ================================================== */
 
 import { useState, useCallback, useMemo } from "react";
+import * as Slider from "@radix-ui/react-slider";
 import { styled, keyframes } from "../../../stitches.config";
+import { compactModernInputStyles } from "../../common/constants/input-styles";
 import {
-  loadBudget,
   addBudgetItem,
   updateBudgetItem,
   deleteBudgetItem,
@@ -26,6 +27,10 @@ import {
 /* ---------- Props ---------- */
 
 interface BudgetPanelProps {
+  /** Budget items managed by parent */
+  items: BudgetItem[];
+  /** Setter for budget items */
+  setItems: (items: BudgetItem[]) => void;
   /** Callback fired whenever the annual total changes (for FIRE integration) */
   onAnnualTotalChange?: (annual: number) => void;
 }
@@ -74,15 +79,9 @@ const AddRow = styled("form", {
 });
 
 const Input = styled("input", {
-  backgroundColor: "$background",
-  border: "1px solid $comment",
-  borderRadius: "6px",
-  padding: "8px 10px",
-  fontSize: "0.85rem",
-  color: "$foreground",
+  ...compactModernInputStyles,
   outline: "none",
-  "&:focus": { borderColor: "$cyan" },
-  "&::placeholder": { color: "$comment" },
+  "&::placeholder": { color: "$comment", opacity: 0.8 },
 });
 
 const NameInput = styled(Input, {
@@ -298,6 +297,40 @@ const InlineInput = styled(Input, {
   width: "auto",
 });
 
+/* --- Budget item slider (matches original InvestmentSlider theme) --- */
+
+const BudgetSliderRoot = styled(Slider.Root, {
+  position: "relative",
+  display: "flex",
+  alignItems: "center",
+  flex: 1,
+  minWidth: 0,
+  height: "20px",
+});
+
+const BudgetSliderTrack = styled(Slider.Track, {
+  backgroundColor: "$cyan",
+  position: "relative",
+  flexGrow: 1,
+  height: "4px",
+  borderRadius: "9999px",
+});
+
+const BudgetSliderRange = styled(Slider.Range, {
+  position: "absolute",
+  backgroundColor: "$green",
+  height: "100%",
+  borderRadius: "9999px",
+});
+
+const BudgetSliderThumb = styled(Slider.Thumb, {
+  width: 14,
+  height: 14,
+  borderRadius: "50%",
+  backgroundColor: "$green",
+  boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
+});
+
 /* ---------- Helpers ---------- */
 
 function fmt(n: number): string {
@@ -323,9 +356,10 @@ const CATEGORY_COLORS: Record<string, string> = {
 /* ---------- Component ---------- */
 
 export default function BudgetPanel({
+  items,
+  setItems,
   onAnnualTotalChange,
 }: BudgetPanelProps) {
-  const [items, setItems] = useState<BudgetItem[]>(loadBudget);
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
   const [newCategory, setNewCategory] = useState<string>(DEFAULT_CATEGORIES[0]);
@@ -338,7 +372,7 @@ export default function BudgetPanel({
   const categoryTotals = useMemo(() => getTotalByCategory(items), [items]);
   const categoryPcts = useMemo(() => getCategoryPercentages(items), [items]);
 
-  const canAdd = newName.trim().length > 0 && items.length < MAX_ITEMS;
+  const canAdd = items.length < MAX_ITEMS;
 
   /* --- Fire integration --- */
   const prevAnnualRef = useMemo(() => ({ current: -1 }), []);
@@ -355,7 +389,8 @@ export default function BudgetPanel({
       e.preventDefault();
       if (!canAdd) return;
       const amount = parseFloat(newAmount) || 0;
-      const updated = addBudgetItem(newName.trim(), amount, newCategory, items);
+      const name = newName.trim() || "Untitled";
+      const updated = addBudgetItem(name, amount, newCategory, items);
       setItems(updated);
       setNewName("");
       setNewAmount("");
@@ -389,6 +424,14 @@ export default function BudgetPanel({
     setEditingId(null);
   }, [editingId, editName, editAmount, items]);
 
+  const handleSliderChange = useCallback(
+    (id: string, amount: number) => {
+      const updated = updateBudgetItem(id, { amount }, items);
+      setItems(updated);
+    },
+    [items],
+  );
+
   /* --- Sorted categories for display --- */
   const sortedCategories = useMemo(() => {
     return [...categoryTotals.entries()].sort((a, b) => b[1] - a[1]);
@@ -397,7 +440,7 @@ export default function BudgetPanel({
   return (
     <Container>
       <Title>
-        💰 Monthly Budget{" "}
+        Monthly Budget{" "}
         <CountLabel>
           ({items.length}/{MAX_ITEMS})
         </CountLabel>
@@ -413,11 +456,13 @@ export default function BudgetPanel({
         />
         <AmountInput
           placeholder="$/mo"
-          type="number"
-          min="0"
-          step="1"
+          type="text"
+          inputMode="decimal"
           value={newAmount}
-          onChange={(e) => setNewAmount(e.target.value)}
+          onChange={(e) => {
+            const cleaned = e.target.value.replace(/[^0-9.]/g, "");
+            setNewAmount(cleaned);
+          }}
         />
         <Select
           value={newCategory}
@@ -457,11 +502,13 @@ export default function BudgetPanel({
                     css={{ flex: "2 1 0" }}
                   />
                   <InlineInput
-                    type="number"
-                    min="0"
-                    step="1"
+                    type="text"
+                    inputMode="decimal"
                     value={editAmount}
-                    onChange={(e) => setEditAmount(e.target.value)}
+                    onChange={(e) => {
+                      const cleaned = e.target.value.replace(/[^0-9.]/g, "");
+                      setEditAmount(cleaned);
+                    }}
                     onKeyDown={(e) => e.key === "Enter" && handleFinishEdit()}
                     onBlur={handleFinishEdit}
                     css={{ flex: "1 1 0", textAlign: "right", maxWidth: "90px" }}
@@ -477,6 +524,18 @@ export default function BudgetPanel({
                   </ItemName>
                   <ItemCategory>{item.category}</ItemCategory>
                   <ItemAmount>{fmt(item.amount)}</ItemAmount>
+                  <BudgetSliderRoot
+                    value={[item.amount]}
+                    min={0}
+                    max={Math.max(item.amount * 2, 500)}
+                    step={1}
+                    onValueChange={(val) => handleSliderChange(item.id, val[0])}
+                  >
+                    <BudgetSliderTrack>
+                      <BudgetSliderRange />
+                    </BudgetSliderTrack>
+                    <BudgetSliderThumb />
+                  </BudgetSliderRoot>
                 </>
               )}
               <DeleteButton

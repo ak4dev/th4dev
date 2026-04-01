@@ -23,6 +23,8 @@ import {
 } from "./common/constants/app-constants";
 import type { TH4State } from "./common/types/types";
 import type { PortfolioHolding } from "./common/types/portfolio-types";
+import type { BudgetItem } from "./common/helpers/budget-manager";
+import { loadBudget } from "./common/helpers/budget-manager";
 
 export type { TH4State };
 
@@ -144,6 +146,7 @@ interface PersistedState {
   toggles?: TH4State["toggles"];
   stockApiUrl?: string;
   stockHoldings?: PortfolioHolding[];
+  budgetItems?: BudgetItem[];
 }
 
 function loadConsent(): boolean {
@@ -263,6 +266,9 @@ export default function App() {
   const [stockHoldings, setStockHoldings] = useState<PortfolioHolding[]>(
     persisted.stockHoldings ?? defaultState.stock!.holdings,
   );
+  const [budgetItems, setBudgetItems] = useState<BudgetItem[]>(
+    persisted.budgetItems ?? loadBudget(),
+  );
   const [stockModalOpen, setStockModalOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -293,6 +299,7 @@ export default function App() {
       toggles,
       stockApiUrl,
       stockHoldings,
+      budgetItems,
     });
   }, [
     localStorageEnabled,
@@ -302,6 +309,7 @@ export default function App() {
     toggles,
     stockApiUrl,
     stockHoldings,
+    budgetItems,
   ]);
 
   /** Keyboard shortcuts */
@@ -329,6 +337,7 @@ export default function App() {
     if (state.sliders) setSliders((prev) => ({ ...prev, ...state.sliders }));
     if (state.inputs) setInputs((prev) => ({ ...prev, ...state.inputs }));
     if (state.toggles) setToggles((prev) => ({ ...prev, ...state.toggles }));
+    if (state.budgetItems) setBudgetItems(state.budgetItems);
     if (state.stock) {
       setStockApiUrl(state.stock.apiUrl);
       const legacySymbols = (state.stock as unknown as { symbols?: string[] })
@@ -358,6 +367,8 @@ export default function App() {
           stockApiUrl={stockApiUrl}
           stockHoldings={stockHoldings}
           setStockHoldings={setStockHoldings}
+          budgetItems={budgetItems}
+          setBudgetItems={setBudgetItems}
           localStorageEnabled={localStorageEnabled}
           onLocalStorageToggle={setLocalStorageEnabled}
         />
@@ -372,6 +383,7 @@ export default function App() {
             inputs,
             toggles,
             stock: { apiUrl: stockApiUrl, holdings: stockHoldings },
+            budgetItems,
           })}
           setState={setAppState}
         />

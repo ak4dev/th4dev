@@ -179,9 +179,9 @@ function statusLevel(pct: number): StatusLevel {
 }
 
 function statusIcon(level: StatusLevel): string {
-  if (level === "safe") return "✓";
-  if (level === "warn") return "⚠";
-  return "✗";
+  if (level === "safe") return "[OK]";
+  if (level === "warn") return "[!]";
+  return "[X]";
 }
 
 /* ==================================================
@@ -338,7 +338,7 @@ export default function CapitalPreservationSchedule({
         <StatusBanner>
           {monthlyWithdrawal > 0 && (
             <StatusChip status={withdrawalSafe ? "safe" : "warn"}>
-              {withdrawalSafe ? "✓" : "⚠"} Monthly withdrawal ($
+              {withdrawalSafe ? "[OK]" : "[!]"} Monthly withdrawal ($
               {monthlyWithdrawal.toLocaleString()}) is{" "}
               {withdrawalSafe
                 ? "covered by growth"

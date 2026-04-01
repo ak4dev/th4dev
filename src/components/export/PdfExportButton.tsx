@@ -82,7 +82,7 @@ export default function PdfExportButton({
 
   return (
     <Button onClick={handleExport} disabled={generating}>
-      📄 {generating ? "Generating…" : "Export PDF"}
+      {generating ? "Generating..." : "Export PDF"}
     </Button>
   );
 }

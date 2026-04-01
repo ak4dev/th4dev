@@ -7,6 +7,7 @@ import InvestmentCalculatorRadixModern from "./InvestmentCalculatorModern";
 import LandingReadme from "./LandingReadme";
 import type { TH4State } from "../common/types/types";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
+import type { BudgetItem } from "../common/helpers/budget-manager";
 
 /* ==================================================
  * Types
@@ -24,6 +25,8 @@ interface SubdomainRouterProps {
   stockApiUrl: string;
   stockHoldings: PortfolioHolding[];
   setStockHoldings: React.Dispatch<React.SetStateAction<PortfolioHolding[]>>;
+  budgetItems: BudgetItem[];
+  setBudgetItems: React.Dispatch<React.SetStateAction<BudgetItem[]>>;
   localStorageEnabled: boolean;
   onLocalStorageToggle: (enabled: boolean) => void;
 }
@@ -54,6 +57,8 @@ const SubdomainRouter = ({
   stockApiUrl,
   stockHoldings,
   setStockHoldings,
+  budgetItems,
+  setBudgetItems,
   localStorageEnabled,
   onLocalStorageToggle,
 }: SubdomainRouterProps) => {
@@ -68,6 +73,8 @@ const SubdomainRouter = ({
     stockApiUrl,
     stockHoldings,
     setStockHoldings,
+    budgetItems,
+    setBudgetItems,
     localStorageEnabled,
     onLocalStorageToggle,
   };

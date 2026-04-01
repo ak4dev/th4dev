@@ -46,6 +46,9 @@ Use the feature area: `fees`, `monte-carlo`, `fire`, `scenarios`, `budget`, `pdf
 - **Testing**: Vitest with `globals: true`, test files in `src/**/__tests__/**/*.test.ts`
 - **No semicolons at EOL**: Project uses no-semicolon style in most files
 - **Comments**: Only when clarifying non-obvious logic. No commented-out code.
+- **No emojis**: Never use emoji characters in UI text, labels, or code unless explicitly requested by the user.
+- **Theme colors**: Always use Stitches theme tokens (`$cyan`, `$green`, `$comment`, etc.) for colors. Never hardcode colors outside of `stitches.config.ts` theme definitions.
+- **Conventional Commits**: All commits must follow Conventional Commits format (`type(scope): description`).
 
 ## Architecture
 

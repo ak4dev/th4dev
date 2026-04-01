@@ -8,6 +8,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 import { styled } from "../../../stitches.config";
+import { compactModernInputStyles } from "../../common/constants/input-styles";
 import type { TH4State } from "../../common/types/types";
 import {
   loadScenarios,
@@ -54,19 +55,11 @@ const SaveRow = styled("div", {
 });
 
 const Input = styled("input", {
+  ...compactModernInputStyles,
   flex: 1,
-  backgroundColor: "$background",
-  border: "1px solid $comment",
-  borderRadius: "6px",
-  padding: "8px 10px",
-  fontSize: "0.85rem",
-  color: "$foreground",
-  outline: "none",
-  "&:focus": {
-    borderColor: "$cyan",
-  },
   "&::placeholder": {
     color: "$comment",
+    opacity: 0.8,
   },
 });
 
@@ -243,7 +236,7 @@ export default function ScenarioPanel({
   return (
     <Container>
       <Title>
-        📸 Scenario Snapshots{" "}
+        Scenario Snapshots{" "}
         <CountLabel>
           ({scenarios.length}/{MAX_SCENARIOS})
         </CountLabel>

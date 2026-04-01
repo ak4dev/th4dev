@@ -63,7 +63,8 @@ function isTH4State(value: unknown): value is TH4State {
     (t["monteCarlo"] === undefined || typeof t["monteCarlo"] === "boolean") &&
     (t["fire"] === undefined || typeof t["fire"] === "boolean") &&
     (t["scenarios"] === undefined || typeof t["scenarios"] === "boolean") &&
-    (t["budget"] === undefined || typeof t["budget"] === "boolean")
+    (t["budget"] === undefined || typeof t["budget"] === "boolean") &&
+    (v["budgetItems"] === undefined || Array.isArray(v["budgetItems"]))
   );
 }
 

@@ -534,7 +534,7 @@ export default function PortfolioPanel({
         {holdings.length > 0 && (
           <AllocationSum valid={allocationValid}>
             Allocated: {totalAllocation.toFixed(1)}%{" "}
-            {allocationValid ? "✓" : "(must equal 100%)"}
+            {allocationValid ? "(OK)" : "(must equal 100%)"}
           </AllocationSum>
         )}
       </Row>

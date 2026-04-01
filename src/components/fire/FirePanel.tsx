@@ -8,6 +8,7 @@
 
 import { useMemo } from "react";
 import { styled } from "../../../stitches.config";
+import { compactModernInputStyles } from "../../common/constants/input-styles";
 import { calculateFire, type FireResult } from "../../common/helpers/fire-calculator";
 
 /* ---------- Props ---------- */
@@ -127,18 +128,11 @@ const InputLabel = styled("label", {
 });
 
 const Input = styled("input", {
-  backgroundColor: "$background",
-  border: "1px solid $comment",
-  borderRadius: "6px",
-  padding: "6px 10px",
-  fontSize: "0.85rem",
-  color: "$foreground",
+  ...compactModernInputStyles,
   width: "100px",
+  minWidth: 0,
+  maxWidth: "120px",
   textAlign: "right",
-  "&:focus": {
-    outline: "none",
-    borderColor: "$cyan",
-  },
 });
 
 const BadgeTag = styled("span", {
@@ -231,7 +225,7 @@ export default function FirePanel(props: FirePanelProps) {
   return (
     <Container>
       <Title>
-        🔥 FIRE Calculator
+        FIRE Calculator
         <BadgeTag variant={overallStatus}>{statusLabel}</BadgeTag>
       </Title>
 
@@ -239,44 +233,54 @@ export default function FirePanel(props: FirePanelProps) {
       <InputRow>
         <InputLabel>Annual Expenses</InputLabel>
         <Input
-          type="number"
+          type="text"
+          inputMode="numeric"
           value={annualExpenses || ""}
-          onChange={(e) => onAnnualExpensesChange(Number(e.target.value) || 0)}
+          onChange={(e) => {
+            const cleaned = e.target.value.replace(/[^0-9]/g, "");
+            onAnnualExpensesChange(Number(cleaned) || 0);
+          }}
         />
       </InputRow>
       <InputRow>
         <InputLabel>SWR (%)</InputLabel>
         <Input
-          type="number"
-          step="0.1"
-          min="1"
-          max="10"
+          type="text"
+          inputMode="decimal"
           value={safeWithdrawalRate || ""}
-          onChange={(e) =>
-            onSafeWithdrawalRateChange(Number(e.target.value) || 4)
-          }
+          onChange={(e) => {
+            const cleaned = e.target.value.replace(/[^0-9.]/g, "");
+            const parsed = parseFloat(cleaned);
+            if (!Number.isNaN(parsed)) {
+              onSafeWithdrawalRateChange(Math.min(10, Math.max(1, parsed)));
+            }
+          }}
         />
       </InputRow>
       <InputRow>
         <InputLabel>Current Age</InputLabel>
         <Input
-          type="number"
-          min="18"
-          max="100"
+          type="text"
+          inputMode="numeric"
           value={currentAge || ""}
-          onChange={(e) => onCurrentAgeChange(Number(e.target.value) || 30)}
+          onChange={(e) => {
+            const cleaned = e.target.value.replace(/[^0-9]/g, "");
+            const parsed = Number(cleaned);
+            if (parsed) onCurrentAgeChange(Math.min(100, Math.max(18, parsed)));
+          }}
         />
       </InputRow>
       <InputRow>
         <InputLabel>Retire at Age</InputLabel>
         <Input
-          type="number"
-          min="18"
-          max="100"
+          type="text"
+          inputMode="numeric"
           value={targetRetirementAge || ""}
-          onChange={(e) =>
-            onTargetRetirementAgeChange(Number(e.target.value) || 65)
-          }
+          onChange={(e) => {
+            const cleaned = e.target.value.replace(/[^0-9]/g, "");
+            const parsed = Number(cleaned);
+            if (parsed) onTargetRetirementAgeChange(Math.min(100, Math.max(18, parsed)));
+          }}
         />
       </InputRow>
 

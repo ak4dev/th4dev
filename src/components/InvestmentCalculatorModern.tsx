@@ -17,6 +17,7 @@ import ScenarioPanel from "./scenarios/ScenarioPanel";
 import PdfExportButton from "./export/PdfExportButton";
 import BudgetPanel from "./budget/BudgetPanel";
 import { addYears } from "date-fns";
+import type { BudgetItem } from "../common/helpers/budget-manager";
 import {
   DEFAULT_INITIAL_AMOUNT,
   DEFAULT_PROJECTED_GAIN,
@@ -231,16 +232,15 @@ const SwitchRow = styled("div", {
   display: "flex",
   gap: "12px",
   alignItems: "center",
+  minWidth: 0,
+  "& label": { minWidth: "72px" },
 });
 
-/** Auto-distributes toggle rows across available width; minimum 2 columns */
+/** Fixed-width columns so toggle labels and switches align vertically */
 const TogglesGrid = styled("div", {
   display: "grid",
   gap: "12px",
-  gridTemplateColumns: "repeat(2, 1fr)",
-  "@media(min-width:480px)": {
-    gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
-  },
+  gridTemplateColumns: "repeat(2, minmax(140px, 1fr))",
 });
 
 const ToggleSection = styled("div", {
@@ -395,6 +395,8 @@ interface InvestmentCalculatorModernProps {
   stockApiUrl: string;
   stockHoldings: PortfolioHolding[];
   setStockHoldings: Dispatch<SetStateAction<PortfolioHolding[]>>;
+  budgetItems: BudgetItem[];
+  setBudgetItems: Dispatch<SetStateAction<BudgetItem[]>>;
 }
 
 /* ---------------- Main Component ---------------- */
@@ -408,6 +410,8 @@ export default function InvestmentCalculatorRadixModern({
   stockApiUrl,
   stockHoldings,
   setStockHoldings,
+  budgetItems,
+  setBudgetItems,
 }: InvestmentCalculatorModernProps) {
   const updateSlider = (key: string, val: number) =>
     setSliders({ ...sliders, [key]: val });
@@ -424,8 +428,9 @@ export default function InvestmentCalculatorRadixModern({
       inputs,
       toggles,
       stock: { apiUrl: stockApiUrl, holdings: stockHoldings },
+      budgetItems,
     }),
-    [sliders, inputs, toggles, stockApiUrl, stockHoldings],
+    [sliders, inputs, toggles, stockApiUrl, stockHoldings, budgetItems],
   );
 
   const handleLoadScenario = useCallback(
@@ -436,8 +441,11 @@ export default function InvestmentCalculatorRadixModern({
       if (state.stock) {
         setStockHoldings(state.stock.holdings);
       }
+      if (state.budgetItems) {
+        setBudgetItems(state.budgetItems);
+      }
     },
-    [setSliders, setInputs, setToggles, setStockHoldings],
+    [setSliders, setInputs, setToggles, setStockHoldings, setBudgetItems],
   );
 
   // ---------------- Investment A ----------------
@@ -1256,6 +1264,8 @@ export default function InvestmentCalculatorRadixModern({
       {/* Budget Panel */}
       {toggles.budget && (
         <BudgetPanel
+          items={budgetItems}
+          setItems={setBudgetItems}
           onAnnualTotalChange={
             toggles.fire
               ? (annual) => updateSlider("fireAnnualExpenses", annual)

@@ -105,4 +105,6 @@ export interface TH4State {
     /** Portfolio holdings: symbol, allocation %, and optionally fetched price */
     holdings: import("./portfolio-types").PortfolioHolding[];
   };
+  /** Budget expense items */
+  budgetItems?: import("../helpers/budget-manager").BudgetItem[];
 }

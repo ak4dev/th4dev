@@ -576,7 +576,7 @@ export default function LandingReadme({
                     <StorageToggleLabel>
                       <StorageToggleTitle>
                         {localStorageEnabled
-                          ? "⚠ Local storage is ON"
+                          ? "Local storage is ON"
                           : "Local storage: off (default)"}
                       </StorageToggleTitle>
                       <StorageToggleDisclaimer>
@@ -699,7 +699,7 @@ export default function LandingReadme({
                   </CardTitle>
                   <ReadmeList>
                     <ReadmeItem>
-                      <Bullet>•</Bullet>
+                      <Bullet>-</Bullet>
                       <ItemText>
                         Click ending totals to open year-by-year tables with
                         nominal value, inflation-adjusted value, and percent
@@ -707,7 +707,7 @@ export default function LandingReadme({
                       </ItemText>
                     </ReadmeItem>
                     <ReadmeItem>
-                      <Bullet>•</Bullet>
+                      <Bullet>-</Bullet>
                       <ItemText>
                         The projection chart overlays Investment A and B,
                         highlights weak performance, and shows dashed target
@@ -715,7 +715,7 @@ export default function LandingReadme({
                       </ItemText>
                     </ReadmeItem>
                     <ReadmeItem>
-                      <Bullet>•</Bullet>
+                      <Bullet>-</Bullet>
                       <ItemText>
                         Info panels surface target hit timing, contribution and
                         withdrawal milestones, and preservation timing.
@@ -768,24 +768,81 @@ export default function LandingReadme({
                   </CardTitle>
                   <ReadmeList>
                     <ReadmeItem>
-                      <Bullet>•</Bullet>
+                      <Bullet>-</Bullet>
                       <ItemText>
                         Toggle <strong>Portfolio</strong> to map the calculated
                         total into a stock allocation model.
                       </ItemText>
                     </ReadmeItem>
                     <ReadmeItem>
-                      <Bullet>•</Bullet>
+                      <Bullet>-</Bullet>
                       <ItemText>
                         Add symbols, fetch prices, set allocations to 100%, and
                         generate withdrawal-based projections.
                       </ItemText>
                     </ReadmeItem>
                     <ReadmeItem>
-                      <Bullet>•</Bullet>
+                      <Bullet>-</Bullet>
                       <ItemText>
                         Capital preservation schedules show the required price
                         path per holding for the active withdrawal window.
+                      </ItemText>
+                    </ReadmeItem>
+                  </ReadmeList>
+                </Card>
+
+                <Card>
+                  <CardTitle>
+                    <Icons.LightningBoltIcon />
+                    <span>Advanced Tools</span>
+                  </CardTitle>
+                  <ReadmeList>
+                    <ReadmeItem>
+                      <Bullet>-</Bullet>
+                      <ItemText>
+                        <strong>Fees</strong> applies an annual expense ratio to
+                        each investment track, deducted from the portfolio
+                        balance each year.
+                      </ItemText>
+                    </ReadmeItem>
+                    <ReadmeItem>
+                      <Bullet>-</Bullet>
+                      <ItemText>
+                        <strong>Monte Carlo</strong> runs simulated projections
+                        with configurable volatility, displaying confidence
+                        bands (p10 through p90) on the chart.
+                      </ItemText>
+                    </ReadmeItem>
+                    <ReadmeItem>
+                      <Bullet>-</Bullet>
+                      <ItemText>
+                        <strong>FIRE</strong> calculates your Financial
+                        Independence number, years to FIRE, Coast FIRE
+                        threshold, and required monthly savings based on your
+                        inputs.
+                      </ItemText>
+                    </ReadmeItem>
+                    <ReadmeItem>
+                      <Bullet>-</Bullet>
+                      <ItemText>
+                        <strong>Budget</strong> builds a monthly expense
+                        breakdown by category. Totals feed into FIRE
+                        calculations when both tools are active.
+                      </ItemText>
+                    </ReadmeItem>
+                    <ReadmeItem>
+                      <Bullet>-</Bullet>
+                      <ItemText>
+                        <strong>Scenarios</strong> saves and loads named
+                        snapshots of your full configuration for side-by-side
+                        comparison.
+                      </ItemText>
+                    </ReadmeItem>
+                    <ReadmeItem>
+                      <Bullet>-</Bullet>
+                      <ItemText>
+                        <strong>Export PDF</strong> generates a downloadable
+                        report with your assumptions, metrics, and chart.
                       </ItemText>
                     </ReadmeItem>
                   </ReadmeList>
