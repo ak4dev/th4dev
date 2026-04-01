@@ -524,12 +524,11 @@ export default function InvestmentCalculatorRadixModern({
   const totalB = calcB.calculateGrowth(toggles.showInflation).numeric;
 
   // ---------------- Monte Carlo Simulation ----------------
-  const mcMaxYears = Math.max(invAProps.yearsOfGrowth, invBProps.yearsOfGrowth);
 
   const mcParamsA = {
     initialAmount: parseInt(invAProps.currentAmount || "0") || 0,
     projectedGain: invAProps.projectedGain,
-    yearsOfGrowth: mcMaxYears,
+    yearsOfGrowth: invAProps.yearsOfGrowth,
     monthlyContribution: invAProps.monthlyContribution,
     monthlyWithdrawal: invAProps.monthlyWithdrawal,
     withdrawalStartYear: invAProps.yearWithdrawalsBegin,
@@ -544,7 +543,7 @@ export default function InvestmentCalculatorRadixModern({
   const mcParamsB = {
     initialAmount: parseInt(invBProps.currentAmount || "0") || 0,
     projectedGain: invBProps.projectedGain,
-    yearsOfGrowth: mcMaxYears,
+    yearsOfGrowth: invBProps.yearsOfGrowth,
     monthlyContribution: invBProps.monthlyContribution,
     monthlyWithdrawal: invBProps.monthlyWithdrawal,
     withdrawalStartYear: invBProps.yearWithdrawalsBegin,

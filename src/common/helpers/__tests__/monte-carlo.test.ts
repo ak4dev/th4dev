@@ -143,11 +143,30 @@ describe("runCombinedSimulation", () => {
     expect(bands[0].p50).toBe(150000);
   });
 
-  it("uses max of both yearsOfGrowth", () => {
+  it("uses max of both yearsOfGrowth for band length", () => {
     const paramsA = { ...baseParams, yearsOfGrowth: 5, volatility: 0, simCount: 10 };
     const paramsB = { ...baseParams, yearsOfGrowth: 10, volatility: 0, simCount: 10 };
     const bands = runCombinedSimulation(paramsA, paramsB);
     expect(bands).toHaveLength(11); // 0..10
+  });
+
+  it("locks A final value after A timeline ends", () => {
+    // A runs 5 years, B runs 10 years. With 0 volatility and no contributions,
+    // A's value at year 5 should be carried forward for years 6-10.
+    const paramsA = { ...baseParams, yearsOfGrowth: 5, volatility: 0, simCount: 10, monthlyContribution: 0 };
+    const paramsB = { ...baseParams, yearsOfGrowth: 10, volatility: 0, simCount: 10, monthlyContribution: 0 };
+    const bands = runCombinedSimulation(paramsA, paramsB);
+
+    // A-only value at year 5
+    const aAlone = runMonteCarloSimulation(paramsA);
+    const aFinalValue = aAlone[5].p50;
+
+    // B-only value at year 6
+    const bAlone = runMonteCarloSimulation({ ...paramsB, yearsOfGrowth: 10 });
+    const bValueAt6 = bAlone[6].p50;
+
+    // Combined at year 6 = A's locked final + B's year 6
+    expect(bands[6].p50).toBe(aFinalValue + bValueAt6);
   });
 
   it("produces wider bands than individual A alone", () => {
@@ -157,7 +176,6 @@ describe("runCombinedSimulation", () => {
     const aOnly = runMonteCarloSimulation(paramsA);
     const lastCombined = combined[combined.length - 1];
     const lastA = aOnly[aOnly.length - 1];
-    // Combined median should exceed A-only median
     expect(lastCombined.p50).toBeGreaterThan(lastA.p50);
   });
 });

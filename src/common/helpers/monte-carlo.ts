@@ -174,7 +174,9 @@ export function computeBands(paths: number[][]): PercentileBand[] {
 
 /**
  * Runs paired A+B simulations, sums paths element-wise, returns combined bands.
- * Both params must use the same simCount. yearsOfGrowth is taken as the max.
+ * A is simulated for its own yearsOfGrowth; B is simulated for the max.
+ * For years beyond A's timeline, A's final value is carried forward as a
+ * constant so only B's randomness drives further widening.
  */
 export function runCombinedSimulation(
   paramsA: MonteCarloParams,
@@ -182,15 +184,20 @@ export function runCombinedSimulation(
 ): PercentileBand[] {
   const simCount = paramsA.simCount;
   const maxYears = Math.max(paramsA.yearsOfGrowth, paramsB.yearsOfGrowth);
-  const adjustedA = { ...paramsA, yearsOfGrowth: maxYears };
-  const adjustedB = { ...paramsB, yearsOfGrowth: maxYears, simCount };
 
-  const pathsA = simulateAll(adjustedA);
-  const pathsB = simulateAll(adjustedB);
+  const pathsA = simulateAll({ ...paramsA, simCount });
+  const pathsB = simulateAll({ ...paramsB, yearsOfGrowth: maxYears, simCount });
 
-  const combined: number[][] = pathsA.map((runA, i) =>
-    runA.map((val, year) => val + (pathsB[i]?.[year] ?? 0)),
-  );
+  const aLen = paramsA.yearsOfGrowth + 1;
+
+  const combined: number[][] = pathsB.map((runB, i) => {
+    const runA = pathsA[i];
+    const aFinal = runA[aLen - 1];
+    return runB.map((bVal, year) => {
+      const aVal = year < aLen ? runA[year] : aFinal;
+      return aVal + bVal;
+    });
+  });
 
   return computeBands(combined);
 }
