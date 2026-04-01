@@ -274,11 +274,13 @@ export function InvestmentLineChart({
           <Tooltip
             formatter={(
               value: number | string | (string | number)[] | undefined,
-            ) =>
-              typeof value === "number"
-                ? `$${numberFormatter.format(value)}`
-                : ""
-            }
+            ) => {
+              if (typeof value === "number")
+                return `$${numberFormatter.format(value)}`;
+              if (Array.isArray(value) && value.length === 2)
+                return `$${numberFormatter.format(Number(value[0]))} - $${numberFormatter.format(Number(value[1]))}`;
+              return "";
+            }}
             labelFormatter={(label) => `Year: ${label}`}
             contentStyle={{
               backgroundColor: "var(--colors-currentLine)",
