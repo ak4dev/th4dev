@@ -229,11 +229,11 @@ const InfoRow = styled("div", {
   color: "$comment",
 });
 const SwitchRow = styled("div", {
-  display: "flex",
+  display: "grid",
+  gridTemplateColumns: "1fr auto",
   gap: "12px",
   alignItems: "center",
   minWidth: 0,
-  "& label": { minWidth: "72px" },
 });
 
 /** Fixed-width columns so toggle labels and switches align vertically */

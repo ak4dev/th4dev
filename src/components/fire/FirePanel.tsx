@@ -6,7 +6,7 @@
  * the user's existing investment inputs.
  * ================================================== */
 
-import { useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { styled } from "../../../stitches.config";
 import { compactModernInputStyles } from "../../common/constants/input-styles";
 import { calculateFire, type FireResult } from "../../common/helpers/fire-calculator";
@@ -113,25 +113,28 @@ const ProgressBarFill = styled("div", {
   },
 });
 
-const InputRow = styled("div", {
+const InputGrid = styled("div", {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, 1fr)",
+  gap: "10px",
+});
+
+const InputCell = styled("div", {
   display: "flex",
-  gap: "12px",
-  alignItems: "center",
-  marginBottom: "8px",
+  flexDirection: "column",
+  gap: "4px",
 });
 
 const InputLabel = styled("label", {
-  fontSize: "0.8rem",
+  fontSize: "0.72rem",
   color: "$comment",
   fontWeight: 500,
-  minWidth: "120px",
 });
 
 const Input = styled("input", {
   ...compactModernInputStyles,
-  width: "100px",
+  width: "100%",
   minWidth: 0,
-  maxWidth: "120px",
   textAlign: "right",
 });
 
@@ -181,6 +184,46 @@ export default function FirePanel(props: FirePanelProps) {
     onTargetRetirementAgeChange,
   } = props;
 
+  // Local text state so users can type freely; commit on blur/Enter
+  const [expensesText, setExpensesText] = useState(String(annualExpenses || ""));
+  const [swrText, setSwrText] = useState(String(safeWithdrawalRate || ""));
+  const [ageText, setAgeText] = useState(String(currentAge || ""));
+  const [retireText, setRetireText] = useState(String(targetRetirementAge || ""));
+
+  // Sync local state when props change externally (e.g. scenario load)
+  useEffect(() => { setExpensesText(String(annualExpenses || "")) }, [annualExpenses]);
+  useEffect(() => { setSwrText(String(safeWithdrawalRate || "")) }, [safeWithdrawalRate]);
+  useEffect(() => { setAgeText(String(currentAge || "")) }, [currentAge]);
+  useEffect(() => { setRetireText(String(targetRetirementAge || "")) }, [targetRetirementAge]);
+
+  const commitExpenses = useCallback(() => {
+    const n = parseInt(expensesText, 10);
+    const val = Number.isNaN(n) ? 0 : Math.max(0, n);
+    onAnnualExpensesChange(val);
+    setExpensesText(String(val || ""));
+  }, [expensesText, onAnnualExpensesChange]);
+
+  const commitSwr = useCallback(() => {
+    const n = parseFloat(swrText);
+    const val = Number.isNaN(n) ? 4 : Math.min(10, Math.max(1, n));
+    onSafeWithdrawalRateChange(val);
+    setSwrText(String(val));
+  }, [swrText, onSafeWithdrawalRateChange]);
+
+  const commitAge = useCallback(() => {
+    const n = parseInt(ageText, 10);
+    const val = Number.isNaN(n) ? 30 : Math.min(100, Math.max(18, n));
+    onCurrentAgeChange(val);
+    setAgeText(String(val));
+  }, [ageText, onCurrentAgeChange]);
+
+  const commitRetire = useCallback(() => {
+    const n = parseInt(retireText, 10);
+    const val = Number.isNaN(n) ? 65 : Math.min(100, Math.max(18, n));
+    onTargetRetirementAgeChange(val);
+    setRetireText(String(val));
+  }, [retireText, onTargetRetirementAgeChange]);
+
   const result: FireResult = useMemo(
     () =>
       calculateFire({
@@ -229,58 +272,53 @@ export default function FirePanel(props: FirePanelProps) {
         <BadgeTag variant={overallStatus}>{statusLabel}</BadgeTag>
       </Title>
 
-      {/* Editable inputs */}
-      <InputRow>
-        <InputLabel>Annual Expenses</InputLabel>
-        <Input
-          type="text"
-          inputMode="numeric"
-          value={annualExpenses || ""}
-          onChange={(e) => {
-            const cleaned = e.target.value.replace(/[^0-9]/g, "");
-            onAnnualExpensesChange(Number(cleaned) || 0);
-          }}
-        />
-      </InputRow>
-      <InputRow>
-        <InputLabel>SWR (%)</InputLabel>
-        <Input
-          type="text"
-          inputMode="decimal"
-          value={safeWithdrawalRate || ""}
-          onChange={(e) => {
-            const cleaned = e.target.value.replace(/[^0-9.]/g, "");
-            const parsed = parseFloat(cleaned);
-            if (!Number.isNaN(parsed)) {
-              onSafeWithdrawalRateChange(Math.min(10, Math.max(1, parsed)));
-            }
-          }}
-        />
-      </InputRow>
-      <InputRow>
-        <InputLabel>Current Age</InputLabel>
-        <Input
-          type="text"
-          inputMode="numeric"
-          value={currentAge || ""}
-          onChange={(e) => {
-            const cleaned = e.target.value.replace(/[^0-9]/g, "");
-            if (cleaned) onCurrentAgeChange(Math.min(100, Math.max(18, Number(cleaned))));
-          }}
-        />
-      </InputRow>
-      <InputRow>
-        <InputLabel>Retire at Age</InputLabel>
-        <Input
-          type="text"
-          inputMode="numeric"
-          value={targetRetirementAge || ""}
-          onChange={(e) => {
-            const cleaned = e.target.value.replace(/[^0-9]/g, "");
-            if (cleaned) onTargetRetirementAgeChange(Math.min(100, Math.max(18, Number(cleaned))));
-          }}
-        />
-      </InputRow>
+      {/* Editable inputs — 2x2 grid */}
+      <InputGrid>
+        <InputCell>
+          <InputLabel>Annual Expenses</InputLabel>
+          <Input
+            type="text"
+            inputMode="numeric"
+            value={expensesText}
+            onChange={(e) => setExpensesText(e.target.value.replace(/[^0-9]/g, ""))}
+            onBlur={commitExpenses}
+            onKeyDown={(e) => e.key === "Enter" && commitExpenses()}
+          />
+        </InputCell>
+        <InputCell>
+          <InputLabel>SWR (%)</InputLabel>
+          <Input
+            type="text"
+            inputMode="decimal"
+            value={swrText}
+            onChange={(e) => setSwrText(e.target.value.replace(/[^0-9.]/g, ""))}
+            onBlur={commitSwr}
+            onKeyDown={(e) => e.key === "Enter" && commitSwr()}
+          />
+        </InputCell>
+        <InputCell>
+          <InputLabel>Current Age</InputLabel>
+          <Input
+            type="text"
+            inputMode="numeric"
+            value={ageText}
+            onChange={(e) => setAgeText(e.target.value.replace(/[^0-9]/g, ""))}
+            onBlur={commitAge}
+            onKeyDown={(e) => e.key === "Enter" && commitAge()}
+          />
+        </InputCell>
+        <InputCell>
+          <InputLabel>Retire at Age</InputLabel>
+          <Input
+            type="text"
+            inputMode="numeric"
+            value={retireText}
+            onChange={(e) => setRetireText(e.target.value.replace(/[^0-9]/g, ""))}
+            onBlur={commitRetire}
+            onKeyDown={(e) => e.key === "Enter" && commitRetire()}
+          />
+        </InputCell>
+      </InputGrid>
 
       <Separator />
 
