@@ -33,6 +33,8 @@ interface BudgetPanelProps {
   setItems: (items: BudgetItem[]) => void;
   /** Callback fired whenever the annual total changes (for FIRE integration) */
   onAnnualTotalChange?: (annual: number) => void;
+  /** Callback to set monthly withdrawal to budget total */
+  onSetMonthlyWithdrawal?: (monthly: number) => void;
 }
 
 /* ---------- Animations ---------- */
@@ -221,6 +223,8 @@ const TotalLabel = styled("span", {
 const TotalValue = styled("span", {
   fontSize: "1.1rem",
   fontWeight: 700,
+  display: "inline-flex",
+  alignItems: "center",
   variants: {
     color: {
       green: { color: "$green" },
@@ -359,6 +363,7 @@ export default function BudgetPanel({
   items,
   setItems,
   onAnnualTotalChange,
+  onSetMonthlyWithdrawal,
 }: BudgetPanelProps) {
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
@@ -557,7 +562,20 @@ export default function BudgetPanel({
           {/* Totals */}
           <TotalsRow>
             <TotalLabel>Monthly</TotalLabel>
-            <TotalValue color="green">{fmt(monthlyTotal)}</TotalValue>
+            <TotalValue color="green">
+              {fmt(monthlyTotal)}
+              {onSetMonthlyWithdrawal && monthlyTotal > 0 && (
+                <Button
+                  size="sm"
+                  color="muted"
+                  css={{ marginLeft: "8px" }}
+                  onClick={() => onSetMonthlyWithdrawal(monthlyTotal)}
+                  title="Set monthly withdrawal to this amount"
+                >
+                  Set Withdrawal
+                </Button>
+              )}
+            </TotalValue>
           </TotalsRow>
           <TotalsRow css={{ marginTop: "6px" }}>
             <TotalLabel>Annual</TotalLabel>

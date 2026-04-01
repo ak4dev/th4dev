@@ -524,7 +524,7 @@ export default function InvestmentCalculatorRadixModern({
     ? runMonteCarloSimulation({
         initialAmount: parseInt(invAProps.currentAmount || "0") || 0,
         projectedGain: invAProps.projectedGain,
-        yearsOfGrowth: invAProps.yearsOfGrowth,
+        yearsOfGrowth: Math.max(invAProps.yearsOfGrowth, invBProps.yearsOfGrowth),
         monthlyContribution: invAProps.monthlyContribution,
         monthlyWithdrawal: invAProps.monthlyWithdrawal,
         withdrawalStartYear: invAProps.yearWithdrawalsBegin,
@@ -1277,6 +1277,9 @@ export default function InvestmentCalculatorRadixModern({
             toggles.fire
               ? (annual) => updateSlider("fireAnnualExpenses", annual)
               : undefined
+          }
+          onSetMonthlyWithdrawal={(monthly) =>
+            updateSlider("monthlyWithdrawalA", monthly)
           }
         />
       )}
