@@ -151,6 +151,8 @@ interface InvestmentLineChartProps {
   targetValueB?: number;
   /** Monte Carlo percentile bands for Investment A */
   mcBandsA?: PercentileBand[];
+  /** Monte Carlo percentile bands for Investment B */
+  mcBandsB?: PercentileBand[];
 }
 
 /**
@@ -165,6 +167,7 @@ export function InvestmentLineChart({
   targetValueA,
   targetValueB,
   mcBandsA,
+  mcBandsB,
 }: InvestmentLineChartProps) {
   const data = prepareChartData(
     growthMatrixA,
@@ -174,10 +177,11 @@ export function InvestmentLineChart({
   );
 
   // Merge Monte Carlo bands into chart data by index (both are year-indexed)
-  const hasMC = mcBandsA && mcBandsA.length > 0;
+  const hasMCA = mcBandsA && mcBandsA.length > 0;
+  const hasMCB = mcBandsB && mcBandsB.length > 0;
   const mergedData = data.map((d, i) => ({
     ...d,
-    ...(hasMC && mcBandsA[i]
+    ...(hasMCA && mcBandsA[i]
       ? {
           mcP10: mcBandsA[i].p10,
           mcP25: mcBandsA[i].p25,
@@ -186,6 +190,13 @@ export function InvestmentLineChart({
           mcP90: mcBandsA[i].p90,
           mcOuter: [mcBandsA[i].p10, mcBandsA[i].p90],
           mcInner: [mcBandsA[i].p25, mcBandsA[i].p75],
+        }
+      : {}),
+    ...(hasMCB && mcBandsB[i]
+      ? {
+          mcBP50: mcBandsB[i].p50,
+          mcBOuter: [mcBandsB[i].p10, mcBandsB[i].p90],
+          mcBInner: [mcBandsB[i].p25, mcBandsB[i].p75],
         }
       : {}),
   }));
@@ -205,7 +216,8 @@ export function InvestmentLineChart({
     ...(advanced ? mergedData.map((d) => d.investmentB ?? 0) : []),
     ...(targetValueA ? [targetValueA] : []),
     ...(targetValueB && advanced ? [targetValueB] : []),
-    ...(hasMC ? mcBandsA.map((b) => b.p90) : []),
+    ...(hasMCA ? mcBandsA.map((b) => b.p90) : []),
+    ...(hasMCB ? mcBandsB.map((b) => b.p90) : []),
   ];
   const maxValue = Math.max(...allValues) * CHART_PADDING_MULTIPLIER;
 
@@ -289,8 +301,8 @@ export function InvestmentLineChart({
             />
           )}
 
-          {/* Monte Carlo confidence bands (P10–P90 outer, P25–P75 inner) */}
-          {hasMC && (
+          {/* Monte Carlo confidence bands A (P10-P90 outer, P25-P75 inner) */}
+          {hasMCA && (
             <>
               <Area
                 type="monotone"
@@ -298,7 +310,7 @@ export function InvestmentLineChart({
                 fill="var(--colors-purple)"
                 fillOpacity={0.08}
                 stroke="none"
-                name="P10–P90"
+                name="P10-P90"
                 legendType="none"
                 isAnimationActive={false}
               />
@@ -308,7 +320,7 @@ export function InvestmentLineChart({
                 fill="var(--colors-purple)"
                 fillOpacity={0.12}
                 stroke="none"
-                name="P25–P75"
+                name="P25-P75"
                 legendType="none"
                 isAnimationActive={false}
               />
@@ -320,6 +332,42 @@ export function InvestmentLineChart({
                 strokeDasharray="4 3"
                 dot={false}
                 name="Median (MC)"
+                isAnimationActive={false}
+              />
+            </>
+          )}
+
+          {/* Monte Carlo confidence bands B */}
+          {hasMCB && (
+            <>
+              <Area
+                type="monotone"
+                dataKey="mcBOuter"
+                fill="var(--colors-green)"
+                fillOpacity={0.08}
+                stroke="none"
+                name="B P10-P90"
+                legendType="none"
+                isAnimationActive={false}
+              />
+              <Area
+                type="monotone"
+                dataKey="mcBInner"
+                fill="var(--colors-green)"
+                fillOpacity={0.12}
+                stroke="none"
+                name="B P25-P75"
+                legendType="none"
+                isAnimationActive={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="mcBP50"
+                stroke="var(--colors-green)"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+                dot={false}
+                name="Median B (MC)"
                 isAnimationActive={false}
               />
             </>

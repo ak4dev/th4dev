@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   runMonteCarloSimulation,
+  simulateAll,
+  computeBands,
+  runCombinedSimulation,
   type MonteCarloParams,
-  type PercentileBand,
 } from "../monte-carlo";
 
 const baseParams: MonteCarloParams = {
@@ -94,5 +96,68 @@ describe("Monte Carlo simulation", () => {
     // With contributions and 0 volatility, final should exceed initial significantly
     const final = bands[bands.length - 1].p50;
     expect(final).toBeGreaterThan(baseParams.initialAmount + 500 * 12 * 10 * 0.8);
+  });
+});
+
+describe("simulateAll", () => {
+  it("returns simCount paths each with yearsOfGrowth + 1 entries", () => {
+    const paths = simulateAll({ ...baseParams, simCount: 10 });
+    expect(paths).toHaveLength(10);
+    for (const p of paths) {
+      expect(p).toHaveLength(baseParams.yearsOfGrowth + 1);
+    }
+  });
+
+  it("first entry of each path equals initialAmount", () => {
+    const paths = simulateAll({ ...baseParams, simCount: 5 });
+    for (const p of paths) {
+      expect(p[0]).toBe(baseParams.initialAmount);
+    }
+  });
+});
+
+describe("computeBands", () => {
+  it("returns bands matching path length", () => {
+    const paths = simulateAll({ ...baseParams, simCount: 20 });
+    const bands = computeBands(paths);
+    expect(bands).toHaveLength(baseParams.yearsOfGrowth + 1);
+  });
+
+  it("returns empty array for empty paths", () => {
+    expect(computeBands([])).toEqual([]);
+  });
+
+  it("is equivalent to runMonteCarloSimulation for same paths", () => {
+    const params = { ...baseParams, volatility: 0, simCount: 10 };
+    const direct = runMonteCarloSimulation(params);
+    const manual = computeBands(simulateAll(params));
+    expect(direct).toEqual(manual);
+  });
+});
+
+describe("runCombinedSimulation", () => {
+  it("combined bands are sum of A and B at year 0", () => {
+    const paramsA = { ...baseParams, initialAmount: 100000, volatility: 0, simCount: 10 };
+    const paramsB = { ...baseParams, initialAmount: 50000, volatility: 0, simCount: 10 };
+    const bands = runCombinedSimulation(paramsA, paramsB);
+    expect(bands[0].p50).toBe(150000);
+  });
+
+  it("uses max of both yearsOfGrowth", () => {
+    const paramsA = { ...baseParams, yearsOfGrowth: 5, volatility: 0, simCount: 10 };
+    const paramsB = { ...baseParams, yearsOfGrowth: 10, volatility: 0, simCount: 10 };
+    const bands = runCombinedSimulation(paramsA, paramsB);
+    expect(bands).toHaveLength(11); // 0..10
+  });
+
+  it("produces wider bands than individual A alone", () => {
+    const paramsA = { ...baseParams, simCount: 200 };
+    const paramsB = { ...baseParams, initialAmount: 50000, simCount: 200 };
+    const combined = runCombinedSimulation(paramsA, paramsB);
+    const aOnly = runMonteCarloSimulation(paramsA);
+    const lastCombined = combined[combined.length - 1];
+    const lastA = aOnly[aOnly.length - 1];
+    // Combined median should exceed A-only median
+    expect(lastCombined.p50).toBeGreaterThan(lastA.p50);
   });
 });

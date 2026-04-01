@@ -124,6 +124,7 @@ const defaultState: TH4State = {
     fire: false,
     scenarios: false,
     budget: false,
+    monteCarloMode: "combined",
   },
   stock: {
     apiUrl: DEFAULT_STOCK_API_URL,
@@ -299,6 +300,16 @@ export default function App() {
     if (cls) document.body.classList.add(cls);
   }, [theme]);
 
+  /** Keep URL ?p= param in sync so refresh preserves the active page */
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const current = url.searchParams.get("p") ?? "";
+    if (current !== activePage) {
+      url.searchParams.set("p", activePage);
+      window.history.replaceState(null, "", url.toString());
+    }
+  }, [activePage]);
+
   /** Persist financial state when user has opted in */
   useEffect(() => {
     if (!localStorageEnabled) return;
@@ -374,6 +385,8 @@ export default function App() {
         <SubdomainRouter
           activePage={activePage}
           onNavigate={setActivePage}
+          theme={theme}
+          setTheme={setTheme}
           sliders={sliders}
           setSliders={setSliders}
           inputs={inputs}

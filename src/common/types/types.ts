@@ -97,6 +97,8 @@ export interface TH4State {
     fire: boolean;
     scenarios: boolean;
     budget: boolean;
+    /** Monte Carlo display mode: "combined" (A+B summed) or "individual" (separate bands) */
+    monteCarloMode: "combined" | "individual";
   };
   /** Stock API configuration and portfolio holdings */
   stock?: {

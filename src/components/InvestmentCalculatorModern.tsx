@@ -36,7 +36,7 @@ import {
   MIN_VALUE,
 } from "../common/constants/app-constants";
 import { compactModernInputStyles } from "../common/constants/input-styles";
-import { runMonteCarloSimulation, type PercentileBand } from "../common/helpers/monte-carlo";
+import { runMonteCarloSimulation, runCombinedSimulation, type PercentileBand } from "../common/helpers/monte-carlo";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
 import type { TH4State } from "../common/types/types";
 
@@ -384,9 +384,12 @@ interface TogglesState {
   fire: boolean;
   scenarios: boolean;
   budget: boolean;
+  monteCarloMode: "combined" | "individual";
 }
 
 interface InvestmentCalculatorModernProps {
+  theme: string;
+  setTheme: (theme: string) => void;
   sliders: Record<string, number>;
   setSliders: Dispatch<SetStateAction<Record<string, number>>>;
   inputs: Record<string, string>;
@@ -404,6 +407,8 @@ interface InvestmentCalculatorModernProps {
 
 /* ---------------- Main Component ---------------- */
 export default function InvestmentCalculatorRadixModern({
+  theme,
+  setTheme,
   sliders,
   setSliders,
   inputs,
@@ -422,24 +427,25 @@ export default function InvestmentCalculatorRadixModern({
     setSliders({ ...sliders, [key]: val });
   const updateInput = (key: string, val: string) =>
     setInputs({ ...inputs, [key]: val });
-  const updateToggle = (key: keyof typeof toggles, val: boolean) =>
-    setToggles({ ...toggles, [key]: val });
+  const updateToggle = (key: keyof typeof toggles, val: boolean | string) =>
+    setToggles({ ...toggles, [key]: val } as typeof toggles);
 
   // Scenario snapshot support
   const currentTH4State = useMemo(
     (): TH4State => ({
-      theme: "",
+      theme,
       sliders,
       inputs,
       toggles,
       stock: { apiUrl: stockApiUrl, holdings: stockHoldings },
       budgetItems,
     }),
-    [sliders, inputs, toggles, stockApiUrl, stockHoldings, budgetItems],
+    [theme, sliders, inputs, toggles, stockApiUrl, stockHoldings, budgetItems],
   );
 
   const handleLoadScenario = useCallback(
     (state: TH4State) => {
+      if (state.theme) setTheme(state.theme);
       setSliders(state.sliders);
       setInputs(state.inputs);
       setToggles(state.toggles as TogglesState);
@@ -450,7 +456,7 @@ export default function InvestmentCalculatorRadixModern({
         setBudgetItems(state.budgetItems);
       }
     },
-    [setSliders, setInputs, setToggles, setStockHoldings, setBudgetItems],
+    [setTheme, setSliders, setInputs, setToggles, setStockHoldings, setBudgetItems],
   );
 
   // ---------------- Investment A ----------------
@@ -520,22 +526,50 @@ export default function InvestmentCalculatorRadixModern({
   const totalB = calcB.calculateGrowth(toggles.showInflation).numeric;
 
   // ---------------- Monte Carlo Simulation ----------------
-  const mcBandsA: PercentileBand[] = toggles.monteCarlo
-    ? runMonteCarloSimulation({
-        initialAmount: parseInt(invAProps.currentAmount || "0") || 0,
-        projectedGain: invAProps.projectedGain,
-        yearsOfGrowth: Math.max(invAProps.yearsOfGrowth, invBProps.yearsOfGrowth),
-        monthlyContribution: invAProps.monthlyContribution,
-        monthlyWithdrawal: invAProps.monthlyWithdrawal,
-        withdrawalStartYear: invAProps.yearWithdrawalsBegin,
-        contributionStopYear: invAProps.yearContributionsStop,
-        depreciationRate: invAProps.depreciationRate,
-        annualFee: invAProps.annualFee,
-        showInflation: toggles.showInflation,
-        volatility: sliders.volatilityA || DEFAULT_VOLATILITY,
-        simCount: MONTE_CARLO_SIM_COUNT,
-      })
-    : [];
+  const mcMaxYears = Math.max(invAProps.yearsOfGrowth, invBProps.yearsOfGrowth);
+
+  const mcParamsA = {
+    initialAmount: parseInt(invAProps.currentAmount || "0") || 0,
+    projectedGain: invAProps.projectedGain,
+    yearsOfGrowth: mcMaxYears,
+    monthlyContribution: invAProps.monthlyContribution,
+    monthlyWithdrawal: invAProps.monthlyWithdrawal,
+    withdrawalStartYear: invAProps.yearWithdrawalsBegin,
+    contributionStopYear: invAProps.yearContributionsStop,
+    depreciationRate: invAProps.depreciationRate,
+    annualFee: invAProps.annualFee,
+    showInflation: toggles.showInflation,
+    volatility: sliders.volatilityA || DEFAULT_VOLATILITY,
+    simCount: MONTE_CARLO_SIM_COUNT,
+  };
+
+  const mcParamsB = {
+    initialAmount: parseInt(invBProps.currentAmount || "0") || 0,
+    projectedGain: invBProps.projectedGain,
+    yearsOfGrowth: mcMaxYears,
+    monthlyContribution: invBProps.monthlyContribution,
+    monthlyWithdrawal: invBProps.monthlyWithdrawal,
+    withdrawalStartYear: invBProps.yearWithdrawalsBegin,
+    contributionStopYear: invBProps.yearContributionsStop,
+    depreciationRate: invBProps.depreciationRate,
+    annualFee: invBProps.annualFee,
+    showInflation: toggles.showInflation,
+    volatility: sliders.volatilityB || DEFAULT_VOLATILITY,
+    simCount: MONTE_CARLO_SIM_COUNT,
+  };
+
+  let mcBandsA: PercentileBand[] = [];
+  let mcBandsB: PercentileBand[] = [];
+  if (toggles.monteCarlo) {
+    if (toggles.advanced && toggles.monteCarloMode === "combined") {
+      mcBandsA = runCombinedSimulation(mcParamsA, mcParamsB);
+    } else if (toggles.advanced && toggles.monteCarloMode === "individual") {
+      mcBandsA = runMonteCarloSimulation(mcParamsA);
+      mcBandsB = runMonteCarloSimulation(mcParamsB);
+    } else {
+      mcBandsA = runMonteCarloSimulation(mcParamsA);
+    }
+  }
 
   // ---------------- Target Value Handlers ----------------
 
@@ -1129,14 +1163,45 @@ export default function InvestmentCalculatorRadixModern({
             )}
           </ToggleSection>
           {toggles.monteCarlo && (
-            <InvestmentSlider
-              label="Volatility (σ %)"
-              value={sliders.volatilityA || DEFAULT_VOLATILITY}
-              min={1}
-              max={MAX_VOLATILITY}
-              step={1}
-              onChange={(v) => updateSlider("volatilityA", v)}
-            />
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
+                <div style={{ flex: 1 }}>
+                  <InvestmentSlider
+                    label={toggles.advanced ? "Volatility A (σ %)" : "Volatility (σ %)"}
+                    value={sliders.volatilityA || DEFAULT_VOLATILITY}
+                    min={1}
+                    max={MAX_VOLATILITY}
+                    step={1}
+                    onChange={(v) => updateSlider("volatilityA", v)}
+                  />
+                </div>
+                {toggles.advanced && (
+                  <div style={{ flex: 1 }}>
+                    <InvestmentSlider
+                      label="Volatility B (σ %)"
+                      value={sliders.volatilityB || DEFAULT_VOLATILITY}
+                      min={1}
+                      max={MAX_VOLATILITY}
+                      step={1}
+                      onChange={(v) => updateSlider("volatilityB", v)}
+                    />
+                  </div>
+                )}
+              </div>
+              {toggles.advanced && (
+                <SwitchRow>
+                  <Label>
+                    MC: {toggles.monteCarloMode === "combined" ? "Combined" : "Individual"}
+                  </Label>
+                  <SwitchButton
+                    checked={toggles.monteCarloMode === "individual"}
+                    onCheckedChange={(v) =>
+                      updateToggle("monteCarloMode", v ? "individual" : "combined")
+                    }
+                  />
+                </SwitchRow>
+              )}
+            </div>
           )}
           <InvestmentSlider
             label="Inflation (%)"
@@ -1193,6 +1258,7 @@ export default function InvestmentCalculatorRadixModern({
           toggles.advanced ? displayTargetB || undefined : undefined
         }
         mcBandsA={toggles.monteCarlo ? mcBandsA : undefined}
+        mcBandsB={toggles.monteCarlo && mcBandsB.length > 0 ? mcBandsB : undefined}
       />
 
       {/* PDF Export */}
@@ -1243,8 +1309,14 @@ export default function InvestmentCalculatorRadixModern({
       {/* FIRE Calculator Panel */}
       {toggles.fire && (
         <FirePanel
-          currentSavings={parseInt(inputs.currentAmountA || "0") || 0}
-          monthlySavings={sliders.monthlyContributionA || 0}
+          currentSavings={
+            (parseInt(inputs.currentAmountA || "0") || 0) +
+            (toggles.advanced ? parseInt(inputs.currentAmountB || "0") || 0 : 0)
+          }
+          monthlySavings={
+            (sliders.monthlyContributionA || 0) +
+            (toggles.advanced ? sliders.monthlyContributionB || 0 : 0)
+          }
           annualReturn={sliders.projectedGainA || DEFAULT_PROJECTED_GAIN}
           inflationRate={sliders.yearlyInflation || DEFAULT_INFLATION_RATE}
           annualExpenses={sliders.fireAnnualExpenses || 40000}

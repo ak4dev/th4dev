@@ -17,6 +17,8 @@ import type { ScenarioSnapshot } from "../common/helpers/scenario-manager";
 interface SubdomainRouterProps {
   activePage: string;
   onNavigate: (page: string) => void;
+  theme: string;
+  setTheme: (theme: string) => void;
   sliders: Record<string, number>;
   setSliders: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   inputs: Record<string, string>;
@@ -51,6 +53,8 @@ const pageToComponent: Record<string, (props: SharedProps) => JSX.Element> = {
 const SubdomainRouter = ({
   activePage,
   onNavigate,
+  theme,
+  setTheme,
   sliders,
   setSliders,
   inputs,
@@ -69,6 +73,8 @@ const SubdomainRouter = ({
 }: SubdomainRouterProps) => {
   const factory = pageToComponent[activePage];
   const sharedProps: SharedProps = {
+    theme,
+    setTheme,
     sliders,
     setSliders,
     inputs,

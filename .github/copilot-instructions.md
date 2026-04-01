@@ -49,6 +49,7 @@ Use the feature area: `fees`, `monte-carlo`, `fire`, `scenarios`, `budget`, `pdf
 - **No emojis**: Never use emoji characters in UI text, labels, or code unless explicitly requested by the user.
 - **Theme colors**: Always use Stitches theme tokens (`$cyan`, `$green`, `$comment`, etc.) for colors. Never hardcode colors outside of `stitches.config.ts` theme definitions.
 - **Conventional Commits**: All commits must follow Conventional Commits format (`type(scope): description`).
+- **No auto-push**: Never `git push` unless the user explicitly asks. Commit locally only.
 
 ## Architecture
 

@@ -134,22 +134,28 @@ function percentile(sorted: number[], p: number): number {
 /* ---------- Public API ---------- */
 
 /**
- * Runs Monte Carlo simulations and returns percentile bands per year.
+ * Runs N simulations and returns raw paths (one number[] per simulation).
+ * Each path has yearsOfGrowth + 1 entries (year 0 = initial amount).
  */
-export function runMonteCarloSimulation(
-  params: MonteCarloParams,
-): PercentileBand[] {
-  const { yearsOfGrowth, simCount } = params;
+export function simulateAll(params: MonteCarloParams): number[][] {
+  const { simCount } = params;
   const allRuns: number[][] = [];
-
   for (let i = 0; i < simCount; i++) {
     allRuns.push(simulateOnce(params));
   }
+  return allRuns;
+}
 
+/**
+ * Computes percentile bands from raw simulation paths.
+ */
+export function computeBands(paths: number[][]): PercentileBand[] {
+  if (paths.length === 0) return [];
+  const years = paths[0].length;
   const bands: PercentileBand[] = [];
 
-  for (let year = 0; year <= yearsOfGrowth; year++) {
-    const yearValues = allRuns
+  for (let year = 0; year < years; year++) {
+    const yearValues = paths
       .map((run) => run[year])
       .sort((a, b) => a - b);
 
@@ -164,4 +170,37 @@ export function runMonteCarloSimulation(
   }
 
   return bands;
+}
+
+/**
+ * Runs paired A+B simulations, sums paths element-wise, returns combined bands.
+ * Both params must use the same simCount. yearsOfGrowth is taken as the max.
+ */
+export function runCombinedSimulation(
+  paramsA: MonteCarloParams,
+  paramsB: MonteCarloParams,
+): PercentileBand[] {
+  const simCount = paramsA.simCount;
+  const maxYears = Math.max(paramsA.yearsOfGrowth, paramsB.yearsOfGrowth);
+  const adjustedA = { ...paramsA, yearsOfGrowth: maxYears };
+  const adjustedB = { ...paramsB, yearsOfGrowth: maxYears, simCount };
+
+  const pathsA = simulateAll(adjustedA);
+  const pathsB = simulateAll(adjustedB);
+
+  const combined: number[][] = pathsA.map((runA, i) =>
+    runA.map((val, year) => val + (pathsB[i]?.[year] ?? 0)),
+  );
+
+  return computeBands(combined);
+}
+
+/**
+ * Runs Monte Carlo simulations and returns percentile bands per year.
+ * Convenience wrapper around simulateAll + computeBands.
+ */
+export function runMonteCarloSimulation(
+  params: MonteCarloParams,
+): PercentileBand[] {
+  return computeBands(simulateAll(params));
 }

@@ -395,7 +395,7 @@ export default function BudgetPanel({
       e.preventDefault();
       if (!canAdd) return;
       const amount = parseFloat(newAmount) || 0;
-      const name = newName.trim() || "Untitled";
+      const name = newName.trim() || newCategory;
       const updated = addBudgetItem(name, amount, newCategory, items);
       setItems(updated);
       setNewName("");

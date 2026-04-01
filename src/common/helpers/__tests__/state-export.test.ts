@@ -34,6 +34,7 @@ describe("TH4State round-trip serialisation", () => {
       annualFeeA: 0.5,
       annualFeeB: 0.25,
       volatilityA: 15,
+      volatilityB: 10,
       fireAnnualExpenses: 48000,
       fireSWR: 3.5,
       fireCurrentAge: 35,
@@ -53,6 +54,7 @@ describe("TH4State round-trip serialisation", () => {
       fire: true,
       scenarios: true,
       budget: true,
+      monteCarloMode: "individual",
     },
     stock: {
       apiUrl: "https://example.com/api?symbol={symbol}",
@@ -75,7 +77,7 @@ describe("TH4State round-trip serialisation", () => {
           theme: "dracula",
           sliders: { projectedGainA: 6 },
           inputs: { currentAmountA: "30000" },
-          toggles: { advanced: false, rollover: false, showInflation: false, portfolio: false },
+          toggles: { advanced: false, rollover: false, showInflation: false, portfolio: false, monteCarloMode: "combined" as const },
         } as TH4State,
       },
     ],
@@ -122,11 +124,13 @@ describe("TH4State round-trip serialisation", () => {
     expect(parsed.sliders.annualFeeB).toBe(0.25)
   })
 
-  it("captures Monte Carlo volatility", () => {
+  it("captures Monte Carlo volatility and mode", () => {
     const json = JSON.stringify(fullState)
     const parsed = JSON.parse(json) as TH4State
 
     expect(parsed.sliders.volatilityA).toBe(15)
+    expect(parsed.sliders.volatilityB).toBe(10)
+    expect(parsed.toggles.monteCarloMode).toBe("individual")
   })
 
   it("captures budget items with all fields", () => {
