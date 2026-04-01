@@ -54,9 +54,21 @@ function normalRandom(): number {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
+/* ---------- Types (internal) ---------- */
+
+interface LumpSumInjection {
+  /** Year at which the lump sum is added (start of that year) */
+  year: number;
+  /** Amount to inject into the balance */
+  amount: number;
+}
+
 /* ---------- Single Simulation ---------- */
 
-function simulateOnce(params: MonteCarloParams): number[] {
+function simulateOnce(
+  params: MonteCarloParams,
+  injection?: LumpSumInjection,
+): number[] {
   const {
     initialAmount,
     projectedGain,
@@ -76,6 +88,12 @@ function simulateOnce(params: MonteCarloParams): number[] {
   let inflationAdjusted = initialAmount;
 
   for (let year = 1; year <= yearsOfGrowth; year++) {
+    // Inject lump sum at the start of the injection year
+    if (injection && year === injection.year) {
+      nominal += injection.amount;
+      inflationAdjusted += injection.amount;
+    }
+
     // Randomise this year's annual return using normal distribution
     const annualReturn =
       projectedGain + volatility * normalRandom();
@@ -200,6 +218,41 @@ export function runCombinedSimulation(
   });
 
   return computeBands(combined);
+}
+
+/**
+ * Runs paired A+B simulations modelling rollover: A's final value is injected
+ * into B as a lump-sum at rolloverYear, so B's growth compounds on the larger
+ * base. Before rolloverYear the portfolio is A+B; after, it is B alone (which
+ * includes A's rolled value).
+ */
+export function runRolloverSimulation(
+  paramsA: MonteCarloParams,
+  paramsB: MonteCarloParams,
+  rolloverYear: number,
+): PercentileBand[] {
+  const simCount = paramsA.simCount;
+  const maxYears = Math.max(paramsA.yearsOfGrowth, paramsB.yearsOfGrowth);
+
+  const pathsA = simulateAll(paramsA);
+
+  const portfolioPaths: number[][] = pathsA.map((runA) => {
+    const aFinal = runA[Math.min(rolloverYear, runA.length - 1)];
+    const runB = simulateOnce(
+      { ...paramsB, yearsOfGrowth: maxYears, simCount: 1 },
+      { year: rolloverYear, amount: aFinal },
+    );
+
+    return runB.map((bVal, year) => {
+      if (year < rolloverYear) {
+        const aVal = year < runA.length ? runA[year] : runA[runA.length - 1];
+        return aVal + bVal;
+      }
+      return bVal;
+    });
+  });
+
+  return computeBands(portfolioPaths);
 }
 
 /**

@@ -176,30 +176,56 @@ export function InvestmentLineChart({
     yearOfRollover,
   );
 
-  // Merge Monte Carlo bands into chart data by index (both are year-indexed)
+  // Build year-keyed maps from MC bands so we can align by band.year
   const hasMCA = mcBandsA && mcBandsA.length > 0;
   const hasMCB = mcBandsB && mcBandsB.length > 0;
-  const mergedData = data.map((d, i) => ({
-    ...d,
-    ...(hasMCA && mcBandsA[i]
-      ? {
-          mcP10: mcBandsA[i].p10,
-          mcP25: mcBandsA[i].p25,
-          mcP50: mcBandsA[i].p50,
-          mcP75: mcBandsA[i].p75,
-          mcP90: mcBandsA[i].p90,
-          mcOuter: [mcBandsA[i].p10, mcBandsA[i].p90],
-          mcInner: [mcBandsA[i].p25, mcBandsA[i].p75],
-        }
-      : {}),
-    ...(hasMCB && mcBandsB[i]
-      ? {
-          mcBP50: mcBandsB[i].p50,
-          mcBOuter: [mcBandsB[i].p10, mcBandsB[i].p90],
-          mcBInner: [mcBandsB[i].p25, mcBandsB[i].p75],
-        }
-      : {}),
-  }));
+  const bandAByYear = hasMCA
+    ? new Map(mcBandsA.map((b) => [b.year, b]))
+    : new Map<number, (typeof mcBandsA extends (infer U)[] | undefined ? U : never)>();
+  const bandBByYear = hasMCB
+    ? new Map(mcBandsB.map((b) => [b.year, b]))
+    : new Map<number, (typeof mcBandsB extends (infer U)[] | undefined ? U : never)>();
+
+  // Determine how many chart points we need — may exceed deterministic data
+  // if individual-mode MC bands are offset beyond the growth matrices
+  const maxMCYear = Math.max(
+    hasMCA ? mcBandsA[mcBandsA.length - 1].year : 0,
+    hasMCB ? mcBandsB[mcBandsB.length - 1].year : 0,
+  );
+  const baseStartYear = parseInt(data[0]?.date ?? "0");
+  const totalPoints = Math.max(data.length, maxMCYear + 1);
+
+  // Extend chart data with null-valued points for years beyond deterministic range
+  const extendedData = Array.from({ length: totalPoints }, (_, i) =>
+    data[i] ?? { date: `${baseStartYear + i}`, investmentA: null, investmentB: null },
+  );
+
+  // Merge MC bands by year field
+  const mergedData = extendedData.map((d, i) => {
+    const bandA = bandAByYear.get(i);
+    const bandB = bandBByYear.get(i);
+    return {
+      ...d,
+      ...(bandA
+        ? {
+            mcP10: bandA.p10,
+            mcP25: bandA.p25,
+            mcP50: bandA.p50,
+            mcP75: bandA.p75,
+            mcP90: bandA.p90,
+            mcOuter: [bandA.p10, bandA.p90],
+            mcInner: [bandA.p25, bandA.p75],
+          }
+        : {}),
+      ...(bandB
+        ? {
+            mcBP50: bandB.p50,
+            mcBOuter: [bandB.p10, bandB.p90],
+            mcBInner: [bandB.p25, bandB.p75],
+          }
+        : {}),
+    };
+  });
 
   // CSS color variables
   const fg = "var(--colors-foreground)";

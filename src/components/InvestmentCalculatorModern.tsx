@@ -36,7 +36,7 @@ import {
   MIN_VALUE,
 } from "../common/constants/app-constants";
 import { compactModernInputStyles } from "../common/constants/input-styles";
-import { runMonteCarloSimulation, runCombinedSimulation, type PercentileBand } from "../common/helpers/monte-carlo";
+import { runMonteCarloSimulation, runCombinedSimulation, runRolloverSimulation, type PercentileBand } from "../common/helpers/monte-carlo";
 import { normalizeState } from "../common/helpers/state-manager";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
 import type { TH4State } from "../common/types/types";
@@ -558,11 +558,20 @@ export default function InvestmentCalculatorRadixModern({
   let mcBandsA: PercentileBand[] = [];
   let mcBandsB: PercentileBand[] = [];
   if (toggles.monteCarlo) {
-    if (toggles.advanced && toggles.monteCarloMode === "combined") {
+    if (toggles.rollover) {
+      // Rollover ON: single bloom with A's value injected into B
+      mcBandsA = runRolloverSimulation(
+        mcParamsA,
+        mcParamsB,
+        sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH,
+      );
+    } else if (toggles.advanced && toggles.monteCarloMode === "combined") {
       mcBandsA = runCombinedSimulation(mcParamsA, mcParamsB);
     } else if (toggles.advanced && toggles.monteCarloMode === "individual") {
       mcBandsA = runMonteCarloSimulation(mcParamsA);
-      mcBandsB = runMonteCarloSimulation(mcParamsB);
+      const rawBandsB = runMonteCarloSimulation(mcParamsB);
+      const offsetYears = mcParamsA.yearsOfGrowth;
+      mcBandsB = rawBandsB.map((b) => ({ ...b, year: b.year + offsetYears }));
     } else {
       mcBandsA = runMonteCarloSimulation(mcParamsA);
     }
