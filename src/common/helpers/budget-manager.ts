@@ -1,9 +1,10 @@
 /* ==================================================
  * Budget Manager
  *
- * CRUD for named budget expense items stored in
- * localStorage.  Each item has a name, amount
- * (monthly), and optional category.
+ * Pure CRUD helpers for budget expense items.
+ * Functions compute and return new arrays without
+ * side effects — persistence is handled by the
+ * consent-gated useEffect in App.tsx.
  * ================================================== */
 
 /* ---------- Types ---------- */
@@ -74,7 +75,6 @@ export function addBudgetItem(
   const item: BudgetItem = { id, name, amount: Math.max(0, amount), category };
 
   const updated = [...items, item];
-  persistBudget(updated);
   return updated;
 }
 
@@ -93,7 +93,6 @@ export function updateBudgetItem(
         }
       : item,
   );
-  persistBudget(updated);
   return updated;
 }
 
@@ -103,7 +102,6 @@ export function deleteBudgetItem(
 ): BudgetItem[] {
   const items = existing ?? loadBudget();
   const updated = items.filter((item) => item.id !== id);
-  persistBudget(updated);
   return updated;
 }
 

@@ -11,7 +11,6 @@ import { styled } from "../../../stitches.config";
 import { compactModernInputStyles } from "../../common/constants/input-styles";
 import type { TH4State } from "../../common/types/types";
 import {
-  loadScenarios,
   saveScenario,
   deleteScenario,
   renameScenario,
@@ -25,6 +24,10 @@ import {
 interface ScenarioPanelProps {
   currentState: TH4State;
   onLoadScenario: (state: TH4State) => void;
+  /** Scenarios managed by parent */
+  scenarios: ScenarioSnapshot[];
+  /** Setter for scenarios */
+  setScenarios: (scenarios: ScenarioSnapshot[]) => void;
 }
 
 /* ---------- Styled Components ---------- */
@@ -182,8 +185,9 @@ function formatDate(iso: string): string {
 export default function ScenarioPanel({
   currentState,
   onLoadScenario,
+  scenarios,
+  setScenarios,
 }: ScenarioPanelProps) {
-  const [scenarios, setScenarios] = useState<ScenarioSnapshot[]>(loadScenarios);
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -202,14 +206,14 @@ export default function ScenarioPanel({
     } catch {
       // max reached
     }
-  }, [canSave, newName, currentState, scenarios]);
+  }, [canSave, newName, currentState, scenarios, setScenarios]);
 
   const handleDelete = useCallback(
     (id: string) => {
       const updated = deleteScenario(id, scenarios);
       setScenarios(updated);
     },
-    [scenarios],
+    [scenarios, setScenarios],
   );
 
   const handleLoad = useCallback(
@@ -231,7 +235,7 @@ export default function ScenarioPanel({
     }
     setEditingId(null);
     setEditName("");
-  }, [editingId, editName, scenarios]);
+  }, [editingId, editName, scenarios, setScenarios]);
 
   return (
     <Container>

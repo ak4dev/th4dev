@@ -107,4 +107,8 @@ export interface TH4State {
   };
   /** Budget expense items */
   budgetItems?: import("../helpers/budget-manager").BudgetItem[];
+  /** Scenario snapshots */
+  scenarios?: import("../helpers/scenario-manager").ScenarioSnapshot[];
+  /** Active page/tool identifier */
+  activePage?: string;
 }

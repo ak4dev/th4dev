@@ -8,6 +8,7 @@ import LandingReadme from "./LandingReadme";
 import type { TH4State } from "../common/types/types";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
 import type { BudgetItem } from "../common/helpers/budget-manager";
+import type { ScenarioSnapshot } from "../common/helpers/scenario-manager";
 
 /* ==================================================
  * Types
@@ -27,6 +28,8 @@ interface SubdomainRouterProps {
   setStockHoldings: React.Dispatch<React.SetStateAction<PortfolioHolding[]>>;
   budgetItems: BudgetItem[];
   setBudgetItems: React.Dispatch<React.SetStateAction<BudgetItem[]>>;
+  scenarios: ScenarioSnapshot[];
+  setScenarios: React.Dispatch<React.SetStateAction<ScenarioSnapshot[]>>;
   localStorageEnabled: boolean;
   onLocalStorageToggle: (enabled: boolean) => void;
 }
@@ -59,6 +62,8 @@ const SubdomainRouter = ({
   setStockHoldings,
   budgetItems,
   setBudgetItems,
+  scenarios,
+  setScenarios,
   localStorageEnabled,
   onLocalStorageToggle,
 }: SubdomainRouterProps) => {
@@ -75,6 +80,8 @@ const SubdomainRouter = ({
     setStockHoldings,
     budgetItems,
     setBudgetItems,
+    scenarios,
+    setScenarios,
     localStorageEnabled,
     onLocalStorageToggle,
   };

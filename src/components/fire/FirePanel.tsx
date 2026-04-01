@@ -150,6 +150,7 @@ const BadgeTag = styled("span", {
       achieved: { backgroundColor: "$green", color: "$background" },
       onTrack: { backgroundColor: "$cyan", color: "$background" },
       needsWork: { backgroundColor: "$orange", color: "$background" },
+      shortfall: { backgroundColor: "$red", color: "$foreground" },
     },
   },
 });
@@ -254,16 +255,20 @@ export default function FirePanel(props: FirePanelProps) {
   const overallStatus =
     result.progressPct >= 100
       ? "achieved"
-      : result.isCoastFire
-        ? "onTrack"
-        : "needsWork";
+      : result.isShortfall
+        ? "shortfall"
+        : result.isCoastFire
+          ? "onTrack"
+          : "needsWork";
 
   const statusLabel =
     result.progressPct >= 100
       ? "FIRE Achieved"
-      : result.isCoastFire
-        ? "Coast FIRE"
-        : "Building";
+      : result.isShortfall
+        ? "Shortfall"
+        : result.isCoastFire
+          ? "Coast FIRE"
+          : "Building";
 
   return (
     <Container>

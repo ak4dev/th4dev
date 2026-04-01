@@ -24,7 +24,7 @@ import {
 import type { TH4State } from "./common/types/types";
 import type { PortfolioHolding } from "./common/types/portfolio-types";
 import type { BudgetItem } from "./common/helpers/budget-manager";
-import { loadBudget } from "./common/helpers/budget-manager";
+import type { ScenarioSnapshot } from "./common/helpers/scenario-manager";
 
 export type { TH4State };
 
@@ -147,6 +147,8 @@ interface PersistedState {
   stockApiUrl?: string;
   stockHoldings?: PortfolioHolding[];
   budgetItems?: BudgetItem[];
+  scenarios?: ScenarioSnapshot[];
+  activePage?: string;
 }
 
 function loadConsent(): boolean {
@@ -164,6 +166,9 @@ function saveConsent(enabled: boolean): void {
     } else {
       localStorage.removeItem(STORAGE_CONSENT_KEY);
       localStorage.removeItem(STORAGE_KEY);
+      // Clean up legacy standalone keys
+      localStorage.removeItem("th4_budget");
+      localStorage.removeItem("th4_scenarios");
     }
   } catch {
     // ignore
@@ -267,13 +272,18 @@ export default function App() {
     persisted.stockHoldings ?? defaultState.stock!.holdings,
   );
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>(
-    persisted.budgetItems ?? loadBudget(),
+    persisted.budgetItems ?? [],
+  );
+  const [scenarios, setScenarios] = useState<ScenarioSnapshot[]>(
+    persisted.scenarios ?? [],
   );
   const [stockModalOpen, setStockModalOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
 
-  // activePage seeded from ?p= param or subdomain; subsequent nav is in-app
-  const [activePage, setActivePage] = useState(initialPage);
+  // activePage seeded from persisted state, ?p= param, or subdomain
+  const [activePage, setActivePage] = useState(
+    persisted.activePage ?? initialPage,
+  );
 
   const setLocalStorageEnabled = (enabled: boolean) => {
     saveConsent(enabled);
@@ -300,6 +310,8 @@ export default function App() {
       stockApiUrl,
       stockHoldings,
       budgetItems,
+      scenarios,
+      activePage,
     });
   }, [
     localStorageEnabled,
@@ -310,6 +322,8 @@ export default function App() {
     stockApiUrl,
     stockHoldings,
     budgetItems,
+    scenarios,
+    activePage,
   ]);
 
   /** Keyboard shortcuts */
@@ -338,6 +352,8 @@ export default function App() {
     if (state.inputs) setInputs((prev) => ({ ...prev, ...state.inputs }));
     if (state.toggles) setToggles((prev) => ({ ...prev, ...state.toggles }));
     if (state.budgetItems) setBudgetItems(state.budgetItems);
+    if (state.scenarios) setScenarios(state.scenarios);
+    if (state.activePage) setActivePage(state.activePage);
     if (state.stock) {
       setStockApiUrl(state.stock.apiUrl);
       const legacySymbols = (state.stock as unknown as { symbols?: string[] })
@@ -369,6 +385,8 @@ export default function App() {
           setStockHoldings={setStockHoldings}
           budgetItems={budgetItems}
           setBudgetItems={setBudgetItems}
+          scenarios={scenarios}
+          setScenarios={setScenarios}
           localStorageEnabled={localStorageEnabled}
           onLocalStorageToggle={setLocalStorageEnabled}
         />
@@ -384,6 +402,8 @@ export default function App() {
             toggles,
             stock: { apiUrl: stockApiUrl, holdings: stockHoldings },
             budgetItems,
+            scenarios,
+            activePage,
           })}
           setState={setAppState}
         />

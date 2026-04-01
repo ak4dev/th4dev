@@ -74,20 +74,24 @@ describe("loadScenarios", () => {
 });
 
 describe("saveScenario", () => {
-  it("saves a new scenario to empty store", () => {
+  it("saves a new scenario to empty array", () => {
     const state = makeMockState();
-    const result = saveScenario("My Scenario", state);
+    const result = saveScenario("My Scenario", state, []);
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe("My Scenario");
     expect(result[0].state.inputs?.currentAmountA).toBe("100000");
-    // Verify persisted
-    expect(loadScenarios()).toHaveLength(1);
+  });
+
+  it("does not write to localStorage", () => {
+    const state = makeMockState();
+    saveScenario("Test", state, []);
+    expect(storage["th4_scenarios"]).toBeUndefined();
   });
 
   it("appends to existing scenarios", () => {
     const state = makeMockState();
-    saveScenario("First", state);
-    const result = saveScenario("Second", state);
+    const first = saveScenario("First", state, []);
+    const result = saveScenario("Second", state, first);
     expect(result).toHaveLength(2);
     expect(result[1].name).toBe("Second");
   });
@@ -110,7 +114,7 @@ describe("saveScenario", () => {
 
   it("deep clones state so mutations do not propagate", () => {
     const state = makeMockState();
-    const result = saveScenario("Clone test", state);
+    const result = saveScenario("Clone test", state, []);
     state.sliders.projectedGainA = 99;
     expect(result[0].state.sliders.projectedGainA).toBe(10);
   });
@@ -119,16 +123,23 @@ describe("saveScenario", () => {
 describe("deleteScenario", () => {
   it("removes a scenario by id", () => {
     const state = makeMockState();
-    const after = saveScenario("ToDelete", state);
-    const id = after[0].id;
-    const result = deleteScenario(id);
+    const saved = saveScenario("ToDelete", state, []);
+    const id = saved[0].id;
+    const result = deleteScenario(id, saved);
     expect(result).toHaveLength(0);
+  });
+
+  it("does not write to localStorage", () => {
+    const state = makeMockState();
+    const saved = saveScenario("Test", state, []);
+    deleteScenario(saved[0].id, saved);
+    expect(storage["th4_scenarios"]).toBeUndefined();
   });
 
   it("does nothing if id not found", () => {
     const state = makeMockState();
-    saveScenario("Keep", state);
-    const result = deleteScenario("nonexistent");
+    const saved = saveScenario("Keep", state, []);
+    const result = deleteScenario("nonexistent", saved);
     expect(result).toHaveLength(1);
   });
 });
@@ -136,18 +147,25 @@ describe("deleteScenario", () => {
 describe("renameScenario", () => {
   it("renames an existing scenario", () => {
     const state = makeMockState();
-    const after = saveScenario("OldName", state);
-    const id = after[0].id;
-    const result = renameScenario(id, "NewName");
+    const saved = saveScenario("OldName", state, []);
+    const id = saved[0].id;
+    const result = renameScenario(id, "NewName", saved);
     expect(result[0].name).toBe("NewName");
     expect(result[0].id).toBe(id);
   });
 
+  it("does not write to localStorage", () => {
+    const state = makeMockState();
+    const saved = saveScenario("Test", state, []);
+    renameScenario(saved[0].id, "Renamed", saved);
+    expect(storage["th4_scenarios"]).toBeUndefined();
+  });
+
   it("leaves other scenarios unchanged", () => {
     const state = makeMockState();
-    saveScenario("First", state);
-    const after = saveScenario("Second", state);
-    const result = renameScenario(after[1].id, "Renamed");
+    const first = saveScenario("First", state, []);
+    const both = saveScenario("Second", state, first);
+    const result = renameScenario(both[1].id, "Renamed", both);
     expect(result[0].name).toBe("First");
     expect(result[1].name).toBe("Renamed");
   });

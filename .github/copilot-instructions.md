@@ -63,6 +63,12 @@ Use the feature area: `fees`, `monte-carlo`, `fire`, `scenarios`, `budget`, `pdf
 - Toggles: Typed object (`TogglesState`)
 - All persisted to localStorage when user consents
 
+### Privacy
+- **User privacy is held above all else.** No data of any kind may be stored or persisted without explicit opt-in via the localStorage consent toggle.
+- CRUD helper functions (budget-manager, scenario-manager) must be **pure** — they compute and return new arrays without localStorage side effects.
+- All persistence flows through the single consent-gated `useEffect` in `App.tsx`.
+- When consent is disabled, all localStorage keys (including legacy standalone keys) must be removed.
+
 ### Adding a New Feature Toggle
 1. Add to `TH4State.toggles` in `src/common/types/types.ts`
 2. Add to local `TogglesState` in `InvestmentCalculatorModern.tsx`

@@ -18,6 +18,7 @@ import PdfExportButton from "./export/PdfExportButton";
 import BudgetPanel from "./budget/BudgetPanel";
 import { addYears } from "date-fns";
 import type { BudgetItem } from "../common/helpers/budget-manager";
+import type { ScenarioSnapshot } from "../common/helpers/scenario-manager";
 import {
   DEFAULT_INITIAL_AMOUNT,
   DEFAULT_PROJECTED_GAIN,
@@ -397,6 +398,8 @@ interface InvestmentCalculatorModernProps {
   setStockHoldings: Dispatch<SetStateAction<PortfolioHolding[]>>;
   budgetItems: BudgetItem[];
   setBudgetItems: Dispatch<SetStateAction<BudgetItem[]>>;
+  scenarios: ScenarioSnapshot[];
+  setScenarios: Dispatch<SetStateAction<ScenarioSnapshot[]>>;
 }
 
 /* ---------------- Main Component ---------------- */
@@ -412,6 +415,8 @@ export default function InvestmentCalculatorRadixModern({
   setStockHoldings,
   budgetItems,
   setBudgetItems,
+  scenarios,
+  setScenarios,
 }: InvestmentCalculatorModernProps) {
   const updateSlider = (key: string, val: number) =>
     setSliders({ ...sliders, [key]: val });
@@ -1258,6 +1263,8 @@ export default function InvestmentCalculatorRadixModern({
         <ScenarioPanel
           currentState={currentTH4State}
           onLoadScenario={handleLoadScenario}
+          scenarios={scenarios}
+          setScenarios={setScenarios}
         />
       )}
 

@@ -59,25 +59,29 @@ describe("loadBudget", () => {
 /* ---------- addBudgetItem ---------- */
 
 describe("addBudgetItem", () => {
-  it("adds a new item to empty store", () => {
-    const result = addBudgetItem("Rent", 1500, "Housing");
+  it("adds a new item to empty array", () => {
+    const result = addBudgetItem("Rent", 1500, "Housing", []);
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe("Rent");
     expect(result[0].amount).toBe(1500);
     expect(result[0].category).toBe("Housing");
-    expect(loadBudget()).toHaveLength(1);
   });
 
   it("appends to existing items", () => {
-    addBudgetItem("Rent", 1500, "Housing");
-    const result = addBudgetItem("Groceries", 600, "Food");
+    const first = addBudgetItem("Rent", 1500, "Housing", []);
+    const result = addBudgetItem("Groceries", 600, "Food", first);
     expect(result).toHaveLength(2);
     expect(result[1].name).toBe("Groceries");
   });
 
   it("clamps negative amounts to zero", () => {
-    const result = addBudgetItem("Negative", -100, "Other");
+    const result = addBudgetItem("Negative", -100, "Other", []);
     expect(result[0].amount).toBe(0);
+  });
+
+  it("does not write to localStorage", () => {
+    addBudgetItem("Rent", 1500, "Housing", []);
+    expect(storage["th4_budget"]).toBeUndefined();
   });
 
   it("throws when max items reached", () => {
@@ -97,38 +101,44 @@ describe("addBudgetItem", () => {
 
 describe("updateBudgetItem", () => {
   it("updates name of an existing item", () => {
-    const after = addBudgetItem("Rent", 1500, "Housing");
-    const id = after[0].id;
-    const result = updateBudgetItem(id, { name: "Mortgage" });
+    const items = addBudgetItem("Rent", 1500, "Housing", []);
+    const id = items[0].id;
+    const result = updateBudgetItem(id, { name: "Mortgage" }, items);
     expect(result[0].name).toBe("Mortgage");
     expect(result[0].amount).toBe(1500);
   });
 
   it("updates amount of an existing item", () => {
-    const after = addBudgetItem("Rent", 1500, "Housing");
-    const id = after[0].id;
-    const result = updateBudgetItem(id, { amount: 2000 });
+    const items = addBudgetItem("Rent", 1500, "Housing", []);
+    const id = items[0].id;
+    const result = updateBudgetItem(id, { amount: 2000 }, items);
     expect(result[0].amount).toBe(2000);
   });
 
   it("clamps negative amount update to zero", () => {
-    const after = addBudgetItem("Rent", 1500, "Housing");
-    const id = after[0].id;
-    const result = updateBudgetItem(id, { amount: -500 });
+    const items = addBudgetItem("Rent", 1500, "Housing", []);
+    const id = items[0].id;
+    const result = updateBudgetItem(id, { amount: -500 }, items);
     expect(result[0].amount).toBe(0);
   });
 
   it("updates category", () => {
-    const after = addBudgetItem("Internet", 80, "Other");
-    const id = after[0].id;
-    const result = updateBudgetItem(id, { category: "Utilities" });
+    const items = addBudgetItem("Internet", 80, "Other", []);
+    const id = items[0].id;
+    const result = updateBudgetItem(id, { category: "Utilities" }, items);
     expect(result[0].category).toBe("Utilities");
   });
 
+  it("does not write to localStorage", () => {
+    const items = addBudgetItem("Rent", 1500, "Housing", []);
+    updateBudgetItem(items[0].id, { amount: 2000 }, items);
+    expect(storage["th4_budget"]).toBeUndefined();
+  });
+
   it("leaves other items unchanged", () => {
-    addBudgetItem("Rent", 1500, "Housing");
-    const after = addBudgetItem("Food", 600, "Food");
-    const result = updateBudgetItem(after[1].id, { amount: 700 });
+    const first = addBudgetItem("Rent", 1500, "Housing", []);
+    const both = addBudgetItem("Food", 600, "Food", first);
+    const result = updateBudgetItem(both[1].id, { amount: 700 }, both);
     expect(result[0].amount).toBe(1500);
     expect(result[1].amount).toBe(700);
   });
@@ -138,14 +148,20 @@ describe("updateBudgetItem", () => {
 
 describe("deleteBudgetItem", () => {
   it("removes an item by id", () => {
-    const after = addBudgetItem("Rent", 1500, "Housing");
-    const result = deleteBudgetItem(after[0].id);
+    const items = addBudgetItem("Rent", 1500, "Housing", []);
+    const result = deleteBudgetItem(items[0].id, items);
     expect(result).toHaveLength(0);
   });
 
+  it("does not write to localStorage", () => {
+    const items = addBudgetItem("Rent", 1500, "Housing", []);
+    deleteBudgetItem(items[0].id, items);
+    expect(storage["th4_budget"]).toBeUndefined();
+  });
+
   it("does nothing if id not found", () => {
-    addBudgetItem("Rent", 1500, "Housing");
-    const result = deleteBudgetItem("nonexistent");
+    const items = addBudgetItem("Rent", 1500, "Housing", []);
+    const result = deleteBudgetItem("nonexistent", items);
     expect(result).toHaveLength(1);
   });
 });

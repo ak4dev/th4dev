@@ -10,6 +10,7 @@
 import { describe, it, expect } from "vitest"
 import type { TH4State } from "../../types/types"
 import type { BudgetItem } from "../budget-manager"
+import type { ScenarioSnapshot } from "../scenario-manager"
 
 describe("TH4State round-trip serialisation", () => {
   const fullState: TH4State = {
@@ -65,6 +66,20 @@ describe("TH4State round-trip serialisation", () => {
       { id: "b2", name: "Groceries", amount: 400, category: "Food" },
       { id: "b3", name: "Untitled", amount: 50, category: "Other" },
     ],
+    scenarios: [
+      {
+        id: "s1",
+        name: "Conservative",
+        createdAt: "2025-01-01T00:00:00.000Z",
+        state: {
+          theme: "dracula",
+          sliders: { projectedGainA: 6 },
+          inputs: { currentAmountA: "30000" },
+          toggles: { advanced: false, rollover: false, showInflation: false, portfolio: false },
+        } as TH4State,
+      },
+    ],
+    activePage: "fire",
   }
 
   it("survives JSON round-trip without data loss", () => {
@@ -85,6 +100,8 @@ describe("TH4State round-trip serialisation", () => {
     expect(parsed.toggles.budget).toBe(true)
     expect(parsed.stock?.holdings).toHaveLength(2)
     expect(parsed.budgetItems).toHaveLength(3)
+    expect(parsed.scenarios).toHaveLength(1)
+    expect(parsed.activePage).toBe("fire")
   })
 
   it("captures all FIRE slider values", () => {
@@ -148,6 +165,8 @@ describe("TH4State round-trip serialisation", () => {
 
     expect(parsed.stock).toBeUndefined()
     expect(parsed.budgetItems).toBeUndefined()
+    expect(parsed.scenarios).toBeUndefined()
+    expect(parsed.activePage).toBeUndefined()
     expect(parsed.sliders.annualFeeA).toBeUndefined()
     expect(parsed.sliders.volatilityA).toBeUndefined()
     expect(parsed.sliders.fireAnnualExpenses).toBeUndefined()
@@ -164,5 +183,23 @@ describe("TH4State round-trip serialisation", () => {
     for (const key of toggleKeys) {
       expect(typeof parsed.toggles[key]).toBe("boolean")
     }
+  })
+
+  it("captures scenarios with nested state", () => {
+    const json = JSON.stringify(fullState)
+    const parsed = JSON.parse(json) as TH4State
+
+    expect(parsed.scenarios).toBeDefined()
+    const scenarios = parsed.scenarios as ScenarioSnapshot[]
+    expect(scenarios).toHaveLength(1)
+    expect(scenarios[0].name).toBe("Conservative")
+    expect(scenarios[0].state.sliders.projectedGainA).toBe(6)
+    expect(scenarios[0].state.inputs?.currentAmountA).toBe("30000")
+  })
+
+  it("captures activePage", () => {
+    const json = JSON.stringify(fullState)
+    const parsed = JSON.parse(json) as TH4State
+    expect(parsed.activePage).toBe("fire")
   })
 })

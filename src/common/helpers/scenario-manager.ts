@@ -1,9 +1,10 @@
 /* ==================================================
  * Scenario Manager
  *
- * CRUD operations for named scenario snapshots stored
- * in localStorage.  Each snapshot captures the full
- * TH4State at a point in time.
+ * Pure CRUD helpers for named scenario snapshots.
+ * Functions compute and return new arrays without
+ * side effects — persistence is handled by the
+ * consent-gated useEffect in App.tsx.
  * ================================================== */
 
 import type { TH4State } from "../types/types";
@@ -66,7 +67,6 @@ export function saveScenario(
   };
 
   const updated = [...scenarios, snapshot];
-  persistScenarios(updated);
   return updated;
 }
 
@@ -76,7 +76,6 @@ export function deleteScenario(
 ): ScenarioSnapshot[] {
   const scenarios = existing ?? loadScenarios();
   const updated = scenarios.filter((s) => s.id !== id);
-  persistScenarios(updated);
   return updated;
 }
 
@@ -89,7 +88,6 @@ export function renameScenario(
   const updated = scenarios.map((s) =>
     s.id === id ? { ...s, name: newName } : s,
   );
-  persistScenarios(updated);
   return updated;
 }
 

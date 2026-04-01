@@ -53,6 +53,11 @@ export interface FireResult {
    * (targetRetirementAge - currentAge) years.  null if already reached.
    */
   monthlySavingsNeeded: number | null;
+  /**
+   * True when the user's target retirement is immediate (currentAge >= targetRetirementAge)
+   * but savings have not reached the FIRE Number.
+   */
+  isShortfall: boolean;
 }
 
 /* ---------- Core calculations ---------- */
@@ -196,5 +201,6 @@ export function calculateFire(inputs: FireInputs): FireResult {
     coastFireNumber: coastNum,
     isCoastFire: currentSavings >= coastNum,
     monthlySavingsNeeded: needed,
+    isShortfall: yearsUntilRetirement <= 0 && progressPct < 100 && fireNum > 0,
   };
 }

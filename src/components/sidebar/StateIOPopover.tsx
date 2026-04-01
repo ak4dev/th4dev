@@ -76,7 +76,9 @@ function isTH4State(value: unknown): value is TH4State {
     (t["scenarios"] === undefined || typeof t["scenarios"] === "boolean") &&
     (t["budget"] === undefined || typeof t["budget"] === "boolean") &&
     (v["budgetItems"] === undefined ||
-      (Array.isArray(v["budgetItems"]) && v["budgetItems"].every(isValidBudgetItem)))
+      (Array.isArray(v["budgetItems"]) && v["budgetItems"].every(isValidBudgetItem))) &&
+    (v["scenarios"] === undefined || Array.isArray(v["scenarios"])) &&
+    (v["activePage"] === undefined || typeof v["activePage"] === "string")
   );
 }
 

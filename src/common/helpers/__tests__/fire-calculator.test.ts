@@ -142,4 +142,31 @@ describe("calculateFire (combined)", () => {
     expect(result.isCoastFire).toBe(true);
     expect(result.coastFireNumber).toBeLessThan(250000);
   });
+
+  it("isShortfall when retireAge equals currentAge and underfunded", () => {
+    const result = calculateFire({
+      ...baseInputs,
+      currentSavings: 200000,
+      currentAge: 55,
+      targetRetirementAge: 55,
+    });
+    expect(result.isShortfall).toBe(true);
+    expect(result.progressPct).toBeLessThan(100);
+  });
+
+  it("isShortfall is false when at FIRE even if retiring now", () => {
+    const result = calculateFire({
+      ...baseInputs,
+      currentSavings: 1500000,
+      currentAge: 55,
+      targetRetirementAge: 55,
+    });
+    expect(result.isShortfall).toBe(false);
+    expect(result.progressPct).toBe(100);
+  });
+
+  it("isShortfall is false when retirement is in the future", () => {
+    const result = calculateFire(baseInputs);
+    expect(result.isShortfall).toBe(false);
+  });
 });
