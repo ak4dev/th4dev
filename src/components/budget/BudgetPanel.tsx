@@ -49,14 +49,14 @@ const fadeCheck = keyframes({
   "0%": { opacity: 0, transform: "scale(0.7)" },
   "15%": { opacity: 1, transform: "scale(1)" },
   "70%": { opacity: 1 },
-  "100%": { opacity: 0 },
+  "100%": { opacity: 0, width: 0, marginLeft: 0, overflow: "hidden" },
 });
 
 const ConfirmCheck = styled("span", {
   display: "inline-flex",
   alignItems: "center",
   color: "$green",
-  marginLeft: "6px",
+  marginLeft: "4px",
   animation: `${fadeCheck} 1.4s ease forwards`,
 });
 
@@ -592,14 +592,14 @@ export default function BudgetPanel({
                   title="Set monthly withdrawal to this amount"
                 >
                   Set Withdrawal
+                  {withdrawalSet > 0 && (
+                    <ConfirmCheck key={withdrawalSet}>
+                      <Icons.CheckCircledIcon width={14} height={14} />
+                    </ConfirmCheck>
+                  )}
                 </Button>
               )}
               {fmt(monthlyTotal)}
-              {withdrawalSet > 0 && (
-                <ConfirmCheck key={withdrawalSet}>
-                  <Icons.CheckCircledIcon width={16} height={16} />
-                </ConfirmCheck>
-              )}
             </TotalValue>
           </TotalsRow>
           <TotalsRow css={{ marginTop: "6px" }}>
