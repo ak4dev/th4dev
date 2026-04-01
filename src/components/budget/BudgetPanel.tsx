@@ -9,6 +9,7 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import * as Slider from "@radix-ui/react-slider";
+import * as Icons from "@radix-ui/react-icons";
 import { styled, keyframes } from "../../../stitches.config";
 import { compactModernInputStyles } from "../../common/constants/input-styles";
 import {
@@ -42,6 +43,21 @@ interface BudgetPanelProps {
 const slideIn = keyframes({
   from: { opacity: 0, transform: "translateY(-6px)" },
   to: { opacity: 1, transform: "translateY(0)" },
+});
+
+const fadeCheck = keyframes({
+  "0%": { opacity: 0, transform: "scale(0.7)" },
+  "15%": { opacity: 1, transform: "scale(1)" },
+  "70%": { opacity: 1 },
+  "100%": { opacity: 0 },
+});
+
+const ConfirmCheck = styled("span", {
+  display: "inline-flex",
+  alignItems: "center",
+  color: "$green",
+  marginLeft: "6px",
+  animation: `${fadeCheck} 1.4s ease forwards`,
 });
 
 /* ---------- Styled Components ---------- */
@@ -371,6 +387,7 @@ export default function BudgetPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editAmount, setEditAmount] = useState("");
+  const [withdrawalSet, setWithdrawalSet] = useState(0);
 
   const monthlyTotal = useMemo(() => getMonthlyTotal(items), [items]);
   const annualTotal = useMemo(() => getAnnualTotal(items), [items]);
@@ -563,17 +580,25 @@ export default function BudgetPanel({
           <TotalsRow>
             <TotalLabel>Monthly</TotalLabel>
             <TotalValue color="green">
-              {fmt(monthlyTotal)}
               {onSetMonthlyWithdrawal && monthlyTotal > 0 && (
                 <Button
                   size="sm"
                   color="muted"
-                  css={{ marginLeft: "8px" }}
-                  onClick={() => onSetMonthlyWithdrawal(monthlyTotal)}
+                  css={{ marginRight: "8px" }}
+                  onClick={() => {
+                    onSetMonthlyWithdrawal(monthlyTotal);
+                    setWithdrawalSet((c) => c + 1);
+                  }}
                   title="Set monthly withdrawal to this amount"
                 >
                   Set Withdrawal
                 </Button>
+              )}
+              {fmt(monthlyTotal)}
+              {withdrawalSet > 0 && (
+                <ConfirmCheck key={withdrawalSet}>
+                  <Icons.CheckCircledIcon width={16} height={16} />
+                </ConfirmCheck>
               )}
             </TotalValue>
           </TotalsRow>
