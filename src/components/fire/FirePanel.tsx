@@ -265,8 +265,7 @@ export default function FirePanel(props: FirePanelProps) {
           value={currentAge || ""}
           onChange={(e) => {
             const cleaned = e.target.value.replace(/[^0-9]/g, "");
-            const parsed = Number(cleaned);
-            if (parsed) onCurrentAgeChange(Math.min(100, Math.max(18, parsed)));
+            if (cleaned) onCurrentAgeChange(Math.min(100, Math.max(18, Number(cleaned))));
           }}
         />
       </InputRow>
@@ -278,8 +277,7 @@ export default function FirePanel(props: FirePanelProps) {
           value={targetRetirementAge || ""}
           onChange={(e) => {
             const cleaned = e.target.value.replace(/[^0-9]/g, "");
-            const parsed = Number(cleaned);
-            if (parsed) onTargetRetirementAgeChange(Math.min(100, Math.max(18, parsed)));
+            if (cleaned) onTargetRetirementAgeChange(Math.min(100, Math.max(18, Number(cleaned))));
           }}
         />
       </InputRow>

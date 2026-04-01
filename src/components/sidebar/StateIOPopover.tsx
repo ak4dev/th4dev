@@ -46,6 +46,17 @@ const FileInput = styled("input", {
  * @param value - The parsed JSON value to validate
  * @returns True if value is a valid TH4State object
  */
+function isValidBudgetItem(item: unknown): boolean {
+  if (typeof item !== "object" || item === null) return false;
+  const o = item as Record<string, unknown>;
+  return (
+    typeof o["id"] === "string" &&
+    typeof o["name"] === "string" &&
+    typeof o["amount"] === "number" &&
+    typeof o["category"] === "string"
+  );
+}
+
 function isTH4State(value: unknown): value is TH4State {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
@@ -64,7 +75,8 @@ function isTH4State(value: unknown): value is TH4State {
     (t["fire"] === undefined || typeof t["fire"] === "boolean") &&
     (t["scenarios"] === undefined || typeof t["scenarios"] === "boolean") &&
     (t["budget"] === undefined || typeof t["budget"] === "boolean") &&
-    (v["budgetItems"] === undefined || Array.isArray(v["budgetItems"]))
+    (v["budgetItems"] === undefined ||
+      (Array.isArray(v["budgetItems"]) && v["budgetItems"].every(isValidBudgetItem)))
   );
 }
 

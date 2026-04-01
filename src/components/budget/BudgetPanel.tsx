@@ -7,7 +7,7 @@
  * optionally feeds annual expenses into FIRE.
  * ================================================== */
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import * as Slider from "@radix-ui/react-slider";
 import { styled, keyframes } from "../../../stitches.config";
 import { compactModernInputStyles } from "../../common/constants/input-styles";
@@ -375,12 +375,13 @@ export default function BudgetPanel({
   const canAdd = items.length < MAX_ITEMS;
 
   /* --- Fire integration --- */
-  const prevAnnualRef = useMemo(() => ({ current: -1 }), []);
-  if (onAnnualTotalChange && annualTotal !== prevAnnualRef.current) {
-    prevAnnualRef.current = annualTotal;
-    // Defer to avoid setState-during-render
-    queueMicrotask(() => onAnnualTotalChange(annualTotal));
-  }
+  const prevAnnualRef = useRef(-1);
+  useEffect(() => {
+    if (onAnnualTotalChange && annualTotal !== prevAnnualRef.current) {
+      prevAnnualRef.current = annualTotal;
+      onAnnualTotalChange(annualTotal);
+    }
+  }, [annualTotal, onAnnualTotalChange]);
 
   /* --- Handlers --- */
 
@@ -395,7 +396,7 @@ export default function BudgetPanel({
       setNewName("");
       setNewAmount("");
     },
-    [canAdd, newName, newAmount, newCategory, items],
+    [canAdd, newName, newAmount, newCategory, items, setItems],
   );
 
   const handleDelete = useCallback(
@@ -403,7 +404,7 @@ export default function BudgetPanel({
       const updated = deleteBudgetItem(id, items);
       setItems(updated);
     },
-    [items],
+    [items, setItems],
   );
 
   const handleStartEdit = useCallback((item: BudgetItem) => {
@@ -422,14 +423,14 @@ export default function BudgetPanel({
       setItems(updated);
     }
     setEditingId(null);
-  }, [editingId, editName, editAmount, items]);
+  }, [editingId, editName, editAmount, items, setItems]);
 
   const handleSliderChange = useCallback(
     (id: string, amount: number) => {
       const updated = updateBudgetItem(id, { amount }, items);
       setItems(updated);
     },
-    [items],
+    [items, setItems],
   );
 
   /* --- Sorted categories for display --- */
