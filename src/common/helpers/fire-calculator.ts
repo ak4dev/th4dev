@@ -133,6 +133,7 @@ export function monthlySavingsNeeded(
   targetAmount: number,
   years: number,
 ): number | null {
+  if (!isFinite(targetAmount)) return null;
   if (currentSavings >= targetAmount) return null;
   if (years <= 0) return null;
 

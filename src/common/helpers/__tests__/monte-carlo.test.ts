@@ -227,3 +227,46 @@ describe("runRolloverSimulation", () => {
     expect(bands[1].p50).toBeGreaterThan(paramsA.initialAmount + paramsB.initialAmount);
   });
 });
+
+describe("Monte Carlo edge cases", () => {
+  it("simCount = 1 produces valid bands (no percentile spread)", () => {
+    const bands = runMonteCarloSimulation({
+      ...baseParams,
+      volatility: 0,
+      simCount: 1,
+    });
+    expect(bands).toHaveLength(baseParams.yearsOfGrowth + 1);
+    expect(bands[0].p10).toBe(bands[0].p90);
+  });
+
+  it("zero volatility produces identical percentile values", () => {
+    const bands = runMonteCarloSimulation({
+      ...baseParams,
+      volatility: 0,
+      simCount: 50,
+    });
+    const last = bands[bands.length - 1];
+    expect(last.p10).toBeCloseTo(last.p90, 0);
+    expect(last.p25).toBeCloseTo(last.p75, 0);
+  });
+
+  it("zero initial amount and zero contribution stays at zero", () => {
+    const bands = runMonteCarloSimulation({
+      ...baseParams,
+      initialAmount: 0,
+      monthlyContribution: 0,
+      volatility: 0,
+      simCount: 10,
+    });
+    expect(bands[bands.length - 1].p50).toBe(0);
+  });
+
+  it("1-year simulation produces 2 bands (year 0 and year 1)", () => {
+    const bands = runMonteCarloSimulation({
+      ...baseParams,
+      yearsOfGrowth: 1,
+      simCount: 10,
+    });
+    expect(bands).toHaveLength(2);
+  });
+});

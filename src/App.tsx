@@ -57,7 +57,7 @@ const HelpOverlay = styled(Dialog.Overlay, {
   position: "fixed",
   inset: 0,
   backgroundColor: "rgba(0,0,0,0.65)",
-  animation: `${overlayShow} 150ms ease`,
+  animation: `${String(overlayShow)} 150ms ease`,
   zIndex: 200,
 });
 
@@ -69,7 +69,7 @@ const HelpContent = styled(Dialog.Content, {
   width: "min(1160px, 95vw)",
   maxHeight: "90vh",
   overflowY: "auto",
-  animation: `${contentShow} 150ms ease`,
+  animation: `${String(contentShow)} 150ms ease`,
   zIndex: 201,
   "&:focus": { outline: "none" },
 });

@@ -81,7 +81,7 @@ export default function PdfExportButton({
   }, [chartSelector, assumptions, metrics]);
 
   return (
-    <Button onClick={handleExport} disabled={generating}>
+    <Button onClick={() => void handleExport()} disabled={generating}>
       {generating ? "Generating..." : "Export PDF"}
     </Button>
   );

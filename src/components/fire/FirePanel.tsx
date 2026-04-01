@@ -165,7 +165,7 @@ const Separator = styled("hr", {
 /* ---------- Component ---------- */
 
 function formatCurrency(n: number): string {
-  if (!isFinite(n)) return "∞";
+  if (!isFinite(n)) return "N/A";
   return `$${n.toLocaleString()}`;
 }
 
@@ -191,11 +191,14 @@ export default function FirePanel(props: FirePanelProps) {
   const [ageText, setAgeText] = useState(String(currentAge || ""));
   const [retireText, setRetireText] = useState(String(targetRetirementAge || ""));
 
-  // Sync local state when props change externally (e.g. scenario load)
-  useEffect(() => { setExpensesText(String(annualExpenses || "")) }, [annualExpenses]);
-  useEffect(() => { setSwrText(String(safeWithdrawalRate || "")) }, [safeWithdrawalRate]);
-  useEffect(() => { setAgeText(String(currentAge || "")) }, [currentAge]);
-  useEffect(() => { setRetireText(String(targetRetirementAge || "")) }, [targetRetirementAge]);
+  // Sync local text when props change externally (e.g. scenario load).
+  // Single batched effect avoids cascading re-renders.
+  useEffect(() => {
+    setExpensesText(String(annualExpenses || "")); // eslint-disable-line react-hooks/set-state-in-effect -- syncing controlled text from parent props
+    setSwrText(String(safeWithdrawalRate || ""));
+    setAgeText(String(currentAge || ""));
+    setRetireText(String(targetRetirementAge || ""));
+  }, [annualExpenses, safeWithdrawalRate, currentAge, targetRetirementAge]);
 
   const commitExpenses = useCallback(() => {
     const n = parseInt(expensesText, 10);

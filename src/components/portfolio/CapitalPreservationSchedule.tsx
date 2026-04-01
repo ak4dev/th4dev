@@ -2,7 +2,7 @@
  * Capital Preservation Schedule
  * ================================================== */
 
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { format } from "date-fns";
 import { styled } from "../../../stitches.config";
 import type { LineGraphEntry } from "../../common/types/types";
@@ -392,8 +392,8 @@ export default function CapitalPreservationSchedule({
                   : [];
 
               return (
-                <>
-                  <tr key={idx}>
+                <Fragment key={idx}>
+                  <tr>
                     <Td
                       highlight={isWithdrawalRow}
                       highlightB={isWithdrawalRowB}
@@ -504,7 +504,7 @@ export default function CapitalPreservationSchedule({
                       </tr>
                     );
                   })}
-                </>
+                </Fragment>
               );
             })}
           </tbody>

@@ -589,7 +589,7 @@ export default function InvestmentCalculatorRadixModern({
     // target arrives in current display units; store as nominal so it is
     // stable across inflation-toggle round-trips.
     const nominalTarget = toggles.showInflation
-      ? Math.round(target * (nominalMaxA / inflatedMaxA))
+      ? Math.round(target * (inflatedMaxA > 0 ? nominalMaxA / inflatedMaxA : 1))
       : target;
     const withdrawal = solveForWithdrawal(
       invAProps,
@@ -605,7 +605,7 @@ export default function InvestmentCalculatorRadixModern({
 
   const handleTargetB = (target: number) => {
     const nominalTarget = toggles.showInflation
-      ? Math.round(target * (nominalMaxB / inflatedMaxB))
+      ? Math.round(target * (inflatedMaxB > 0 ? nominalMaxB / inflatedMaxB : 1))
       : target;
     const withdrawal = solveForWithdrawal(
       invBProps,

@@ -19,6 +19,7 @@ import {
   DEFAULT_WITHDRAWAL_START_YEAR,
   DEFAULT_INFLATION_RATE,
   DEFAULT_TARGET_VALUE,
+  DEFAULT_VOLATILITY,
 } from "../constants/app-constants"
 
 /* ---------- Default state ---------- */
@@ -55,6 +56,14 @@ export const DEFAULT_SLIDERS: Record<string, number> = {
   yearlyInflation: DEFAULT_INFLATION_RATE,
   targetValueA: DEFAULT_TARGET_VALUE,
   targetValueB: DEFAULT_TARGET_VALUE,
+  annualFeeA: 0,
+  annualFeeB: 0,
+  volatilityA: DEFAULT_VOLATILITY,
+  volatilityB: DEFAULT_VOLATILITY,
+  fireAnnualExpenses: 40000,
+  fireSWR: 4,
+  fireCurrentAge: 30,
+  fireRetirementAge: 65,
 }
 
 export const DEFAULT_INPUTS: Record<string, string> = {
@@ -132,6 +141,14 @@ export function isValidTH4State(value: unknown): value is TH4State {
   if (v["scenarios"] !== undefined && !Array.isArray(v["scenarios"])) return false
   if (v["activePage"] !== undefined && typeof v["activePage"] !== "string") return false
 
+  // Validate stock field if present
+  if (v["stock"] !== undefined) {
+    if (typeof v["stock"] !== "object" || v["stock"] === null) return false
+    const s = v["stock"] as Record<string, unknown>
+    if (s["apiUrl"] !== undefined && typeof s["apiUrl"] !== "string") return false
+    if (s["holdings"] !== undefined && !Array.isArray(s["holdings"])) return false
+  }
+
   return true
 }
 
@@ -156,7 +173,7 @@ export function normalizeState(raw: TH4State): TH4State {
   // Handle legacy format with symbols array
   const legacySymbols = (stock as unknown as { symbols?: string[] }).symbols
   const holdings = stock.holdings
-    ? stock.holdings
+    ? stock.holdings.map((h) => ({ ...h }))
     : legacySymbols
       ? legacySymbols.map((s: string) => ({ symbol: s, allocationPct: 0 }))
       : []

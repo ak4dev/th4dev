@@ -100,6 +100,10 @@ describe("monthlySavingsNeeded", () => {
     const needed = monthlySavingsNeeded(500000, 10, 1000000, 30);
     expect(needed).toBe(0);
   });
+
+  it("returns null when target is Infinity", () => {
+    expect(monthlySavingsNeeded(100000, 8, Infinity, 30)).toBeNull();
+  });
 });
 
 describe("calculateFire (combined)", () => {
@@ -168,5 +172,15 @@ describe("calculateFire (combined)", () => {
   it("isShortfall is false when retirement is in the future", () => {
     const result = calculateFire(baseInputs);
     expect(result.isShortfall).toBe(false);
+  });
+
+  it("handles Infinity fireNumber when SWR is 0", () => {
+    const result = calculateFire({
+      ...baseInputs,
+      safeWithdrawalRate: 0,
+    });
+    expect(result.fireNumber).toBe(Infinity);
+    expect(result.progressPct).toBe(0);
+    expect(result.monthlySavingsNeeded).toBeNull();
   });
 });

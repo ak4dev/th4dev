@@ -57,7 +57,7 @@ const ConfirmCheck = styled("span", {
   alignItems: "center",
   color: "$green",
   marginLeft: "4px",
-  animation: `${fadeCheck} 1.4s ease forwards`,
+  animation: `${String(fadeCheck)} 1.4s ease forwards`,
 });
 
 /* ---------- Styled Components ---------- */
@@ -168,7 +168,7 @@ const ItemRow = styled("div", {
   backgroundColor: "$background",
   borderRadius: "8px",
   padding: "8px 12px",
-  animation: `${slideIn} 0.2s ease`,
+  animation: `${String(slideIn)} 0.2s ease`,
 });
 
 const ItemName = styled("span", {

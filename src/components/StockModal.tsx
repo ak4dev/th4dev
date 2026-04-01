@@ -37,7 +37,7 @@ const Overlay = styled(Dialog.Overlay, {
   position: "fixed",
   inset: 0,
   backgroundColor: "rgba(0,0,0,0.6)",
-  animation: `${overlayShow} 150ms ease`,
+  animation: `${String(overlayShow)} 150ms ease`,
   zIndex: 100,
 });
 
@@ -51,7 +51,7 @@ const Content = styled(Dialog.Content, {
   border: "1px solid $currentLine",
   borderRadius: 8,
   padding: "1.5rem",
-  animation: `${contentShow} 150ms ease`,
+  animation: `${String(contentShow)} 150ms ease`,
   zIndex: 101,
   "&:focus": { outline: "none" },
 });
@@ -354,7 +354,7 @@ export default function StockModal({
             />
             <SecondaryButton onClick={addSymbols}>Add</SecondaryButton>
             <ActionButton
-              onClick={handleFetch}
+              onClick={() => void handleFetch()}
               disabled={loading || symbols.length === 0}
             >
               {loading ? "Fetching…" : "Fetch"}

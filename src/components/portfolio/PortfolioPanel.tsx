@@ -526,7 +526,7 @@ export default function PortfolioPanel({
       {/* Allocation sum indicator + actions */}
       <Row>
         <ActionButton
-          onClick={handleFetchPrices}
+          onClick={() => void handleFetchPrices()}
           disabled={loading || holdings.length === 0}
         >
           {loading ? "Fetching…" : "Fetch Current Prices"}

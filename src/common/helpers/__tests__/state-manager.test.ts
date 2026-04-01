@@ -303,3 +303,100 @@ describe("state round-trip", () => {
     expect(result.activePage).toBe("f")
   })
 })
+
+/* ---------- Bug fix coverage ---------- */
+
+describe("DEFAULT_SLIDERS completeness", () => {
+  it("includes FIRE slider defaults", () => {
+    expect(DEFAULT_SLIDERS.fireAnnualExpenses).toBe(40000)
+    expect(DEFAULT_SLIDERS.fireSWR).toBe(4)
+    expect(DEFAULT_SLIDERS.fireCurrentAge).toBe(30)
+    expect(DEFAULT_SLIDERS.fireRetirementAge).toBe(65)
+  })
+
+  it("includes fee slider defaults", () => {
+    expect(DEFAULT_SLIDERS.annualFeeA).toBe(0)
+    expect(DEFAULT_SLIDERS.annualFeeB).toBe(0)
+  })
+
+  it("includes volatility slider defaults", () => {
+    expect(DEFAULT_SLIDERS.volatilityA).toBe(12)
+    expect(DEFAULT_SLIDERS.volatilityB).toBe(12)
+  })
+
+  it("normalizeState fills missing FIRE/fee/volatility sliders", () => {
+    const old = {
+      theme: "dracula",
+      sliders: { projectedGainA: 8 },
+      inputs: {},
+      toggles: {
+        advanced: false,
+        rollover: false,
+        showInflation: false,
+        portfolio: false,
+      },
+    } as TH4State
+
+    const result = normalizeState(old)
+    expect(result.sliders.fireAnnualExpenses).toBe(40000)
+    expect(result.sliders.annualFeeA).toBe(0)
+    expect(result.sliders.volatilityA).toBe(12)
+  })
+})
+
+describe("stock validation in isValidTH4State", () => {
+  it("rejects stock with non-object value", () => {
+    const bad = {
+      ...fullExport,
+      stock: "not-an-object",
+    }
+    expect(isValidTH4State(bad)).toBe(false)
+  })
+
+  it("rejects stock with non-string apiUrl", () => {
+    const bad = {
+      ...fullExport,
+      stock: { apiUrl: 123, holdings: [] },
+    }
+    expect(isValidTH4State(bad)).toBe(false)
+  })
+
+  it("rejects stock with non-array holdings", () => {
+    const bad = {
+      ...fullExport,
+      stock: { apiUrl: "https://example.com", holdings: "not-array" },
+    }
+    expect(isValidTH4State(bad)).toBe(false)
+  })
+
+  it("accepts stock with valid structure", () => {
+    const good = {
+      ...fullExport,
+      stock: { apiUrl: "https://example.com", holdings: [{ symbol: "AAPL", allocationPct: 100 }] },
+    }
+    expect(isValidTH4State(good)).toBe(true)
+  })
+
+  it("accepts state without stock field (backward compat)", () => {
+    const noStock = { ...fullExport }
+    delete (noStock as Record<string, unknown>).stock
+    expect(isValidTH4State(noStock)).toBe(true)
+  })
+})
+
+describe("holdings clone isolation", () => {
+  it("normalizeState clones holdings array", () => {
+    const original = {
+      ...fullExport,
+      stock: {
+        apiUrl: "https://example.com",
+        holdings: [{ symbol: "AAPL", allocationPct: 50 }],
+      },
+    }
+
+    const result = normalizeState(original)
+    result.stock!.holdings[0].allocationPct = 100
+
+    expect(original.stock!.holdings[0].allocationPct).toBe(50)
+  })
+})

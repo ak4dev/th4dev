@@ -50,7 +50,7 @@ export function extractQuoteSymbol(data: unknown): string | undefined {
 
   const globalQuote = (data as Record<string, unknown>)["Global Quote"];
   if (typeof globalQuote === "object" && globalQuote !== null) {
-    const symbolKey = Object.keys(globalQuote as object).find((k) =>
+    const symbolKey = Object.keys(globalQuote).find((k) =>
       k.toLowerCase().includes("symbol"),
     );
     if (symbolKey) {
@@ -61,7 +61,7 @@ export function extractQuoteSymbol(data: unknown): string | undefined {
     }
   }
 
-  const topLevelSymbolKey = Object.keys(data as object).find((k) =>
+  const topLevelSymbolKey = Object.keys(data).find((k) =>
     k.toLowerCase().includes("symbol"),
   );
   if (topLevelSymbolKey) {
@@ -82,7 +82,7 @@ export function extractStockPrice(data: unknown): number | undefined {
 
   const globalQuote = (data as Record<string, unknown>)["Global Quote"];
   if (typeof globalQuote === "object" && globalQuote !== null) {
-    const priceKey = Object.keys(globalQuote as object).find((k) =>
+    const priceKey = Object.keys(globalQuote).find((k) =>
       k.toLowerCase().includes("price"),
     );
     if (priceKey) {
@@ -93,7 +93,7 @@ export function extractStockPrice(data: unknown): number | undefined {
     }
   }
 
-  const topLevelPriceKey = Object.keys(data as object).find((k) =>
+  const topLevelPriceKey = Object.keys(data).find((k) =>
     k.toLowerCase().includes("price"),
   );
   if (topLevelPriceKey) {
