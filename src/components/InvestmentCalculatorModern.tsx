@@ -922,6 +922,7 @@ export default function InvestmentCalculatorRadixModern({
             value={sliders.yearsOfGrowthA}
             min={MIN_VALUE}
             max={MAX_YEARS_OF_GROWTH}
+            step={0.5}
             onChange={(v) => updateSlider("yearsOfGrowthA", v)}
           />
           {toggles.advanced && (
@@ -938,6 +939,7 @@ export default function InvestmentCalculatorRadixModern({
                 value={sliders.contributionStopYearA}
                 min={MIN_VALUE}
                 max={sliders.yearsOfGrowthA}
+                step={0.5}
                 onChange={(v) => updateSlider("contributionStopYearA", v)}
               />
               <InvestmentSlider
@@ -952,6 +954,7 @@ export default function InvestmentCalculatorRadixModern({
                 value={sliders.withdrawalStartYearA || MIN_VALUE}
                 min={MIN_VALUE}
                 max={sliders.yearsOfGrowthA}
+                step={0.5}
                 onChange={(v) => updateSlider("withdrawalStartYearA", v)}
               />
               {toggles.fees && (
@@ -1018,6 +1021,7 @@ export default function InvestmentCalculatorRadixModern({
               value={sliders.yearsOfGrowthB}
               min={MIN_VALUE}
               max={MAX_YEARS_OF_GROWTH}
+              step={0.5}
               onChange={(v) => updateSlider("yearsOfGrowthB", v)}
             />
             <InvestmentSlider
@@ -1032,6 +1036,7 @@ export default function InvestmentCalculatorRadixModern({
               value={sliders.contributionStopYearB}
               min={MIN_VALUE}
               max={sliders.yearsOfGrowthB}
+              step={0.5}
               onChange={(v) => updateSlider("contributionStopYearB", v)}
             />
             <InvestmentSlider
@@ -1046,6 +1051,7 @@ export default function InvestmentCalculatorRadixModern({
               value={sliders.withdrawalStartYearB || MIN_VALUE}
               min={MIN_VALUE}
               max={sliders.yearsOfGrowthB}
+              step={0.5}
               onChange={(v) => updateSlider("withdrawalStartYearB", v)}
             />
             {toggles.fees && (

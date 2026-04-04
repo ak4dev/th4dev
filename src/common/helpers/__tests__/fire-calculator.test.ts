@@ -24,6 +24,14 @@ describe("calculateFireNumber", () => {
   it("0% SWR returns Infinity", () => {
     expect(calculateFireNumber(40000, 0)).toBe(Infinity);
   });
+
+  it("negative SWR returns Infinity", () => {
+    expect(calculateFireNumber(40000, -5)).toBe(Infinity);
+  });
+
+  it("negative expenses returns negative FIRE number", () => {
+    expect(calculateFireNumber(-40000, 4)).toBe(-1000000);
+  });
 });
 
 describe("yearsToFire", () => {

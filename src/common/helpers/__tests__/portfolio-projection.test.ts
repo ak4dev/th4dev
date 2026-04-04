@@ -166,4 +166,24 @@ describe("computePortfolioProjection – edge cases", () => {
     const prices = result["AAPL"].map((p) => p.requiredPrice);
     prices.forEach((p) => expect(p).toBe(100));
   });
+
+  it("skips holdings with negative allocationPct", () => {
+    const result = computePortfolioProjection({
+      holdings: [holding({ allocationPct: -50 })],
+      totalPortfolioValue: 10000,
+      monthlyWithdrawal: 100,
+      yearsForward: 2,
+    });
+    expect(Object.keys(result)).toHaveLength(0);
+  });
+
+  it("skips holdings when totalPortfolioValue is zero", () => {
+    const result = computePortfolioProjection({
+      holdings: [holding()],
+      totalPortfolioValue: 0,
+      monthlyWithdrawal: 100,
+      yearsForward: 2,
+    });
+    expect(Object.keys(result)).toHaveLength(0);
+  });
 });

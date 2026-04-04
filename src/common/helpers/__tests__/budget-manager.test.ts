@@ -228,3 +228,24 @@ describe("getCategoryPercentages", () => {
     expect(getCategoryPercentages([])).toEqual(new Map());
   });
 });
+
+describe("edge cases", () => {
+  it("update on non-existent id returns items unchanged", () => {
+    const items = addBudgetItem("Rent", 1500, "Housing", []);
+    const result = updateBudgetItem("nonexistent", { amount: 2000 }, items);
+    expect(result).toHaveLength(1);
+    expect(result[0].amount).toBe(1500);
+  });
+
+  it("delete on non-existent id returns items unchanged", () => {
+    const items = addBudgetItem("Rent", 1500, "Housing", []);
+    const result = deleteBudgetItem("nonexistent", items);
+    expect(result).toHaveLength(1);
+  });
+
+  it("handles fractional amounts", () => {
+    const items = addBudgetItem("Sub", 9.99, "Other", []);
+    expect(items[0].amount).toBe(9.99);
+    expect(getAnnualTotal(items)).toBeCloseTo(119.88, 2);
+  });
+});

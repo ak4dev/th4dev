@@ -33,7 +33,6 @@ describe("interpolateDailyForMonth", () => {
     const from = entry(0, 0, new Date("2026-01-01"));
     const to = entry(310, 310, new Date("2026-02-01")); // 31 days in Jan
     const result = interpolateDailyForMonth(from, to);
-    const daysInJan = 31;
     const expected = Math.floor(310 * (30 / 31)); // t = 30/31
     expect(result[30].y).toBe(expected);
   });

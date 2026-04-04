@@ -11,6 +11,18 @@ import {
 } from "../common/constants/app-constants";
 
 /* ==================================================
+ * Helpers
+ * ================================================== */
+
+/** Convert camelCase theme key to "Title Case" display name */
+function formatThemeName(key: string): string {
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (c) => c.toUpperCase())
+    .trim();
+}
+
+/* ==================================================
  * Styled Components
  * ================================================== */
 
@@ -34,18 +46,27 @@ const DropdownContent = styled(DropdownMenu.Content, {
   backgroundColor: "$currentLine",
   color: "$foreground",
   borderRadius: "12px",
-  minWidth: "180px",
+  minWidth: "200px",
   padding: "8px",
-  boxShadow: "0 10px 20px rgba(0,0,0,0.2)",
+  boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+});
+
+const DropdownLabel = styled(DropdownMenu.Label, {
+  fontSize: "0.7rem",
+  letterSpacing: "0.1em",
+  textTransform: "uppercase",
+  color: "$comment",
+  padding: "4px 12px 8px",
+  userSelect: "none",
 });
 
 const ScrollArea = styled("div", {
   display: "flex",
   flexDirection: "column",
-  gap: "6px",
+  gap: "3px",
   maxHeight: `calc(${SCROLLABLE_THEME_ITEMS} * ${THEME_ITEM_HEIGHT}px + 12px)`,
   overflowY: "auto",
-  paddingRight: "4px",
+  paddingRight: "2px",
 });
 
 const ThemeButton = styled(DropdownMenu.Item, {
@@ -53,14 +74,14 @@ const ThemeButton = styled(DropdownMenu.Item, {
   display: "flex",
   alignItems: "center",
   gap: "10px",
-  padding: "10px 12px",
+  padding: "8px 10px",
   cursor: "pointer",
-  fontSize: "0.95rem",
-  borderRadius: "9999px",
-  backgroundColor: "$currentLine",
+  fontSize: "0.88rem",
+  borderRadius: "8px",
+  transition: "background 0.12s ease",
   "&:hover": {
-    backgroundColor: "$purple",
-    color: "$background",
+    backgroundColor: "$comment",
+    color: "$foreground",
   },
   "&:focus": {
     outline: "none",
@@ -71,31 +92,46 @@ const ThemeButton = styled(DropdownMenu.Item, {
       true: {
         backgroundColor: "$purple",
         color: "$background",
+        "&:hover": {
+          backgroundColor: "$purple",
+          color: "$background",
+        },
       },
     },
   },
 });
 
-const ColorSwatch = styled("span", {
-  width: "18px",
-  height: "18px",
-  borderRadius: "50%",
+/** Horizontal pill showing 4 theme color segments */
+const SwatchPalette = styled("span", {
+  display: "flex",
+  borderRadius: "999px",
+  overflow: "hidden",
+  width: "48px",
+  height: "16px",
   flexShrink: 0,
-  border: "1px solid $foreground",
-  boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+  boxShadow: "0 1px 3px rgba(0,0,0,0.4)",
+});
+
+const SwatchSegment = styled("span", {
+  flex: 1,
+  height: "100%",
+});
+
+const ThemeName = styled("span", {
+  flex: 1,
+});
+
+const CheckIcon = styled(Icons.CheckIcon, {
+  flexShrink: 0,
+  opacity: 0.9,
 });
 
 /* ==================================================
  * Types
  * ================================================== */
 
-/**
- * Props for the ThemeSelector component
- */
 type ThemeSelectorProps = {
-  /** The currently active theme key */
   activeTheme: string;
-  /** Callback function invoked when theme changes */
   onThemeChange: (themeName: string) => void;
 };
 
@@ -103,10 +139,6 @@ type ThemeSelectorProps = {
  * Component
  * ================================================== */
 
-/**
- * Theme selector dropdown component
- * Allows users to switch between available color themes
- */
 export function ThemeSelector({
   activeTheme,
   onThemeChange,
@@ -114,14 +146,6 @@ export function ThemeSelector({
   const themeKeys = Object.keys(themeObjects) as Array<
     keyof typeof themeObjects
   >;
-
-  /**
-   * Switch to a new theme
-   * @param themeKey - The key of the theme to switch to
-   */
-  const switchTheme = (themeKey: string) => {
-    onThemeChange(themeKey);
-  };
 
   return (
     <DropdownMenu.Root>
@@ -131,6 +155,7 @@ export function ThemeSelector({
 
       <DropdownMenu.Portal>
         <DropdownContent sideOffset={5}>
+          <DropdownLabel>Theme</DropdownLabel>
           <ScrollArea>
             {themeKeys.map((key) => {
               const theme = themeObjects[key];
@@ -138,13 +163,17 @@ export function ThemeSelector({
               return (
                 <ThemeButton
                   key={key}
-                  onSelect={() => switchTheme(key)}
+                  onSelect={() => onThemeChange(key)}
                   active={isActive}
                 >
-                  <ColorSwatch
-                    style={{ backgroundColor: theme.colors.background }}
-                  />
-                  {theme.name.charAt(0).toUpperCase() + theme.name.slice(1)}
+                  <SwatchPalette>
+                    <SwatchSegment style={{ backgroundColor: theme.colors.background }} />
+                    <SwatchSegment style={{ backgroundColor: theme.colors.purple }} />
+                    <SwatchSegment style={{ backgroundColor: theme.colors.cyan }} />
+                    <SwatchSegment style={{ backgroundColor: theme.colors.green }} />
+                  </SwatchPalette>
+                  <ThemeName>{formatThemeName(key)}</ThemeName>
+                  {isActive && <CheckIcon width={14} height={14} />}
                 </ThemeButton>
               );
             })}

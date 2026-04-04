@@ -65,18 +65,6 @@ export interface InvestmentCalculatorProps {
 }
 
 /**
- * Represents a date-amount pair with inflation adjustment
- */
-export interface DateAmountPair {
-  /** The date of this data point */
-  date: Date;
-  /** The nominal amount */
-  amount: number;
-  /** The inflation-adjusted amount */
-  inflationAdjustedAmount: number;
-}
-
-/**
  * Top-level application state shape, used for persistence and routing
  */
 export interface TH4State {

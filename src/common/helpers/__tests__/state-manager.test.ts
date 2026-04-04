@@ -397,6 +397,6 @@ describe("holdings clone isolation", () => {
     const result = normalizeState(original)
     result.stock!.holdings[0].allocationPct = 100
 
-    expect(original.stock!.holdings[0].allocationPct).toBe(50)
+    expect(original.stock?.holdings[0].allocationPct).toBe(50)
   })
 })

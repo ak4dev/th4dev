@@ -93,8 +93,8 @@ export const themeObjects = {
       yellow: "#b58900",
     },
   },
-  cappuccinoLight: {
-    name: "cappuccinoLight",
+  catpuccinoLight: {
+    name: "catpuccinoLight",
     colors: {
       background: "#f5f0e1",
       currentLine: "#e4dfd0",
@@ -109,8 +109,8 @@ export const themeObjects = {
       yellow: "#e0c25a",
     },
   },
-  cappuccinoDark: {
-    name: "cappuccinoDark",
+  catpuccinoDark: {
+    name: "catpuccinoDark",
     colors: {
       background: "#2b2a27",
       currentLine: "#3b3a36",

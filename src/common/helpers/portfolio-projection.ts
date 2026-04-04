@@ -61,6 +61,7 @@ export function computePortfolioProjection(
     }
 
     const allocationValue = totalPortfolioValue * (holding.allocationPct / 100);
+    if (allocationValue <= 0) continue;
     const shares = allocationValue / holding.currentPrice;
     const monthlyWithdrawalShare =
       monthlyWithdrawal * (holding.allocationPct / 100);
