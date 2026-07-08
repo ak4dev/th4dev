@@ -70,8 +70,7 @@ describe("Monte Carlo simulation", () => {
     // Compare spread at the final year
     const narrowSpread =
       narrow[narrow.length - 1].p90 - narrow[narrow.length - 1].p10;
-    const wideSpread =
-      wide[wide.length - 1].p90 - wide[wide.length - 1].p10;
+    const wideSpread = wide[wide.length - 1].p90 - wide[wide.length - 1].p10;
 
     expect(wideSpread).toBeGreaterThan(narrowSpread);
   });
@@ -96,7 +95,9 @@ describe("Monte Carlo simulation", () => {
     });
     // With contributions and 0 volatility, final should exceed initial significantly
     const final = bands[bands.length - 1].p50;
-    expect(final).toBeGreaterThan(baseParams.initialAmount + 500 * 12 * 10 * 0.8);
+    expect(final).toBeGreaterThan(
+      baseParams.initialAmount + 500 * 12 * 10 * 0.8,
+    );
   });
 });
 
@@ -138,15 +139,35 @@ describe("computeBands", () => {
 
 describe("runCombinedSimulation", () => {
   it("combined bands are sum of A and B at year 0", () => {
-    const paramsA = { ...baseParams, initialAmount: 100000, volatility: 0, simCount: 10 };
-    const paramsB = { ...baseParams, initialAmount: 50000, volatility: 0, simCount: 10 };
+    const paramsA = {
+      ...baseParams,
+      initialAmount: 100000,
+      volatility: 0,
+      simCount: 10,
+    };
+    const paramsB = {
+      ...baseParams,
+      initialAmount: 50000,
+      volatility: 0,
+      simCount: 10,
+    };
     const bands = runCombinedSimulation(paramsA, paramsB);
     expect(bands[0].p50).toBe(150000);
   });
 
   it("uses max of both yearsOfGrowth for band length", () => {
-    const paramsA = { ...baseParams, yearsOfGrowth: 5, volatility: 0, simCount: 10 };
-    const paramsB = { ...baseParams, yearsOfGrowth: 10, volatility: 0, simCount: 10 };
+    const paramsA = {
+      ...baseParams,
+      yearsOfGrowth: 5,
+      volatility: 0,
+      simCount: 10,
+    };
+    const paramsB = {
+      ...baseParams,
+      yearsOfGrowth: 10,
+      volatility: 0,
+      simCount: 10,
+    };
     const bands = runCombinedSimulation(paramsA, paramsB);
     expect(bands).toHaveLength(11); // 0..10
   });
@@ -154,8 +175,20 @@ describe("runCombinedSimulation", () => {
   it("locks A final value after A timeline ends", () => {
     // A runs 5 years, B runs 10 years. With 0 volatility and no contributions,
     // A's value at year 5 should be carried forward for years 6-10.
-    const paramsA = { ...baseParams, yearsOfGrowth: 5, volatility: 0, simCount: 10, monthlyContribution: 0 };
-    const paramsB = { ...baseParams, yearsOfGrowth: 10, volatility: 0, simCount: 10, monthlyContribution: 0 };
+    const paramsA = {
+      ...baseParams,
+      yearsOfGrowth: 5,
+      volatility: 0,
+      simCount: 10,
+      monthlyContribution: 0,
+    };
+    const paramsB = {
+      ...baseParams,
+      yearsOfGrowth: 10,
+      volatility: 0,
+      simCount: 10,
+      monthlyContribution: 0,
+    };
     const bands = runCombinedSimulation(paramsA, paramsB);
 
     // A-only value at year 5
@@ -183,15 +216,35 @@ describe("runCombinedSimulation", () => {
 
 describe("runRolloverSimulation", () => {
   it("returns bands of length max(yearA, yearB) + 1", () => {
-    const paramsA = { ...baseParams, yearsOfGrowth: 5, volatility: 0, simCount: 10 };
-    const paramsB = { ...baseParams, yearsOfGrowth: 10, volatility: 0, simCount: 10 };
+    const paramsA = {
+      ...baseParams,
+      yearsOfGrowth: 5,
+      volatility: 0,
+      simCount: 10,
+    };
+    const paramsB = {
+      ...baseParams,
+      yearsOfGrowth: 10,
+      volatility: 0,
+      simCount: 10,
+    };
     const bands = runRolloverSimulation(paramsA, paramsB, 5);
     expect(bands).toHaveLength(11);
   });
 
   it("year 0 equals sum of both initial amounts", () => {
-    const paramsA = { ...baseParams, initialAmount: 80000, volatility: 0, simCount: 10 };
-    const paramsB = { ...baseParams, initialAmount: 20000, volatility: 0, simCount: 10 };
+    const paramsA = {
+      ...baseParams,
+      initialAmount: 80000,
+      volatility: 0,
+      simCount: 10,
+    };
+    const paramsB = {
+      ...baseParams,
+      initialAmount: 20000,
+      volatility: 0,
+      simCount: 10,
+    };
     const bands = runRolloverSimulation(paramsA, paramsB, 5);
     expect(bands[0].p50).toBe(100000);
   });
@@ -199,8 +252,18 @@ describe("runRolloverSimulation", () => {
   it("rollover compounds exceed constant addition (zero-vol)", () => {
     // With rollover, A's value is injected into B and then grows with B.
     // With combined-sum, A's value is a constant. Rollover should exceed.
-    const paramsA = { ...baseParams, yearsOfGrowth: 5, volatility: 0, simCount: 10 };
-    const paramsB = { ...baseParams, yearsOfGrowth: 15, volatility: 0, simCount: 10 };
+    const paramsA = {
+      ...baseParams,
+      yearsOfGrowth: 5,
+      volatility: 0,
+      simCount: 10,
+    };
+    const paramsB = {
+      ...baseParams,
+      yearsOfGrowth: 15,
+      volatility: 0,
+      simCount: 10,
+    };
     const rolloverBands = runRolloverSimulation(paramsA, paramsB, 5);
     const combinedBands = runCombinedSimulation(paramsA, paramsB);
     // At the final year, rollover should be greater because A's value
@@ -211,20 +274,44 @@ describe("runRolloverSimulation", () => {
   });
 
   it("with same yearsOfGrowth, produces single bloom of correct length", () => {
-    const paramsA = { ...baseParams, yearsOfGrowth: 10, volatility: 0, simCount: 10 };
-    const paramsB = { ...baseParams, yearsOfGrowth: 10, volatility: 0, simCount: 10 };
+    const paramsA = {
+      ...baseParams,
+      yearsOfGrowth: 10,
+      volatility: 0,
+      simCount: 10,
+    };
+    const paramsB = {
+      ...baseParams,
+      yearsOfGrowth: 10,
+      volatility: 0,
+      simCount: 10,
+    };
     const bands = runRolloverSimulation(paramsA, paramsB, 10);
     expect(bands).toHaveLength(11);
   });
 
   it("rollover at year 1 adds A initial to B immediately", () => {
     // A has 1 year of growth, B has 5 years. Rollover at year 1.
-    const paramsA = { ...baseParams, initialAmount: 50000, yearsOfGrowth: 1, volatility: 0, simCount: 10 };
-    const paramsB = { ...baseParams, initialAmount: 50000, yearsOfGrowth: 5, volatility: 0, simCount: 10 };
+    const paramsA = {
+      ...baseParams,
+      initialAmount: 50000,
+      yearsOfGrowth: 1,
+      volatility: 0,
+      simCount: 10,
+    };
+    const paramsB = {
+      ...baseParams,
+      initialAmount: 50000,
+      yearsOfGrowth: 5,
+      volatility: 0,
+      simCount: 10,
+    };
     const bands = runRolloverSimulation(paramsA, paramsB, 1);
     // After rollover (year 1+), B's value should include A's grown amount
     // so year 1 value should exceed sum of individual year-1 values before rollover
-    expect(bands[1].p50).toBeGreaterThan(paramsA.initialAmount + paramsB.initialAmount);
+    expect(bands[1].p50).toBeGreaterThan(
+      paramsA.initialAmount + paramsB.initialAmount,
+    );
   });
 });
 
@@ -268,6 +355,83 @@ describe("Monte Carlo edge cases", () => {
       simCount: 10,
     });
     expect(bands).toHaveLength(2);
+  });
+});
+
+describe("partial (fractional) years", () => {
+  it("adds one extra band for the trailing partial year", () => {
+    const bands = runMonteCarloSimulation({
+      ...baseParams,
+      yearsOfGrowth: 10.5,
+      volatility: 0,
+      simCount: 10,
+    });
+    // Years 0..10 plus the 6-month partial point
+    expect(bands).toHaveLength(12);
+    for (const b of bands) {
+      expect(Number.isFinite(b.p10)).toBe(true);
+      expect(Number.isFinite(b.p90)).toBe(true);
+    }
+  });
+
+  it("partial-year value sits between the floor- and ceil-year values", () => {
+    const half = runMonteCarloSimulation({
+      ...baseParams,
+      yearsOfGrowth: 5.5,
+      volatility: 0,
+      simCount: 5,
+    });
+    const whole = runMonteCarloSimulation({
+      ...baseParams,
+      yearsOfGrowth: 6,
+      volatility: 0,
+      simCount: 5,
+    });
+    const atFive = whole[5].p50;
+    const atSix = whole[6].p50;
+    const atFiveAndAHalf = half[half.length - 1].p50;
+    expect(atFiveAndAHalf).toBeGreaterThan(atFive);
+    expect(atFiveAndAHalf).toBeLessThan(atSix);
+  });
+
+  it("combined simulation with fractional A horizon stays finite", () => {
+    const paramsA = {
+      ...baseParams,
+      yearsOfGrowth: 5.5,
+      volatility: 0,
+      simCount: 10,
+    };
+    const paramsB = {
+      ...baseParams,
+      yearsOfGrowth: 10,
+      volatility: 0,
+      simCount: 10,
+    };
+    const bands = runCombinedSimulation(paramsA, paramsB);
+    expect(bands.length).toBeGreaterThan(0);
+    for (const b of bands) {
+      expect(Number.isFinite(b.p50)).toBe(true);
+    }
+  });
+
+  it("rollover simulation with fractional rollover year stays finite", () => {
+    const paramsA = {
+      ...baseParams,
+      yearsOfGrowth: 5.5,
+      volatility: 0,
+      simCount: 10,
+    };
+    const paramsB = {
+      ...baseParams,
+      yearsOfGrowth: 10,
+      volatility: 0,
+      simCount: 10,
+    };
+    const bands = runRolloverSimulation(paramsA, paramsB, 5.5);
+    expect(bands.length).toBeGreaterThan(0);
+    for (const b of bands) {
+      expect(Number.isFinite(b.p50)).toBe(true);
+    }
   });
 });
 

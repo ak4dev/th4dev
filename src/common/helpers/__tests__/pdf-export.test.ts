@@ -16,9 +16,7 @@ describe("PdfReportData type contract", () => {
         { label: "Initial Amount", value: "$100,000" },
         { label: "Return Rate", value: "10%" },
       ],
-      metrics: [
-        { label: "Final Value", value: "$1,000,000" },
-      ],
+      metrics: [{ label: "Final Value", value: "$1,000,000" }],
       chartElement: null,
     };
     expect(data.assumptions).toHaveLength(2);

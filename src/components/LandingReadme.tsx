@@ -660,7 +660,8 @@ export default function LandingReadme({
                       <ItemText>
                         Start with <strong>Investment A</strong>: set the
                         current amount, expected annual return, and time
-                        horizon.
+                        horizon. Year fields accept partial years — type a value
+                        like <strong>10.5</strong> and press Enter.
                       </ItemText>
                     </ReadmeItem>
                     <ReadmeItem>

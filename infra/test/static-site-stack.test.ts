@@ -97,6 +97,25 @@ describe("StaticSiteStack", () => {
     });
   });
 
+  test("attaches a security response headers policy", () => {
+    template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
+      ResponseHeadersPolicyConfig: Match.objectLike({
+        SecurityHeadersConfig: Match.objectLike({
+          StrictTransportSecurity: Match.objectLike({ Override: true }),
+          ContentTypeOptions: Match.objectLike({ Override: true }),
+          FrameOptions: Match.objectLike({ FrameOption: "DENY" }),
+        }),
+      }),
+    });
+    template.hasResourceProperties("AWS::CloudFront::Distribution", {
+      DistributionConfig: Match.objectLike({
+        DefaultCacheBehavior: Match.objectLike({
+          ResponseHeadersPolicyId: Match.anyValue(),
+        }),
+      }),
+    });
+  });
+
   test("creates an ACM certificate for the domain", () => {
     template.hasResourceProperties("AWS::CertificateManager::Certificate", {
       DomainName: "app.example.com",
@@ -160,8 +179,12 @@ describe("StaticSiteStack — multiple targets", () => {
     const templateA = Template.fromStack(stackA);
     const templateB = Template.fromStack(stackB);
 
-    templateA.hasResourceProperties("AWS::S3::Bucket", { BucketName: "th4dev-prod" });
-    templateB.hasResourceProperties("AWS::S3::Bucket", { BucketName: "th4dev-dev" });
+    templateA.hasResourceProperties("AWS::S3::Bucket", {
+      BucketName: "th4dev-prod",
+    });
+    templateB.hasResourceProperties("AWS::S3::Bucket", {
+      BucketName: "th4dev-dev",
+    });
 
     templateA.hasResourceProperties("AWS::CloudFront::Distribution", {
       DistributionConfig: { Aliases: ["prod.example.com"] },

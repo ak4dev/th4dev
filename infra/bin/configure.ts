@@ -24,11 +24,21 @@ function loadExisting(): DeployConfig {
 }
 
 function save(config: DeployConfig): void {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf-8");
-  console.log(`\n✅ Saved ${config.deployments.length} deployment(s) to deploy-config.json`);
+  fs.writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify(config, null, 2) + "\n",
+    "utf-8",
+  );
+  console.log(
+    `\n✅ Saved ${config.deployments.length} deployment(s) to deploy-config.json`,
+  );
 }
 
-async function ask(rl: readline.Interface, question: string, defaultValue?: string): Promise<string> {
+async function ask(
+  rl: readline.Interface,
+  question: string,
+  defaultValue?: string,
+): Promise<string> {
   const suffix = defaultValue ? ` [${defaultValue}]` : "";
   return new Promise((resolve) => {
     rl.question(`${question}${suffix}: `, (answer) => {
@@ -37,24 +47,43 @@ async function ask(rl: readline.Interface, question: string, defaultValue?: stri
   });
 }
 
-async function askYesNo(rl: readline.Interface, question: string, defaultYes = true): Promise<boolean> {
+async function askYesNo(
+  rl: readline.Interface,
+  question: string,
+  defaultYes = true,
+): Promise<boolean> {
   const hint = defaultYes ? "[Y/n]" : "[y/N]";
   const answer = await ask(rl, `${question} ${hint}`);
   if (!answer) return defaultYes;
   return answer.toLowerCase().startsWith("y");
 }
 
-async function promptTarget(rl: readline.Interface, existing?: DeploymentTarget): Promise<DeploymentTarget> {
+async function promptTarget(
+  rl: readline.Interface,
+  existing?: DeploymentTarget,
+): Promise<DeploymentTarget> {
   console.log("\n--- Deployment Target Configuration ---");
 
-  const id = await ask(rl, "  Deployment ID (e.g. prod, dev, staging)", existing?.id);
-  const domainName = await ask(rl, "  Domain name (e.g. app.example.com)", existing?.domainName);
+  const id = await ask(
+    rl,
+    "  Deployment ID (e.g. prod, dev, staging)",
+    existing?.id,
+  );
+  const domainName = await ask(
+    rl,
+    "  Domain name (e.g. app.example.com)",
+    existing?.domainName,
+  );
   const hostedZoneDomain = await ask(
     rl,
     "  Route 53 hosted zone domain (e.g. example.com)",
     existing?.hostedZoneDomain,
   );
-  const hostedZoneId = await ask(rl, "  Route 53 hosted zone ID", existing?.hostedZoneId);
+  const hostedZoneId = await ask(
+    rl,
+    "  Route 53 hosted zone ID",
+    existing?.hostedZoneId,
+  );
   const bucketName = await ask(
     rl,
     "  S3 bucket name",
@@ -66,7 +95,10 @@ async function promptTarget(rl: readline.Interface, existing?: DeploymentTarget)
 }
 
 async function main(): Promise<void> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
 
   console.log("╔══════════════════════════════════════════╗");
   console.log("║   th4dev — Deployment Configuration      ║");
@@ -77,18 +109,29 @@ async function main(): Promise<void> {
   if (config.deployments.length > 0) {
     console.log(`Found ${config.deployments.length} existing deployment(s):`);
     config.deployments.forEach((d, i) => {
-      console.log(`  ${i + 1}. [${d.id}] ${d.domainName} → s3://${d.bucketName} (${d.region})`);
+      console.log(
+        `  ${i + 1}. [${d.id}] ${d.domainName} → s3://${d.bucketName} (${d.region})`,
+      );
     });
 
-    const editExisting = await askYesNo(rl, "\nEdit existing deployments?", false);
+    const editExisting = await askYesNo(
+      rl,
+      "\nEdit existing deployments?",
+      false,
+    );
     if (editExisting) {
       for (let i = 0; i < config.deployments.length; i++) {
         const d = config.deployments[i];
-        const edit = await askYesNo(rl, `  Edit [${d.id}] ${d.domainName}?`, false);
+        const edit = await askYesNo(
+          rl,
+          `  Edit [${d.id}] ${d.domainName}?`,
+          false,
+        );
         if (edit) {
           config.deployments[i] = await promptTarget(rl, d);
         }
-        const remove = !edit && await askYesNo(rl, `  Remove [${d.id}]?`, false);
+        const remove =
+          !edit && (await askYesNo(rl, `  Remove [${d.id}]?`, false));
         if (remove) {
           config.deployments.splice(i, 1);
           i--;

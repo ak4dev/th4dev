@@ -173,9 +173,13 @@ export function calculateFire(inputs: FireInputs): FireResult {
   } = inputs;
 
   const fireNum = calculateFireNumber(annualExpenses, safeWithdrawalRate);
-  const progressPct = fireNum > 0
-    ? Math.min(100, Math.round((currentSavings / fireNum) * PERCENTAGE_DIVISOR))
-    : 0;
+  const progressPct =
+    fireNum > 0
+      ? Math.min(
+          100,
+          Math.round((currentSavings / fireNum) * PERCENTAGE_DIVISOR),
+        )
+      : 0;
 
   const yrsToFire = yearsToFire(
     currentSavings,

@@ -72,11 +72,38 @@ export class StaticSiteStack extends cdk.Stack {
 
     // ── CloudFront Distribution ────────────────────────────────────────
 
+    // Security headers (HSTS, X-Content-Type-Options, X-Frame-Options,
+    // Referrer-Policy) applied to every response
+    const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(
+      this,
+      "SecurityHeadersPolicy",
+      {
+        securityHeadersBehavior: {
+          strictTransportSecurity: {
+            accessControlMaxAge: cdk.Duration.days(365),
+            includeSubdomains: true,
+            override: true,
+          },
+          contentTypeOptions: { override: true },
+          frameOptions: {
+            frameOption: cloudfront.HeadersFrameOption.DENY,
+            override: true,
+          },
+          referrerPolicy: {
+            referrerPolicy:
+              cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+            override: true,
+          },
+        },
+      },
+    );
+
     this.distribution = new cloudfront.Distribution(this, "SiteDistribution", {
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(this.bucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        responseHeadersPolicy,
         compress: true,
       },
       domainNames: [target.domainName],

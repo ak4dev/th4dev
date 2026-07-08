@@ -342,7 +342,11 @@ describe("edge cases – zero years, large amounts, mixed cashflows", () => {
 
   it("very large initial amount (1 billion) does not overflow", () => {
     const c = new InvestmentCalculator(
-      makeProps({ currentAmount: "1000000000", projectedGain: 5, yearsOfGrowth: 1 }),
+      makeProps({
+        currentAmount: "1000000000",
+        projectedGain: 5,
+        yearsOfGrowth: 1,
+      }),
     );
     const result = c.calculateGrowth(false).numeric;
     expect(result).toBeGreaterThan(1_000_000_000);
@@ -391,6 +395,113 @@ describe("edge cases – zero years, large amounts, mixed cashflows", () => {
     ).calculateGrowth(false).numeric;
 
     expect(withStop0).toBe(withoutStop);
+  });
+});
+
+/* ====================================================================
+ * Partial (Fractional) Year Tests
+ * ==================================================================== */
+
+describe("partial years", () => {
+  it("0% gain with 0.5 years preserves the initial amount", () => {
+    const c = new InvestmentCalculator(
+      makeProps({ projectedGain: 0, yearsOfGrowth: 0.5 }),
+    );
+    expect(c.calculateGrowth(false).numeric).toBe(10000);
+  });
+
+  it("fractional years produce a value between the floor and ceil years", () => {
+    const calc = (y: number) =>
+      new InvestmentCalculator(
+        makeProps({ projectedGain: 12, yearsOfGrowth: y }),
+      ).calculateGrowth(false).numeric;
+    expect(calc(1.5)).toBeGreaterThan(calc(1));
+    expect(calc(1.5)).toBeLessThan(calc(2));
+  });
+
+  it("exact: 12% gain for 1.5 years compounds 30 months (frozen Jan)", () => {
+    // Year 0 = 12 months, year 1 = 12 months, partial = 6 months → (1.01)^30
+    const c = new InvestmentCalculator(
+      makeProps({ projectedGain: 12, yearsOfGrowth: 1.5 }),
+    );
+    expect(c.calculateGrowth(false).numeric).toBe(
+      Math.floor(10000 * Math.pow(1.01, 30)),
+    );
+  });
+
+  it("growth matrix gains one extra point for the partial year", () => {
+    const c = new InvestmentCalculator(
+      makeProps({ projectedGain: 0, yearsOfGrowth: 2.5 }),
+    );
+    c.calculateGrowth(false);
+    // Years 0, 1, 2 plus the trailing 6-month point
+    expect(c.getGrowthMatrix()).toHaveLength(4);
+  });
+
+  it("final matrix point lands 6 months after the last full year", () => {
+    const c = new InvestmentCalculator(
+      makeProps({ projectedGain: 0, yearsOfGrowth: 1.5 }),
+    );
+    c.calculateGrowth(false);
+    const matrix = c.getGrowthMatrix();
+    const lastFull = matrix[matrix.length - 2].x;
+    const partial = matrix[matrix.length - 1].x;
+    const monthsApart =
+      (partial.getFullYear() - lastFull.getFullYear()) * 12 +
+      (partial.getMonth() - lastFull.getMonth());
+    expect(monthsApart).toBe(6);
+  });
+
+  it("fractional contribution stop year stops after the right month count", () => {
+    // Stop at 0.5 years → 6 contributions of $100 at 0% gain
+    const c = new InvestmentCalculator(
+      makeProps({
+        projectedGain: 0,
+        monthlyContribution: 100,
+        yearsOfGrowth: 1,
+        advanced: true,
+        yearContributionsStop: 0.5,
+      }),
+    );
+    expect(c.calculateGrowth(false).numeric).toBe(10600);
+  });
+
+  it("fractional withdrawal start year begins after the right month count", () => {
+    // Start at 0.5 years within a 1-year (24-month, frozen Jan) horizon →
+    // withdrawals for months 6..23 = 18 × $100
+    const c = new InvestmentCalculator(
+      makeProps({
+        projectedGain: 0,
+        monthlyWithdrawal: 100,
+        yearWithdrawalsBegin: 0.5,
+        yearsOfGrowth: 1,
+        advanced: true,
+      }),
+    );
+    expect(c.calculateGrowth(false).numeric).toBe(8200);
+  });
+
+  it("rollover fires for a fractional rollover year", () => {
+    const c = new InvestmentCalculator(
+      makeProps({
+        projectedGain: 0,
+        yearsOfGrowth: 1.5,
+        rollOver: true,
+        investmentToRoll: 5000,
+        yearOfRollover: 1.5,
+      }),
+    );
+    expect(c.calculateGrowth(false).numeric).toBe(15000);
+  });
+
+  it("partial-year inflation adjustment is pro-rated", () => {
+    // 10% inflation, 0% gain, 0.5 years → year 0 full adjustment (×0.9),
+    // partial 6 months → ×0.9^0.5
+    const c = new InvestmentCalculator(
+      makeProps({ projectedGain: 0, depreciationRate: 10, yearsOfGrowth: 0.5 }),
+    );
+    const expected = Math.floor(10000 * 0.9 * Math.pow(0.9, 0.5));
+    expect(c.calculateGrowth(true).numeric).toBe(expected);
   });
 });
 

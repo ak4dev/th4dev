@@ -84,7 +84,10 @@ export function updateBudgetItem(
       ? {
           ...item,
           ...changes,
-          amount: changes.amount !== undefined ? Math.max(0, changes.amount) : item.amount,
+          amount:
+            changes.amount !== undefined
+              ? Math.max(0, changes.amount)
+              : item.amount,
         }
       : item,
   );
@@ -110,9 +113,7 @@ export function getAnnualTotal(items: BudgetItem[]): number {
   return getMonthlyTotal(items) * 12;
 }
 
-export function getTotalByCategory(
-  items: BudgetItem[],
-): Map<string, number> {
+export function getTotalByCategory(items: BudgetItem[]): Map<string, number> {
   const map = new Map<string, number>();
   for (const item of items) {
     const key = item.category || "Other";

@@ -16,7 +16,7 @@ import FirePanel from "./fire/FirePanel";
 import ScenarioPanel from "./scenarios/ScenarioPanel";
 import PdfExportButton from "./export/PdfExportButton";
 import BudgetPanel from "./budget/BudgetPanel";
-import { addYears } from "date-fns";
+import { addMonths } from "date-fns";
 import type { BudgetItem } from "../common/helpers/budget-manager";
 import type { ScenarioSnapshot } from "../common/helpers/scenario-manager";
 import {
@@ -36,7 +36,12 @@ import {
   MIN_VALUE,
 } from "../common/constants/app-constants";
 import { compactModernInputStyles } from "../common/constants/input-styles";
-import { runMonteCarloSimulation, runCombinedSimulation, runRolloverSimulation, type PercentileBand } from "../common/helpers/monte-carlo";
+import {
+  runMonteCarloSimulation,
+  runCombinedSimulation,
+  runRolloverSimulation,
+  type PercentileBand,
+} from "../common/helpers/monte-carlo";
 import { normalizeState } from "../common/helpers/state-manager";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
 import type { TH4State } from "../common/types/types";
@@ -325,6 +330,18 @@ function InvestmentSlider({
   inputGroupSize?: "default" | "narrow";
 }) {
   const numericValue = Number.isFinite(value) ? value : 0;
+  // Draft state lets users type freely (including decimals like "10.5");
+  // the value is clamped and committed on blur or Enter.
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commitDraft = () => {
+    if (draft === null) return;
+    const parsed = parseFloat(draft);
+    if (!Number.isNaN(parsed)) {
+      onChange(Math.min(max, Math.max(min, parsed)));
+    }
+    setDraft(null);
+  };
 
   return (
     <SliderControlRow>
@@ -335,13 +352,11 @@ function InvestmentSlider({
           type="text"
           inputMode="decimal"
           aria-label={label}
-          value={String(numericValue)}
-          onChange={(e) => {
-            const cleaned = e.target.value.replace(/[^0-9.]/g, "");
-            const parsed = parseFloat(cleaned);
-            if (Number.isNaN(parsed)) return;
-            const clamped = Math.min(max, Math.max(min, parsed));
-            onChange(clamped);
+          value={draft ?? String(numericValue)}
+          onChange={(e) => setDraft(e.target.value.replace(/[^0-9.]/g, ""))}
+          onBlur={commitDraft}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitDraft();
           }}
         />
       </SliderInputGroup>
@@ -425,11 +440,11 @@ export default function InvestmentCalculatorRadixModern({
   setScenarios,
 }: InvestmentCalculatorModernProps) {
   const updateSlider = (key: string, val: number) =>
-    setSliders({ ...sliders, [key]: val });
+    setSliders((prev) => ({ ...prev, [key]: val }));
   const updateInput = (key: string, val: string) =>
-    setInputs({ ...inputs, [key]: val });
+    setInputs((prev) => ({ ...prev, [key]: val }));
   const updateToggle = (key: keyof typeof toggles, val: boolean | string) =>
-    setToggles({ ...toggles, [key]: val } as typeof toggles);
+    setToggles((prev) => ({ ...prev, [key]: val }) as typeof toggles);
 
   // Scenario snapshot support
   const currentTH4State = useMemo(
@@ -454,21 +469,28 @@ export default function InvestmentCalculatorRadixModern({
       setStockHoldings(state.stock!.holdings);
       setBudgetItems(state.budgetItems ?? []);
     },
-    [setTheme, setSliders, setInputs, setToggles, setStockHoldings, setBudgetItems],
+    [
+      setTheme,
+      setSliders,
+      setInputs,
+      setToggles,
+      setStockHoldings,
+      setBudgetItems,
+    ],
   );
 
   // ---------------- Investment A ----------------
   const invAProps = {
     currentAmount: inputs.currentAmountA || String(DEFAULT_INITIAL_AMOUNT),
-    projectedGain: sliders.projectedGainA || DEFAULT_PROJECTED_GAIN,
-    yearsOfGrowth: sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH,
-    monthlyContribution: sliders.monthlyContributionA || MIN_VALUE,
-    monthlyWithdrawal: sliders.monthlyWithdrawalA || MIN_VALUE,
+    projectedGain: sliders.projectedGainA ?? DEFAULT_PROJECTED_GAIN,
+    yearsOfGrowth: sliders.yearsOfGrowthA ?? DEFAULT_YEARS_OF_GROWTH,
+    monthlyContribution: sliders.monthlyContributionA ?? MIN_VALUE,
+    monthlyWithdrawal: sliders.monthlyWithdrawalA ?? MIN_VALUE,
     yearContributionsStop:
       sliders.contributionStopYearA ?? sliders.yearsOfGrowthA,
-    yearWithdrawalsBegin: sliders.withdrawalStartYearA || MIN_VALUE,
+    yearWithdrawalsBegin: sliders.withdrawalStartYearA ?? MIN_VALUE,
     advanced: toggles.advanced,
-    depreciationRate: sliders.yearlyInflation || DEFAULT_INFLATION_RATE,
+    depreciationRate: sliders.yearlyInflation ?? DEFAULT_INFLATION_RATE,
     annualFee: toggles.fees ? sliders.annualFeeA || 0 : 0,
     rollOver: false,
     investmentId: "investmentA",
@@ -492,15 +514,15 @@ export default function InvestmentCalculatorRadixModern({
   // ---------------- Investment B ----------------
   const invBProps = {
     currentAmount: inputs.currentAmountB || String(DEFAULT_INITIAL_AMOUNT),
-    projectedGain: sliders.projectedGainB || DEFAULT_PROJECTED_GAIN,
-    yearsOfGrowth: sliders.yearsOfGrowthB || DEFAULT_YEARS_OF_GROWTH,
-    monthlyContribution: sliders.monthlyContributionB || MIN_VALUE,
-    monthlyWithdrawal: sliders.monthlyWithdrawalB || MIN_VALUE,
+    projectedGain: sliders.projectedGainB ?? DEFAULT_PROJECTED_GAIN,
+    yearsOfGrowth: sliders.yearsOfGrowthB ?? DEFAULT_YEARS_OF_GROWTH,
+    monthlyContribution: sliders.monthlyContributionB ?? MIN_VALUE,
+    monthlyWithdrawal: sliders.monthlyWithdrawalB ?? MIN_VALUE,
     yearContributionsStop:
       sliders.contributionStopYearB ?? sliders.yearsOfGrowthB,
-    yearWithdrawalsBegin: sliders.withdrawalStartYearB || MIN_VALUE,
+    yearWithdrawalsBegin: sliders.withdrawalStartYearB ?? MIN_VALUE,
     advanced: toggles.advanced,
-    depreciationRate: sliders.yearlyInflation || DEFAULT_INFLATION_RATE,
+    depreciationRate: sliders.yearlyInflation ?? DEFAULT_INFLATION_RATE,
     annualFee: toggles.fees ? sliders.annualFeeB || 0 : 0,
     rollOver: toggles.rollover,
     investmentToRoll: toggles.rollover ? totalA : 0,
@@ -536,7 +558,7 @@ export default function InvestmentCalculatorRadixModern({
     depreciationRate: invAProps.depreciationRate,
     annualFee: invAProps.annualFee,
     showInflation: toggles.showInflation,
-    volatility: sliders.volatilityA || DEFAULT_VOLATILITY,
+    volatility: sliders.volatilityA ?? DEFAULT_VOLATILITY,
     simCount: MONTE_CARLO_SIM_COUNT,
   };
 
@@ -551,7 +573,7 @@ export default function InvestmentCalculatorRadixModern({
     depreciationRate: invBProps.depreciationRate,
     annualFee: invBProps.annualFee,
     showInflation: toggles.showInflation,
-    volatility: sliders.volatilityB || DEFAULT_VOLATILITY,
+    volatility: sliders.volatilityB ?? DEFAULT_VOLATILITY,
     simCount: MONTE_CARLO_SIM_COUNT,
   };
 
@@ -563,14 +585,15 @@ export default function InvestmentCalculatorRadixModern({
       mcBandsA = runRolloverSimulation(
         mcParamsA,
         mcParamsB,
-        sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH,
+        sliders.yearsOfGrowthA ?? DEFAULT_YEARS_OF_GROWTH,
       );
     } else if (toggles.advanced && toggles.monteCarloMode === "combined") {
       mcBandsA = runCombinedSimulation(mcParamsA, mcParamsB);
     } else if (toggles.advanced && toggles.monteCarloMode === "individual") {
       mcBandsA = runMonteCarloSimulation(mcParamsA);
       const rawBandsB = runMonteCarloSimulation(mcParamsB);
-      const offsetYears = mcParamsA.yearsOfGrowth;
+      // Round so fractional A horizons still align with integer chart years
+      const offsetYears = Math.round(mcParamsA.yearsOfGrowth);
       mcBandsB = rawBandsB.map((b) => ({ ...b, year: b.year + offsetYears }));
     } else {
       mcBandsA = runMonteCarloSimulation(mcParamsA);
@@ -632,13 +655,13 @@ export default function InvestmentCalculatorRadixModern({
 
       const invAPropsFromPrev = {
         ...invAProps,
-        projectedGain: prev.projectedGainA || DEFAULT_PROJECTED_GAIN,
-        yearsOfGrowth: prev.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH,
-        monthlyContribution: prev.monthlyContributionA || MIN_VALUE,
-        monthlyWithdrawal: prev.monthlyWithdrawalA || MIN_VALUE,
+        projectedGain: prev.projectedGainA ?? DEFAULT_PROJECTED_GAIN,
+        yearsOfGrowth: prev.yearsOfGrowthA ?? DEFAULT_YEARS_OF_GROWTH,
+        monthlyContribution: prev.monthlyContributionA ?? MIN_VALUE,
+        monthlyWithdrawal: prev.monthlyWithdrawalA ?? MIN_VALUE,
         yearContributionsStop:
           prev.contributionStopYearA ?? prev.yearsOfGrowthA,
-        yearWithdrawalsBegin: prev.withdrawalStartYearA || MIN_VALUE,
+        yearWithdrawalsBegin: prev.withdrawalStartYearA ?? MIN_VALUE,
       };
 
       const baseA0ForMax = new InvestmentCalculator({
@@ -669,13 +692,13 @@ export default function InvestmentCalculatorRadixModern({
 
       const invBPropsFromPrev = {
         ...invBProps,
-        projectedGain: prev.projectedGainB || DEFAULT_PROJECTED_GAIN,
-        yearsOfGrowth: prev.yearsOfGrowthB || DEFAULT_YEARS_OF_GROWTH,
-        monthlyContribution: prev.monthlyContributionB || MIN_VALUE,
-        monthlyWithdrawal: prev.monthlyWithdrawalB || MIN_VALUE,
+        projectedGain: prev.projectedGainB ?? DEFAULT_PROJECTED_GAIN,
+        yearsOfGrowth: prev.yearsOfGrowthB ?? DEFAULT_YEARS_OF_GROWTH,
+        monthlyContribution: prev.monthlyContributionB ?? MIN_VALUE,
+        monthlyWithdrawal: prev.monthlyWithdrawalB ?? MIN_VALUE,
         yearContributionsStop:
           prev.contributionStopYearB ?? prev.yearsOfGrowthB,
-        yearWithdrawalsBegin: prev.withdrawalStartYearB || MIN_VALUE,
+        yearWithdrawalsBegin: prev.withdrawalStartYearB ?? MIN_VALUE,
         investmentToRoll: toggles.rollover ? totalAForRollover : 0,
       };
 
@@ -756,7 +779,7 @@ export default function InvestmentCalculatorRadixModern({
     annualWithdrawalA > 0
       ? matrixA.find(
           (e) =>
-            e.y * ((sliders.projectedGainA || DEFAULT_PROJECTED_GAIN) / 100) >=
+            e.y * ((sliders.projectedGainA ?? DEFAULT_PROJECTED_GAIN) / 100) >=
             annualWithdrawalA,
         )
       : null;
@@ -766,7 +789,7 @@ export default function InvestmentCalculatorRadixModern({
     annualWithdrawalB > 0 && toggles.advanced
       ? matrixB.find(
           (e) =>
-            e.y * ((sliders.projectedGainB || DEFAULT_PROJECTED_GAIN) / 100) >=
+            e.y * ((sliders.projectedGainB ?? DEFAULT_PROJECTED_GAIN) / 100) >=
             annualWithdrawalB,
         )
       : null;
@@ -781,11 +804,16 @@ export default function InvestmentCalculatorRadixModern({
     Math.max(2, Math.floor(Math.log10(Math.max(totalB, 1000))) - 1),
   );
 
+  // Fractional year offsets are converted to whole months so partial years
+  // (e.g. 10.5) render the correct mid-year date.
+  const dateAfterYears = (years: number): string =>
+    addMonths(new Date(), Math.round(years * 12)).toDateString();
+
   const infoItems = [
     {
       label: "(A) Withdrawal Start",
       value: sliders.withdrawalStartYearA
-        ? addYears(new Date(), sliders.withdrawalStartYearA).toDateString()
+        ? dateAfterYears(sliders.withdrawalStartYearA)
         : sliders.monthlyWithdrawalA
           ? new Date().toDateString()
           : "N/A",
@@ -793,7 +821,7 @@ export default function InvestmentCalculatorRadixModern({
     {
       label: "(B) Withdrawal Start",
       value: sliders.withdrawalStartYearB
-        ? addYears(new Date(), sliders.withdrawalStartYearB).toDateString()
+        ? dateAfterYears(sliders.withdrawalStartYearB)
         : sliders.monthlyWithdrawalB
           ? new Date().toDateString()
           : "N/A",
@@ -801,20 +829,20 @@ export default function InvestmentCalculatorRadixModern({
     {
       label: "(A) Contributions End",
       value: sliders.contributionStopYearA
-        ? addYears(new Date(), sliders.contributionStopYearA).toDateString()
+        ? dateAfterYears(sliders.contributionStopYearA)
         : "N/A",
     },
     {
       label: "(B) Contributions End",
       value: sliders.contributionStopYearB
-        ? addYears(new Date(), sliders.contributionStopYearB).toDateString()
+        ? dateAfterYears(sliders.contributionStopYearB)
         : "N/A",
     },
     {
       label: "Rollover Date",
       value:
         toggles.rollover && sliders.yearsOfGrowthA
-          ? addYears(new Date(), sliders.yearsOfGrowthA).toDateString()
+          ? dateAfterYears(sliders.yearsOfGrowthA)
           : "N/A",
     },
     {
@@ -823,14 +851,14 @@ export default function InvestmentCalculatorRadixModern({
     },
     {
       label: "Inflation Rate",
-      value: `${sliders.yearlyInflation || DEFAULT_INFLATION_RATE}%`,
+      value: `${sliders.yearlyInflation ?? DEFAULT_INFLATION_RATE}%`,
     },
     {
       label: "(A) Target Reached",
       value: targetReachedA
         ? `${targetReachedA.x.getFullYear()} (yr ${matrixA.indexOf(targetReachedA)})`
         : displayTargetA > 0
-          ? `> ${sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH} yrs`
+          ? `> ${sliders.yearsOfGrowthA ?? DEFAULT_YEARS_OF_GROWTH} yrs`
           : "N/A",
     },
     ...(toggles.advanced
@@ -840,7 +868,7 @@ export default function InvestmentCalculatorRadixModern({
             value: targetReachedB
               ? `${targetReachedB.x.getFullYear()} (yr ${matrixB.indexOf(targetReachedB)})`
               : displayTargetB > 0
-                ? `> ${sliders.yearsOfGrowthB || DEFAULT_YEARS_OF_GROWTH} yrs`
+                ? `> ${sliders.yearsOfGrowthB ?? DEFAULT_YEARS_OF_GROWTH} yrs`
                 : "N/A",
           },
         ]
@@ -848,7 +876,7 @@ export default function InvestmentCalculatorRadixModern({
     {
       label: "(A) Safe Withdrawal from",
       value: earliestSafeWithdrawalA
-        ? `${earliestSafeWithdrawalA.x.getFullYear()} ($${Math.floor((earliestSafeWithdrawalA.y * (sliders.projectedGainA || DEFAULT_PROJECTED_GAIN)) / 100 / 12).toLocaleString()}/mo covered)`
+        ? `${earliestSafeWithdrawalA.x.getFullYear()} ($${Math.floor((earliestSafeWithdrawalA.y * (sliders.projectedGainA ?? DEFAULT_PROJECTED_GAIN)) / 100 / 12).toLocaleString()}/mo covered)`
         : annualWithdrawalA > 0
           ? "Not within horizon"
           : "N/A",
@@ -858,7 +886,7 @@ export default function InvestmentCalculatorRadixModern({
           {
             label: "(B) Safe Withdrawal from",
             value: earliestSafeWithdrawalB
-              ? `${earliestSafeWithdrawalB.x.getFullYear()} ($${Math.floor((earliestSafeWithdrawalB.y * (sliders.projectedGainB || DEFAULT_PROJECTED_GAIN)) / 100 / 12).toLocaleString()}/mo covered)`
+              ? `${earliestSafeWithdrawalB.x.getFullYear()} ($${Math.floor((earliestSafeWithdrawalB.y * (sliders.projectedGainB ?? DEFAULT_PROJECTED_GAIN)) / 100 / 12).toLocaleString()}/mo covered)`
               : annualWithdrawalB > 0
                 ? "Not within horizon"
                 : "N/A",
@@ -936,7 +964,7 @@ export default function InvestmentCalculatorRadixModern({
               />
               <InvestmentSlider
                 label="Contribution Stop Year"
-                value={sliders.contributionStopYearA}
+                value={sliders.contributionStopYearA ?? sliders.yearsOfGrowthA}
                 min={MIN_VALUE}
                 max={sliders.yearsOfGrowthA}
                 step={0.5}
@@ -1033,7 +1061,7 @@ export default function InvestmentCalculatorRadixModern({
             />
             <InvestmentSlider
               label="Contribution Stop Year"
-              value={sliders.contributionStopYearB}
+              value={sliders.contributionStopYearB ?? sliders.yearsOfGrowthB}
               min={MIN_VALUE}
               max={sliders.yearsOfGrowthB}
               step={0.5}
@@ -1175,12 +1203,28 @@ export default function InvestmentCalculatorRadixModern({
             )}
           </ToggleSection>
           {toggles.monteCarlo && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.5rem",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  gap: "1rem",
+                  alignItems: "flex-start",
+                }}
+              >
                 <div style={{ flex: 1 }}>
                   <InvestmentSlider
-                    label={toggles.advanced ? "Volatility A (σ %)" : "Volatility (σ %)"}
-                    value={sliders.volatilityA || DEFAULT_VOLATILITY}
+                    label={
+                      toggles.advanced
+                        ? "Volatility A (σ %)"
+                        : "Volatility (σ %)"
+                    }
+                    value={sliders.volatilityA ?? DEFAULT_VOLATILITY}
                     min={1}
                     max={MAX_VOLATILITY}
                     step={1}
@@ -1191,7 +1235,7 @@ export default function InvestmentCalculatorRadixModern({
                   <div style={{ flex: 1 }}>
                     <InvestmentSlider
                       label="Volatility B (σ %)"
-                      value={sliders.volatilityB || DEFAULT_VOLATILITY}
+                      value={sliders.volatilityB ?? DEFAULT_VOLATILITY}
                       min={1}
                       max={MAX_VOLATILITY}
                       step={1}
@@ -1203,12 +1247,18 @@ export default function InvestmentCalculatorRadixModern({
               {toggles.advanced && (
                 <SwitchRow>
                   <Label>
-                    MC: {toggles.monteCarloMode === "combined" ? "Combined" : "Individual"}
+                    MC:{" "}
+                    {toggles.monteCarloMode === "combined"
+                      ? "Combined"
+                      : "Individual"}
                   </Label>
                   <SwitchButton
                     checked={toggles.monteCarloMode === "individual"}
                     onCheckedChange={(v) =>
-                      updateToggle("monteCarloMode", v ? "individual" : "combined")
+                      updateToggle(
+                        "monteCarloMode",
+                        v ? "individual" : "combined",
+                      )
                     }
                   />
                 </SwitchRow>
@@ -1217,7 +1267,7 @@ export default function InvestmentCalculatorRadixModern({
           )}
           <InvestmentSlider
             label="Inflation (%)"
-            value={sliders.yearlyInflation || DEFAULT_INFLATION_RATE}
+            value={sliders.yearlyInflation ?? DEFAULT_INFLATION_RATE}
             min={MIN_VALUE}
             max={MAX_INFLATION_RATE}
             step={0.1}
@@ -1264,26 +1314,52 @@ export default function InvestmentCalculatorRadixModern({
         growthMatrixA={calcA.getGrowthMatrix()}
         growthMatrixB={toggles.advanced ? calcB.getGrowthMatrix() : undefined}
         advanced={toggles.advanced}
-        yearOfRollover={toggles.rollover ? sliders.yearsOfGrowthA : undefined}
         targetValueA={displayTargetA || undefined}
         targetValueB={
           toggles.advanced ? displayTargetB || undefined : undefined
         }
         mcBandsA={toggles.monteCarlo ? mcBandsA : undefined}
-        mcBandsB={toggles.monteCarlo && mcBandsB.length > 0 ? mcBandsB : undefined}
+        mcBandsB={
+          toggles.monteCarlo && mcBandsB.length > 0 ? mcBandsB : undefined
+        }
       />
 
       {/* PDF Export */}
       <PdfExportButton
         chartSelector=".recharts-wrapper"
         assumptions={[
-          { label: "Initial Amount (A)", value: `$${(parseInt(inputs.currentAmountA || "0") || 0).toLocaleString()}` },
-          { label: "Return Rate (A)", value: `${sliders.projectedGainA || DEFAULT_PROJECTED_GAIN}%` },
-          { label: "Years (A)", value: `${sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH}` },
-          { label: "Monthly Contribution (A)", value: `$${(sliders.monthlyContributionA || 0).toLocaleString()}` },
-          { label: "Monthly Withdrawal (A)", value: `$${(sliders.monthlyWithdrawalA || 0).toLocaleString()}` },
-          { label: "Inflation Rate", value: `${sliders.yearlyInflation || DEFAULT_INFLATION_RATE}%` },
-          ...(toggles.fees ? [{ label: "Annual Fee (A)", value: `${sliders.annualFeeA || 0}%` }] : []),
+          {
+            label: "Initial Amount (A)",
+            value: `$${(parseInt(inputs.currentAmountA || "0") || 0).toLocaleString()}`,
+          },
+          {
+            label: "Return Rate (A)",
+            value: `${sliders.projectedGainA ?? DEFAULT_PROJECTED_GAIN}%`,
+          },
+          {
+            label: "Years (A)",
+            value: `${sliders.yearsOfGrowthA ?? DEFAULT_YEARS_OF_GROWTH}`,
+          },
+          {
+            label: "Monthly Contribution (A)",
+            value: `$${(sliders.monthlyContributionA || 0).toLocaleString()}`,
+          },
+          {
+            label: "Monthly Withdrawal (A)",
+            value: `$${(sliders.monthlyWithdrawalA || 0).toLocaleString()}`,
+          },
+          {
+            label: "Inflation Rate",
+            value: `${sliders.yearlyInflation ?? DEFAULT_INFLATION_RATE}%`,
+          },
+          ...(toggles.fees
+            ? [
+                {
+                  label: "Annual Fee (A)",
+                  value: `${sliders.annualFeeA || 0}%`,
+                },
+              ]
+            : []),
         ]}
         metrics={infoItems}
       />
@@ -1295,24 +1371,24 @@ export default function InvestmentCalculatorRadixModern({
           setHoldings={setStockHoldings}
           stockApiUrl={stockApiUrl}
           defaultPortfolioValue={totalA}
-          monthlyWithdrawal={sliders.monthlyWithdrawalA || MIN_VALUE}
-          projectedGain={sliders.projectedGainA || DEFAULT_PROJECTED_GAIN}
-          withdrawalStartYear={sliders.withdrawalStartYearA || 0}
-          yearsForward={sliders.yearsOfGrowthA || DEFAULT_YEARS_OF_GROWTH}
+          monthlyWithdrawal={sliders.monthlyWithdrawalA ?? MIN_VALUE}
+          projectedGain={sliders.projectedGainA ?? DEFAULT_PROJECTED_GAIN}
+          withdrawalStartYear={sliders.withdrawalStartYearA ?? 0}
+          yearsForward={sliders.yearsOfGrowthA ?? DEFAULT_YEARS_OF_GROWTH}
           growthMatrix={calcA.getGrowthMatrix()}
           withdrawalStartYearB={
-            toggles.advanced ? sliders.withdrawalStartYearB || 0 : undefined
+            toggles.advanced ? (sliders.withdrawalStartYearB ?? 0) : undefined
           }
           growthMatrixB={toggles.advanced ? calcB.getGrowthMatrix() : undefined}
           defaultPortfolioValueB={toggles.advanced ? totalB : undefined}
           monthlyWithdrawalB={
             toggles.advanced
-              ? sliders.monthlyWithdrawalB || MIN_VALUE
+              ? (sliders.monthlyWithdrawalB ?? MIN_VALUE)
               : undefined
           }
           yearsForwardB={
             toggles.advanced
-              ? sliders.yearsOfGrowthB || DEFAULT_YEARS_OF_GROWTH
+              ? (sliders.yearsOfGrowthB ?? DEFAULT_YEARS_OF_GROWTH)
               : undefined
           }
         />
@@ -1329,8 +1405,8 @@ export default function InvestmentCalculatorRadixModern({
             (sliders.monthlyContributionA || 0) +
             (toggles.advanced ? sliders.monthlyContributionB || 0 : 0)
           }
-          annualReturn={sliders.projectedGainA || DEFAULT_PROJECTED_GAIN}
-          inflationRate={sliders.yearlyInflation || DEFAULT_INFLATION_RATE}
+          annualReturn={sliders.projectedGainA ?? DEFAULT_PROJECTED_GAIN}
+          inflationRate={sliders.yearlyInflation ?? DEFAULT_INFLATION_RATE}
           annualExpenses={sliders.fireAnnualExpenses || 40000}
           safeWithdrawalRate={sliders.fireSWR || 4}
           currentAge={sliders.fireCurrentAge || 30}
@@ -1338,7 +1414,9 @@ export default function InvestmentCalculatorRadixModern({
           onAnnualExpensesChange={(v) => updateSlider("fireAnnualExpenses", v)}
           onSafeWithdrawalRateChange={(v) => updateSlider("fireSWR", v)}
           onCurrentAgeChange={(v) => updateSlider("fireCurrentAge", v)}
-          onTargetRetirementAgeChange={(v) => updateSlider("fireRetirementAge", v)}
+          onTargetRetirementAgeChange={(v) =>
+            updateSlider("fireRetirementAge", v)
+          }
         />
       )}
 

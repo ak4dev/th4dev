@@ -25,7 +25,7 @@ try {
 } catch (err) {
   console.error(
     "⚠ No deploy-config.json found (or it is invalid).\n" +
-    "  Run `npm run configure` to set up deployment targets.\n"
+      "  Run `npm run configure` to set up deployment targets.\n",
   );
   process.exit(1);
 }

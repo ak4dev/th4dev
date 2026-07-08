@@ -5,6 +5,9 @@
  * annual returns drawn from a normal distribution around
  * the projected mean.  Extracts percentile bands for
  * charting confidence intervals.
+ *
+ * All year-valued parameters accept fractional values
+ * (e.g. 10.5 years), which are resolved to whole months.
  * ================================================== */
 
 import {
@@ -63,8 +66,22 @@ interface LumpSumInjection {
   amount: number;
 }
 
+/* ---------- Helpers ---------- */
+
+/** Converts a (possibly fractional) year count to whole months. */
+function toMonths(years: number): number {
+  return Math.round(years * MONTHS_PER_YEAR);
+}
+
 /* ---------- Single Simulation ---------- */
 
+/**
+ * Simulates one randomised path month-by-month.
+ *
+ * The returned array has one entry per completed year (index 0 = initial
+ * amount), plus one final entry for a trailing partial year when
+ * yearsOfGrowth is fractional.
+ */
 function simulateOnce(
   params: MonteCarloParams,
   injection?: LumpSumInjection,
@@ -83,56 +100,76 @@ function simulateOnce(
     volatility,
   } = params;
 
+  const totalMonths = Math.max(0, toMonths(yearsOfGrowth));
   const values: number[] = [initialAmount];
   let nominal = initialAmount;
   let inflationAdjusted = initialAmount;
 
-  for (let year = 1; year <= yearsOfGrowth; year++) {
+  // Contributions apply while inside the (1-based) contribution window;
+  // falsy stop year means "contribute until the horizon" (matches the
+  // deterministic calculator's semantics).
+  const stopYear = contributionStopYear || yearsOfGrowth;
+  const contributionEndMonth = toMonths(stopYear - 1);
+  const withdrawalStartMonth = Math.max(0, toMonths(withdrawalStartYear - 1));
+  const injectionMonth = injection ? toMonths(injection.year - 1) : -1;
+
+  const monthlyFeeRate = annualFee / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
+  let monthlyRate = 0;
+
+  for (let month = 0; month < totalMonths; month++) {
+    // Randomise the annual return at the start of each simulated year
+    if (month % MONTHS_PER_YEAR === 0) {
+      const annualReturn = projectedGain + volatility * normalRandom();
+      monthlyRate = annualReturn / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
+    }
+
     // Inject lump sum at the start of the injection year
-    if (injection && year === injection.year) {
+    if (injection && month === injectionMonth) {
       nominal += injection.amount;
       inflationAdjusted += injection.amount;
     }
 
-    // Randomise this year's annual return using normal distribution
-    const annualReturn =
-      projectedGain + volatility * normalRandom();
-    const monthlyRate = annualReturn / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
-    const monthlyFeeRate =
-      annualFee / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
-
-    for (let month = 0; month < MONTHS_PER_YEAR; month++) {
-      // Withdrawals
-      if (year >= withdrawalStartYear && monthlyWithdrawal > 0) {
-        nominal -= monthlyWithdrawal;
-        inflationAdjusted -= monthlyWithdrawal;
-      }
-
-      // Growth
-      nominal += nominal * monthlyRate;
-      inflationAdjusted += inflationAdjusted * monthlyRate;
-
-      // Fee deduction
-      if (monthlyFeeRate > 0) {
-        const fee = nominal * monthlyFeeRate;
-        nominal -= fee;
-        inflationAdjusted -= fee;
-      }
-
-      // Contributions
-      const stopYear = contributionStopYear ?? yearsOfGrowth;
-      if (year < stopYear) {
-        nominal += monthlyContribution;
-        inflationAdjusted += monthlyContribution;
-      }
+    // Withdrawals
+    if (monthlyWithdrawal > 0 && month >= withdrawalStartMonth) {
+      nominal -= monthlyWithdrawal;
+      inflationAdjusted -= monthlyWithdrawal;
     }
 
-    // Annual inflation adjustment
+    // Growth
+    nominal += nominal * monthlyRate;
+    inflationAdjusted += inflationAdjusted * monthlyRate;
+
+    // Fee deduction (per track)
+    if (monthlyFeeRate > 0) {
+      nominal -= nominal * monthlyFeeRate;
+      inflationAdjusted -= inflationAdjusted * monthlyFeeRate;
+    }
+
+    // Contributions
+    if (month < contributionEndMonth) {
+      nominal += monthlyContribution;
+      inflationAdjusted += monthlyContribution;
+    }
+
+    // Year boundary: apply annual inflation adjustment and record the value
+    if ((month + 1) % MONTHS_PER_YEAR === 0) {
+      if (depreciationRate > 0) {
+        inflationAdjusted -=
+          inflationAdjusted * (depreciationRate / PERCENTAGE_DIVISOR);
+      }
+      values.push(Math.floor(showInflation ? inflationAdjusted : nominal));
+    }
+  }
+
+  // Trailing partial year: pro-rate the inflation adjustment and record
+  const partialMonths = totalMonths % MONTHS_PER_YEAR;
+  if (partialMonths > 0) {
     if (depreciationRate > 0) {
-      inflationAdjusted -=
-        inflationAdjusted * (depreciationRate / PERCENTAGE_DIVISOR);
+      inflationAdjusted *= Math.pow(
+        1 - depreciationRate / PERCENTAGE_DIVISOR,
+        partialMonths / MONTHS_PER_YEAR,
+      );
     }
-
     values.push(Math.floor(showInflation ? inflationAdjusted : nominal));
   }
 
@@ -154,7 +191,8 @@ function percentile(sorted: number[], p: number): number {
 
 /**
  * Runs N simulations and returns raw paths (one number[] per simulation).
- * Each path has yearsOfGrowth + 1 entries (year 0 = initial amount).
+ * Each path has floor(yearsOfGrowth) + 1 entries (year 0 = initial amount),
+ * plus one extra entry when yearsOfGrowth has a fractional part.
  */
 export function simulateAll(params: MonteCarloParams): number[][] {
   const { simCount } = params;
@@ -174,9 +212,7 @@ export function computeBands(paths: number[][]): PercentileBand[] {
   const bands: PercentileBand[] = [];
 
   for (let year = 0; year < years; year++) {
-    const yearValues = paths
-      .map((run) => run[year])
-      .sort((a, b) => a - b);
+    const yearValues = paths.map((run) => run[year]).sort((a, b) => a - b);
 
     bands.push({
       year,
@@ -207,13 +243,11 @@ export function runCombinedSimulation(
   const pathsA = simulateAll({ ...paramsA, simCount });
   const pathsB = simulateAll({ ...paramsB, yearsOfGrowth: maxYears, simCount });
 
-  const aLen = paramsA.yearsOfGrowth + 1;
-
   const combined: number[][] = pathsB.map((runB, i) => {
     const runA = pathsA[i];
-    const aFinal = runA[aLen - 1];
+    const aFinal = runA[runA.length - 1];
     return runB.map((bVal, year) => {
-      const aVal = year < aLen ? runA[year] : aFinal;
+      const aVal = year < runA.length ? runA[year] : aFinal;
       return aVal + bVal;
     });
   });
@@ -237,7 +271,9 @@ export function runRolloverSimulation(
   const pathsA = simulateAll(paramsA);
 
   const portfolioPaths: number[][] = pathsA.map((runA) => {
-    const aFinal = runA[Math.min(rolloverYear, runA.length - 1)];
+    // ceil() so a fractional rollover year picks up A's trailing partial value
+    const aFinalIdx = Math.min(Math.ceil(rolloverYear), runA.length - 1);
+    const aFinal = runA[aFinalIdx];
     const runB = simulateOnce(
       { ...paramsB, yearsOfGrowth: maxYears, simCount: 1 },
       { year: rolloverYear, amount: aFinal },

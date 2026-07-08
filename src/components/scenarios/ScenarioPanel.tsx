@@ -287,7 +287,8 @@ export default function ScenarioPanel({
                 )}
               </CardTop>
               <ScenarioMeta>
-                {formatDate(s.createdAt)} · {formatCurrency(parseInt(preview.investmentA) || 0)} ·{" "}
+                {formatDate(s.createdAt)} ·{" "}
+                {formatCurrency(parseInt(preview.investmentA) || 0)} ·{" "}
                 {preview.returnPct}% · {preview.years}yr
               </ScenarioMeta>
               <CardActions>

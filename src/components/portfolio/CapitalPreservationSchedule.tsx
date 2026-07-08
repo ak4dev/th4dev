@@ -272,9 +272,10 @@ export default function CapitalPreservationSchedule({
   const matrix =
     granularity === "monthly" ? interpolateMonthly(baseMatrix) : baseMatrix;
 
-  // Find the row closest to the withdrawal start date (A)
+  // Find the row closest to the withdrawal start date (A).
+  // Rounded so fractional start years (e.g. 10.5) map to a real row.
   const withdrawalRowIdx = Math.min(
-    withdrawalStartYear * (granularity === "monthly" ? 12 : 1),
+    Math.round(withdrawalStartYear * (granularity === "monthly" ? 12 : 1)),
     matrix.length - 1,
   );
 
@@ -282,7 +283,9 @@ export default function CapitalPreservationSchedule({
   const withdrawalRowIdxB =
     withdrawalStartYearB != null && withdrawalStartYearB > 0
       ? Math.min(
-          withdrawalStartYearB * (granularity === "monthly" ? 12 : 1),
+          Math.round(
+            withdrawalStartYearB * (granularity === "monthly" ? 12 : 1),
+          ),
           matrix.length - 1,
         )
       : -1;
@@ -305,8 +308,7 @@ export default function CapitalPreservationSchedule({
 
   // "Safe today" = at current price, is today's portfolio value on track?
   // Useful summary: can monthly withdrawals be funded purely from growth?
-  const portfolioGrowthPerMonth =
-    initialValue * ((projectedGain / 100) / 12);
+  const portfolioGrowthPerMonth = initialValue * (projectedGain / 100 / 12);
   const withdrawalSafe =
     monthlyWithdrawal > 0 ? portfolioGrowthPerMonth >= monthlyWithdrawal : true;
 

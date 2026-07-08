@@ -534,7 +534,11 @@ export default function BudgetPanel({
                     }}
                     onKeyDown={(e) => e.key === "Enter" && handleFinishEdit()}
                     onBlur={handleFinishEdit}
-                    css={{ flex: "1 1 0", textAlign: "right", maxWidth: "90px" }}
+                    css={{
+                      flex: "1 1 0",
+                      textAlign: "right",
+                      maxWidth: "90px",
+                    }}
                   />
                 </>
               ) : (

@@ -3,6 +3,7 @@
 ## Project Overview
 
 TH4Dev is a React + TypeScript investment calculator with:
+
 - Dual-track (A/B) investment growth projections
 - Monte Carlo confidence bands
 - FIRE (Financial Independence, Retire Early) calculator
@@ -26,6 +27,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 ```
 
 ### Types
+
 - `feat` — New feature
 - `fix` — Bug fix
 - `refactor` — Code restructuring without behavior change
@@ -35,6 +37,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 - `style` — Formatting only (no logic change)
 
 ### Scopes
+
 Use the feature area: `fees`, `monte-carlo`, `fire`, `scenarios`, `budget`, `pdf`, `portfolio`, `ui`, `infra`, `chart`, etc.
 
 ## Code Style
@@ -54,23 +57,27 @@ Use the feature area: `fees`, `monte-carlo`, `fire`, `scenarios`, `budget`, `pdf
 ## Architecture
 
 ### Toggle System
+
 - Core toggles (Advanced, Inflated) always visible
 - Tool toggles (Rollover, Fees, Monte Carlo, FIRE, Scenarios, Portfolio) visible only in Advanced mode
 - `TogglesState` is defined BOTH in `src/common/types/types.ts` (as `TH4State.toggles`) AND in `InvestmentCalculatorModern.tsx` — **keep both in sync**
 
 ### State Management
+
 - Sliders: `Record<string, number>` (keyed by slider name)
 - Inputs: `Record<string, string>` (keyed by input name)
 - Toggles: Typed object (`TogglesState`)
 - All persisted to localStorage when user consents
 
 ### Privacy
+
 - **User privacy is held above all else.** No data of any kind may be stored or persisted without explicit opt-in via the localStorage consent toggle.
 - CRUD helper functions (budget-manager, scenario-manager) must be **pure** — they compute and return new arrays without localStorage side effects.
 - All persistence flows through the single consent-gated `useEffect` in `App.tsx`.
 - When consent is disabled, all localStorage keys (including legacy standalone keys) must be removed.
 
 ### Adding a New Feature Toggle
+
 1. Add to `TH4State.toggles` in `src/common/types/types.ts`
 2. Add to local `TogglesState` in `InvestmentCalculatorModern.tsx`
 3. Add default `false` in `App.tsx` default state
@@ -79,9 +86,11 @@ Use the feature area: `fees`, `monte-carlo`, `fire`, `scenarios`, `budget`, `pdf
 6. Conditionally render feature UI when toggle is on
 
 ### Type Guard (StateIOPopover)
+
 New toggle fields must use backward-compatible check:
+
 ```ts
-(t["newToggle"] === undefined || typeof t["newToggle"] === "boolean")
+t["newToggle"] === undefined || typeof t["newToggle"] === "boolean";
 ```
 
 ## Testing

@@ -2,7 +2,7 @@
  * Investment Growth Calculator
  * ================================================== */
 
-import { addYears } from "date-fns";
+import { addMonths, addYears } from "date-fns";
 import type { InvestmentCalculatorProps, LineGraphEntry } from "../types/types";
 import {
   MONTHS_PER_YEAR,
@@ -17,9 +17,14 @@ import {
  * Handles complex investment growth calculations including:
  * - Monthly compound growth
  * - Regular contributions and withdrawals
+ * - Fractional (partial) years for horizon, contribution stop, and withdrawal start
  * - Inflation adjustments
  * - Investment rollovers
  * - Data generation for charting
+ *
+ * All year-valued inputs (yearsOfGrowth, yearContributionsStop,
+ * yearWithdrawalsBegin, yearOfRollover) accept fractional values, which are
+ * resolved to whole months (e.g. 10.5 years → 126 months from today).
  */
 export class InvestmentCalculator {
   private readonly props: InvestmentCalculatorProps;
@@ -27,6 +32,8 @@ export class InvestmentCalculator {
   private readonly currentMonth: number = this.today.getMonth();
   private readonly growthMatrix: LineGraphEntry[] = [];
   private cumulativeFees: number = 0;
+  /** Absolute months elapsed since today while simulating */
+  private monthsElapsed: number = 0;
 
   /**
    * Creates an instance of InvestmentCalculator
@@ -56,19 +63,26 @@ export class InvestmentCalculator {
     // Reset growth data for this calculation run
     this.growthMatrix.length = 0;
     this.cumulativeFees = 0;
+    this.monthsElapsed = 0;
 
     // Initialize calculation variables
     let nominalAmount = this.getInitialAmount();
     let inflationAdjustedAmount = nominalAmount;
     const monthlyGrowthRate = this.getMonthlyGrowthRate();
 
-    // Calculate growth year by year
-    for (let year = 0; year <= this.props.yearsOfGrowth; year++) {
+    const fullYears = Math.floor(this.props.yearsOfGrowth);
+    const extraMonths =
+      Math.round(this.props.yearsOfGrowth * MONTHS_PER_YEAR) -
+      fullYears * MONTHS_PER_YEAR;
+
+    // Calculate growth year by year (whole years)
+    for (let year = 0; year <= fullYears; year++) {
       const result = this.calculateYearGrowth(
         year,
         nominalAmount,
         inflationAdjustedAmount,
         monthlyGrowthRate,
+        MONTHS_PER_YEAR,
       );
 
       nominalAmount = result.nominal;
@@ -76,7 +90,28 @@ export class InvestmentCalculator {
 
       // Store data point for charting
       this.addGrowthDataPoint(
-        year,
+        addYears(this.today, year),
+        nominalAmount,
+        inflationAdjustedAmount,
+        showInflation,
+      );
+    }
+
+    // Process the final partial year, if any (e.g. the ".5" in 10.5 years)
+    if (extraMonths > 0) {
+      const result = this.calculateYearGrowth(
+        fullYears + 1,
+        nominalAmount,
+        inflationAdjustedAmount,
+        monthlyGrowthRate,
+        extraMonths,
+      );
+
+      nominalAmount = result.nominal;
+      inflationAdjustedAmount = result.inflationAdjusted;
+
+      this.addGrowthDataPoint(
+        addMonths(addYears(this.today, fullYears), extraMonths),
         nominalAmount,
         inflationAdjustedAmount,
         showInflation,
@@ -189,11 +224,22 @@ export class InvestmentCalculator {
   }
 
   /**
-   * Calculates growth for a single year including all monthly operations
+   * Converts a (possibly fractional) year offset into whole months
+   * @param years - Year offset (e.g. 10.5)
+   * @returns Whole-month equivalent (e.g. 126)
+   */
+  private static toMonths(years: number): number {
+    return Math.round(years * MONTHS_PER_YEAR);
+  }
+
+  /**
+   * Calculates growth for a single year (or partial final year) including all
+   * monthly operations
    * @param year - The year number (0-based)
    * @param startingNominal - Starting nominal amount
    * @param startingInflationAdjusted - Starting inflation-adjusted amount
    * @param monthlyGrowthRate - Monthly growth rate as decimal
+   * @param monthsToProcess - Months to process in this year (12 for full years)
    * @returns Object containing nominal and inflation-adjusted amounts
    */
   private calculateYearGrowth(
@@ -201,17 +247,19 @@ export class InvestmentCalculator {
     startingNominal: number,
     startingInflationAdjusted: number,
     monthlyGrowthRate: number,
+    monthsToProcess: number,
   ): { nominal: number; inflationAdjusted: number } {
     let nominal = startingNominal;
     let inflationAdjusted = startingInflationAdjusted;
 
     // Determine starting month (current month for year 0, January for subsequent years)
     const startMonth = year === 0 ? this.currentMonth : 0;
+    const endMonth = Math.min(startMonth + monthsToProcess, MONTHS_PER_YEAR);
 
     // Process each month in the year
-    for (let month = startMonth; month < MONTHS_PER_YEAR; month++) {
+    for (let month = startMonth; month < endMonth; month++) {
       // Apply withdrawals first
-      if (this.shouldApplyWithdrawal(year, month)) {
+      if (this.shouldApplyWithdrawal()) {
         nominal -= this.props.monthlyWithdrawal;
         inflationAdjusted -= this.props.monthlyWithdrawal;
       }
@@ -220,40 +268,47 @@ export class InvestmentCalculator {
       nominal += nominal * monthlyGrowthRate;
       inflationAdjusted += inflationAdjusted * monthlyGrowthRate;
 
-      // Deduct monthly fee (expense ratio)
+      // Deduct monthly fee (expense ratio) — computed per track so the
+      // inflation-adjusted balance is not overcharged with the nominal fee
       if (this.props.annualFee) {
         const monthlyFeeRate =
           this.props.annualFee / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
         const fee = nominal * monthlyFeeRate;
         nominal -= fee;
-        inflationAdjusted -= fee;
+        inflationAdjusted -= inflationAdjusted * monthlyFeeRate;
         this.cumulativeFees += fee;
       }
 
       // Apply contributions with immediate growth
-      if (this.shouldApplyContribution(year, month)) {
+      if (this.shouldApplyContribution()) {
         const contribution = this.props.monthlyContribution;
         const contributionGrowth = contribution * monthlyGrowthRate;
 
         nominal += contribution + contributionGrowth;
         inflationAdjusted += contribution + contributionGrowth;
       }
+
+      this.monthsElapsed++;
+
+      // Handle one-time rollover when the rollover month is reached
+      if (this.shouldApplyRollover()) {
+        const rolloverAmount = this.props.investmentToRoll || 0;
+        nominal += rolloverAmount;
+        inflationAdjusted += rolloverAmount;
+      }
     }
 
-    // Handle one-time rollover at year end
-    if (this.shouldApplyRollover(year)) {
-      const rolloverAmount = this.props.investmentToRoll || 0;
-      nominal += rolloverAmount;
-      inflationAdjusted += rolloverAmount;
-    }
-
-    // Apply annual inflation adjustment
+    // Apply inflation adjustment, pro-rated for partial years
     if (this.props.depreciationRate) {
-      const depreciation = this.calculateDepreciation(
-        inflationAdjusted,
-        this.props.depreciationRate,
-      );
-      inflationAdjusted -= depreciation;
+      const yearFraction = monthsToProcess / MONTHS_PER_YEAR;
+      const retention =
+        yearFraction === 1
+          ? 1 - this.props.depreciationRate / PERCENTAGE_DIVISOR
+          : Math.pow(
+              1 - this.props.depreciationRate / PERCENTAGE_DIVISOR,
+              yearFraction,
+            );
+      inflationAdjusted *= retention;
     }
 
     return { nominal, inflationAdjusted };
@@ -261,19 +316,19 @@ export class InvestmentCalculator {
 
   /**
    * Adds a data point to the growth matrix for charting
-   * @param year - The year number
+   * @param date - The date of the data point
    * @param nominal - Nominal amount
    * @param inflationAdjusted - Inflation-adjusted amount
    * @param showInflation - Whether inflation view is active
    */
   private addGrowthDataPoint(
-    year: number,
+    date: Date,
     nominal: number,
     inflationAdjusted: number,
     showInflation: boolean,
   ): void {
     this.growthMatrix.push({
-      x: addYears(this.today, year),
+      x: date,
       y: Math.floor(showInflation ? inflationAdjusted : nominal),
       alternateY: Math.floor(showInflation ? nominal : inflationAdjusted),
     });
@@ -284,12 +339,12 @@ export class InvestmentCalculator {
    * ================================================== */
 
   /**
-   * Determines if withdrawals should be applied for a given year and month
-   * @param year - The year number (0-based)
-   * @param month - The month number (0-based)
+   * Determines if withdrawals should be applied for the current simulated month.
+   * Withdrawals begin at the anniversary of today plus yearWithdrawalsBegin
+   * years (fractional years resolve to whole months).
    * @returns True if withdrawals should be applied
    */
-  private shouldApplyWithdrawal(year: number, month: number): boolean {
+  private shouldApplyWithdrawal(): boolean {
     // Withdrawals only apply in advanced mode with a withdrawal amount set
     if (!this.props.advanced || !this.props.monthlyWithdrawal) {
       return false;
@@ -303,57 +358,53 @@ export class InvestmentCalculator {
       return false;
     }
 
-    // Special handling for year 0 (current year)
-    if (year === 0) {
-      return (
-        this.props.yearWithdrawalsBegin === 0 && month >= this.currentMonth
-      );
-    }
-
-    // For subsequent years, check if we've reached the withdrawal start year
     return (
-      year > this.props.yearWithdrawalsBegin ||
-      (year === this.props.yearWithdrawalsBegin && month >= 0)
+      this.monthsElapsed >=
+      InvestmentCalculator.toMonths(this.props.yearWithdrawalsBegin)
     );
   }
 
   /**
-   * Determines if contributions should be applied for a given year and month
-   * @param year - The year number (0-based)
-   * @param month - The month number (0-based)
+   * Determines if contributions should be applied for the current simulated month.
+   * Contributions stop once yearContributionsStop years (fractional allowed)
+   * have elapsed since today.
    * @returns True if contributions should be applied
    */
-  private shouldApplyContribution(year: number, month: number): boolean {
+  private shouldApplyContribution(): boolean {
     // If not in advanced mode or no contribution stop year set, always contribute
     if (!this.props.advanced || !this.props.yearContributionsStop) {
       return true;
     }
 
-    // Special handling for year 0 (current year)
-    if (year === 0) {
-      return month >= this.currentMonth;
-    }
-
-    // Check if we haven't reached the contribution stop year
     return (
-      year < this.props.yearContributionsStop ||
-      (year === this.props.yearContributionsStop && month < this.currentMonth)
+      this.monthsElapsed <
+      InvestmentCalculator.toMonths(this.props.yearContributionsStop)
     );
   }
 
   /**
-   * Determines if a rollover should be applied for a given year
-   * @param year - The year number (0-based)
-   * @returns True if rollover should be applied
+   * Determines if the one-time rollover should be applied after the month that
+   * was just processed. The rollover lands at the end of calendar year
+   * `yearOfRollover` (matching the year-end data point), with fractional years
+   * extending that boundary by whole months.
+   * @returns True if rollover should be applied now
    */
-  private shouldApplyRollover(year: number): boolean {
-    return !!(
-      this.props.rollOver &&
-      this.props.investmentToRoll &&
-      this.props.yearOfRollover !== null &&
-      this.props.yearOfRollover !== undefined &&
-      this.props.yearOfRollover === year
-    );
+  private shouldApplyRollover(): boolean {
+    if (
+      !this.props.rollOver ||
+      !this.props.investmentToRoll ||
+      this.props.yearOfRollover === null ||
+      this.props.yearOfRollover === undefined
+    ) {
+      return false;
+    }
+
+    const rolloverMonth =
+      MONTHS_PER_YEAR -
+      this.currentMonth +
+      InvestmentCalculator.toMonths(this.props.yearOfRollover);
+
+    return this.monthsElapsed === rolloverMonth;
   }
 
   /* ==================================================

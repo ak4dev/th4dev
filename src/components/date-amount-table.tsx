@@ -91,7 +91,7 @@ export default function DateAmountTable({
           </tr>
         </thead>
         <tbody>
-          {matrix.map((entry) => {
+          {matrix.map((entry, idx) => {
             if (!entry || entry.y === undefined) return null;
 
             const year = new Date(entry.x).getFullYear();
@@ -100,8 +100,10 @@ export default function DateAmountTable({
             const pctChange =
               initial !== 0 ? ((nominal - initial) / initial) * 100 : 0;
 
+            // A partial final year can share a calendar year with the previous
+            // row, so the index is the only safe key.
             return (
-              <tr key={year}>
+              <tr key={idx}>
                 <Td>{year}</Td>
                 <Td style={{ color: getColor(nominal) }}>
                   ${nominal.toLocaleString()}

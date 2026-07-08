@@ -167,10 +167,18 @@ export function ThemeSelector({
                   active={isActive}
                 >
                   <SwatchPalette>
-                    <SwatchSegment style={{ backgroundColor: theme.colors.background }} />
-                    <SwatchSegment style={{ backgroundColor: theme.colors.purple }} />
-                    <SwatchSegment style={{ backgroundColor: theme.colors.cyan }} />
-                    <SwatchSegment style={{ backgroundColor: theme.colors.green }} />
+                    <SwatchSegment
+                      style={{ backgroundColor: theme.colors.background }}
+                    />
+                    <SwatchSegment
+                      style={{ backgroundColor: theme.colors.purple }}
+                    />
+                    <SwatchSegment
+                      style={{ backgroundColor: theme.colors.cyan }}
+                    />
+                    <SwatchSegment
+                      style={{ backgroundColor: theme.colors.green }}
+                    />
                   </SwatchPalette>
                   <ThemeName>{formatThemeName(key)}</ThemeName>
                   {isActive && <CheckIcon width={14} height={14} />}

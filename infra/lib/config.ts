@@ -37,7 +37,13 @@ export function loadConfig(): DeployConfig {
   }
 
   for (const d of config.deployments) {
-    if (!d.id || !d.domainName || !d.hostedZoneDomain || !d.hostedZoneId || !d.bucketName) {
+    if (
+      !d.id ||
+      !d.domainName ||
+      !d.hostedZoneDomain ||
+      !d.hostedZoneId ||
+      !d.bucketName
+    ) {
       throw new Error(
         `Deployment "${d.id || "(unnamed)"}" is missing required fields. Run \`npm run configure\` to fix.`,
       );

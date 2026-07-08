@@ -37,11 +37,7 @@ const PAGE_WIDTH = 210; // A4 mm
 
 /* ---------- Helpers ---------- */
 
-function addSection(
-  doc: jsPDF,
-  title: string,
-  y: number,
-): number {
+function addSection(doc: jsPDF, title: string, y: number): number {
   doc.setFontSize(SECTION_FONT_SIZE);
   doc.setFont("helvetica", "bold");
   doc.text(title, PAGE_MARGIN, y);
@@ -64,9 +60,7 @@ function addKeyValue(
 
 /* ---------- Main Export ---------- */
 
-export async function generatePdfReport(
-  data: PdfReportData,
-): Promise<void> {
+export async function generatePdfReport(data: PdfReportData): Promise<void> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
   let y = PAGE_MARGIN;

@@ -2,7 +2,7 @@
  * Monthly Growth Matrix Interpolation
  * ================================================== */
 
-import { addMonths } from "date-fns";
+import { addMonths, differenceInCalendarMonths } from "date-fns";
 import type { LineGraphEntry } from "../types/types";
 
 /**
@@ -12,6 +12,10 @@ import type { LineGraphEntry } from "../types/types";
  * snapshots. Linear interpolation between yearly data points is a close-enough
  * approximation for display purposes (true compound growth curves are only very
  * slightly non-linear over a single year interval).
+ *
+ * Segments are interpolated over their actual month span, so a trailing
+ * partial year (e.g. the 6-month segment of a 10.5-year horizon) produces the
+ * correct number of points.
  *
  * @param yearly - Yearly growth matrix from InvestmentCalculator.getGrowthMatrix()
  * @returns Monthly data points starting from the same origin date
@@ -24,9 +28,10 @@ export function interpolateMonthly(yearly: LineGraphEntry[]): LineGraphEntry[] {
   for (let i = 0; i < yearly.length - 1; i++) {
     const from = yearly[i];
     const to = yearly[i + 1];
+    const span = Math.max(1, differenceInCalendarMonths(to.x, from.x));
 
-    for (let m = 0; m < 12; m++) {
-      const t = m / 12;
+    for (let m = 0; m < span; m++) {
+      const t = m / span;
       result.push({
         x: addMonths(from.x, m),
         y: Math.floor(from.y + (to.y - from.y) * t),

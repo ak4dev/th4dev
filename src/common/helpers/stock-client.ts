@@ -20,8 +20,20 @@ export async function fetchStockData(
 ): Promise<{ symbol: string; data?: unknown; error?: string }[]> {
   return Promise.all(
     symbols.map(async (symbol) => {
-      const url = urlTemplate.replace("{symbol}", symbol.trim());
+      // Encode the symbol so it cannot alter the URL structure, and only
+      // allow http(s) — the template may come from an imported state file.
+      const url = urlTemplate.replace(
+        "{symbol}",
+        encodeURIComponent(symbol.trim()),
+      );
       try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+          return {
+            symbol,
+            error: `Unsupported URL scheme: ${parsed.protocol}`,
+          };
+        }
         const res = await fetch(url);
         if (!res.ok)
           return { symbol, error: `HTTP ${res.status}: ${res.statusText}` };

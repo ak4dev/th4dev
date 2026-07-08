@@ -9,7 +9,10 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { styled } from "../../../stitches.config";
 import { compactModernInputStyles } from "../../common/constants/input-styles";
-import { calculateFire, type FireResult } from "../../common/helpers/fire-calculator";
+import {
+  calculateFire,
+  type FireResult,
+} from "../../common/helpers/fire-calculator";
 
 /* ---------- Props ---------- */
 
@@ -186,10 +189,14 @@ export default function FirePanel(props: FirePanelProps) {
   } = props;
 
   // Local text state so users can type freely; commit on blur/Enter
-  const [expensesText, setExpensesText] = useState(String(annualExpenses || ""));
+  const [expensesText, setExpensesText] = useState(
+    String(annualExpenses || ""),
+  );
   const [swrText, setSwrText] = useState(String(safeWithdrawalRate || ""));
   const [ageText, setAgeText] = useState(String(currentAge || ""));
-  const [retireText, setRetireText] = useState(String(targetRetirementAge || ""));
+  const [retireText, setRetireText] = useState(
+    String(targetRetirementAge || ""),
+  );
 
   // Sync local text when props change externally (e.g. scenario load).
   // Single batched effect avoids cascading re-renders.
@@ -253,7 +260,11 @@ export default function FirePanel(props: FirePanelProps) {
   );
 
   const progressStatus =
-    result.progressPct >= 75 ? "high" : result.progressPct >= 30 ? "mid" : "low";
+    result.progressPct >= 75
+      ? "high"
+      : result.progressPct >= 30
+        ? "mid"
+        : "low";
 
   const overallStatus =
     result.progressPct >= 100
@@ -288,7 +299,9 @@ export default function FirePanel(props: FirePanelProps) {
             type="text"
             inputMode="numeric"
             value={expensesText}
-            onChange={(e) => setExpensesText(e.target.value.replace(/[^0-9]/g, ""))}
+            onChange={(e) =>
+              setExpensesText(e.target.value.replace(/[^0-9]/g, ""))
+            }
             onBlur={commitExpenses}
             onKeyDown={(e) => e.key === "Enter" && commitExpenses()}
           />
@@ -321,7 +334,9 @@ export default function FirePanel(props: FirePanelProps) {
             type="text"
             inputMode="numeric"
             value={retireText}
-            onChange={(e) => setRetireText(e.target.value.replace(/[^0-9]/g, ""))}
+            onChange={(e) =>
+              setRetireText(e.target.value.replace(/[^0-9]/g, ""))
+            }
             onBlur={commitRetire}
             onKeyDown={(e) => e.key === "Enter" && commitRetire()}
           />
@@ -350,17 +365,27 @@ export default function FirePanel(props: FirePanelProps) {
       <MetricsGrid>
         <MetricCard>
           <MetricLabel>FIRE Number</MetricLabel>
-          <MetricValue color="cyan">{formatCurrency(result.fireNumber)}</MetricValue>
+          <MetricValue color="cyan">
+            {formatCurrency(result.fireNumber)}
+          </MetricValue>
         </MetricCard>
         <MetricCard>
           <MetricLabel>Years to FIRE</MetricLabel>
           <MetricValue color={result.yearsToFire === 0 ? "green" : "orange"}>
-            {result.yearsToFire !== null ? `${result.yearsToFire} yrs` : "> 100 yrs"}
+            {result.yearsToFire !== null
+              ? `${result.yearsToFire} yrs`
+              : "> 100 yrs"}
           </MetricValue>
         </MetricCard>
         <MetricCard>
           <MetricLabel>FIRE Age</MetricLabel>
-          <MetricValue color={result.fireAge !== null && result.fireAge <= targetRetirementAge ? "green" : "orange"}>
+          <MetricValue
+            color={
+              result.fireAge !== null && result.fireAge <= targetRetirementAge
+                ? "green"
+                : "orange"
+            }
+          >
             {result.fireAge !== null ? result.fireAge : "N/A"}
           </MetricValue>
         </MetricCard>
@@ -375,7 +400,9 @@ export default function FirePanel(props: FirePanelProps) {
             <MetricLabel>Monthly Needed (by {targetRetirementAge})</MetricLabel>
             <MetricValue
               color={
-                result.monthlySavingsNeeded <= monthlySavings ? "green" : "orange"
+                result.monthlySavingsNeeded <= monthlySavings
+                  ? "green"
+                  : "orange"
               }
             >
               {formatCurrency(result.monthlySavingsNeeded)}/mo

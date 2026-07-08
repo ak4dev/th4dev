@@ -85,12 +85,15 @@ describe("addBudgetItem", () => {
   });
 
   it("throws when max items reached", () => {
-    const existing: BudgetItem[] = Array.from({ length: MAX_ITEMS }, (_, i) => ({
-      id: `b${i}`,
-      name: `Item ${i}`,
-      amount: 100,
-      category: "Other",
-    }));
+    const existing: BudgetItem[] = Array.from(
+      { length: MAX_ITEMS },
+      (_, i) => ({
+        id: `b${i}`,
+        name: `Item ${i}`,
+        amount: 100,
+        category: "Other",
+      }),
+    );
     expect(() => addBudgetItem("One too many", 100, "Other", existing)).toThrow(
       /Maximum/,
     );

@@ -64,40 +64,40 @@ const numberFormatter = new Intl.NumberFormat("en-US", {
  * ================================================== */
 
 /**
- * Prepares chart data from investment growth matrices
+ * Prepares chart data from investment growth matrices.
+ *
+ * Rollover amounts are already included in investment B's growth matrix by
+ * the calculator, so no adjustment happens here. When a matrix has two points
+ * in the same calendar year (a whole-year point plus a partial-year final
+ * point), the later point wins so the chart ends on the true final balance.
+ *
  * @param matrixA - Growth matrix for investment A
  * @param matrixB - Growth matrix for investment B (optional)
  * @param advanced - Whether advanced mode is enabled
- * @param yearOfRollover - Year when rollover occurs (optional)
  * @returns Array of chart data points
  */
 function prepareChartData(
   matrixA: LineGraphEntry[],
   matrixB?: LineGraphEntry[],
   advanced?: boolean,
-  yearOfRollover?: number,
 ) {
-  const allYears = new Set<number>();
-  matrixA.forEach((e) => allYears.add(parseInt(format(e.x, "yyyy"))));
-  matrixB?.forEach((e) => allYears.add(parseInt(format(e.x, "yyyy"))));
-  const sortedYears = Array.from(allYears).sort((a, b) => a - b);
+  const byYearA = new Map<number, LineGraphEntry>();
+  matrixA.forEach((e) => byYearA.set(parseInt(format(e.x, "yyyy")), e));
+  const byYearB = new Map<number, LineGraphEntry>();
+  matrixB?.forEach((e) => byYearB.set(parseInt(format(e.x, "yyyy")), e));
+
+  const sortedYears = Array.from(
+    new Set([...byYearA.keys(), ...byYearB.keys()]),
+  ).sort((a, b) => a - b);
 
   return sortedYears.map((year) => {
-    const entryA = matrixA.find((e) => parseInt(format(e.x, "yyyy")) === year);
-    const entryB = matrixB?.find((e) => parseInt(format(e.x, "yyyy")) === year);
-
-    const investmentA = entryA ? entryA.y : null;
-    let investmentBValue = entryB?.y ?? null;
-
-    // Apply rollover amount to investment B in the rollover year
-    if (yearOfRollover !== undefined && year === yearOfRollover && entryA) {
-      investmentBValue = (investmentBValue ?? 0) + entryA.y;
-    }
+    const entryA = byYearA.get(year);
+    const entryB = byYearB.get(year);
 
     return {
       date: `${year}`,
-      investmentA,
-      investmentB: advanced ? investmentBValue : null,
+      investmentA: entryA ? entryA.y : null,
+      investmentB: advanced ? (entryB?.y ?? null) : null,
     };
   });
 }
@@ -143,8 +143,6 @@ interface InvestmentLineChartProps {
   growthMatrixB?: LineGraphEntry[];
   /** Whether advanced mode is enabled */
   advanced?: boolean;
-  /** Year when rollover occurs (optional) */
-  yearOfRollover?: number;
   /** Optional target value for Investment A — rendered as a dashed reference line */
   targetValueA?: number;
   /** Optional target value for Investment B — rendered as a dashed reference line */
@@ -163,28 +161,28 @@ export function InvestmentLineChart({
   growthMatrixA,
   growthMatrixB,
   advanced = false,
-  yearOfRollover,
   targetValueA,
   targetValueB,
   mcBandsA,
   mcBandsB,
 }: InvestmentLineChartProps) {
-  const data = prepareChartData(
-    growthMatrixA,
-    growthMatrixB,
-    advanced,
-    yearOfRollover,
-  );
+  const data = prepareChartData(growthMatrixA, growthMatrixB, advanced);
 
   // Build year-keyed maps from MC bands so we can align by band.year
   const hasMCA = mcBandsA && mcBandsA.length > 0;
   const hasMCB = mcBandsB && mcBandsB.length > 0;
   const bandAByYear = hasMCA
     ? new Map(mcBandsA.map((b) => [b.year, b]))
-    : new Map<number, (typeof mcBandsA extends (infer U)[] | undefined ? U : never)>();
+    : new Map<
+        number,
+        typeof mcBandsA extends (infer U)[] | undefined ? U : never
+      >();
   const bandBByYear = hasMCB
     ? new Map(mcBandsB.map((b) => [b.year, b]))
-    : new Map<number, (typeof mcBandsB extends (infer U)[] | undefined ? U : never)>();
+    : new Map<
+        number,
+        typeof mcBandsB extends (infer U)[] | undefined ? U : never
+      >();
 
   // Determine how many chart points we need — may exceed deterministic data
   // if individual-mode MC bands are offset beyond the growth matrices
@@ -196,8 +194,14 @@ export function InvestmentLineChart({
   const totalPoints = Math.max(data.length, maxMCYear + 1);
 
   // Extend chart data with null-valued points for years beyond deterministic range
-  const extendedData = Array.from({ length: totalPoints }, (_, i) =>
-    data[i] ?? { date: `${baseStartYear + i}`, investmentA: null, investmentB: null },
+  const extendedData = Array.from(
+    { length: totalPoints },
+    (_, i) =>
+      data[i] ?? {
+        date: `${baseStartYear + i}`,
+        investmentA: null,
+        investmentB: null,
+      },
   );
 
   // Merge MC bands by year field

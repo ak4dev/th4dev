@@ -7,8 +7,8 @@
  * correctly typed.
  * ================================================== */
 
-import type { TH4State } from "../types/types"
-import type { BudgetItem } from "./budget-manager"
+import type { TH4State } from "../types/types";
+import type { BudgetItem } from "./budget-manager";
 import {
   DEFAULT_THEME,
   DEFAULT_INITIAL_AMOUNT,
@@ -20,12 +20,12 @@ import {
   DEFAULT_INFLATION_RATE,
   DEFAULT_TARGET_VALUE,
   DEFAULT_VOLATILITY,
-} from "../constants/app-constants"
+} from "../constants/app-constants";
 
 /* ---------- Default state ---------- */
 
 const DEFAULT_STOCK_API_URL =
-  "https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey=demo"
+  "https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey=demo";
 
 export const DEFAULT_TOGGLES: TH4State["toggles"] = {
   advanced: false,
@@ -38,7 +38,7 @@ export const DEFAULT_TOGGLES: TH4State["toggles"] = {
   scenarios: false,
   budget: false,
   monteCarloMode: "combined",
-}
+};
 
 export const DEFAULT_SLIDERS: Record<string, number> = {
   investmentA: DEFAULT_INITIAL_AMOUNT,
@@ -64,12 +64,12 @@ export const DEFAULT_SLIDERS: Record<string, number> = {
   fireSWR: 4,
   fireCurrentAge: 30,
   fireRetirementAge: 65,
-}
+};
 
 export const DEFAULT_INPUTS: Record<string, string> = {
   currentAmountA: String(DEFAULT_INITIAL_AMOUNT),
   currentAmountB: String(DEFAULT_INITIAL_AMOUNT),
-}
+};
 
 export const DEFAULT_STATE: TH4State = {
   theme: DEFAULT_THEME,
@@ -83,19 +83,75 @@ export const DEFAULT_STATE: TH4State = {
   budgetItems: [],
   scenarios: [],
   activePage: "f",
-}
+};
 
 /* ---------- Validation ---------- */
 
 function isValidBudgetItem(item: unknown): item is BudgetItem {
-  if (typeof item !== "object" || item === null) return false
-  const o = item as Record<string, unknown>
+  if (typeof item !== "object" || item === null) return false;
+  const o = item as Record<string, unknown>;
   return (
     typeof o["id"] === "string" &&
     typeof o["name"] === "string" &&
     typeof o["amount"] === "number" &&
     typeof o["category"] === "string"
+  );
+}
+
+/**
+ * Keeps only entries whose value is a finite number.  Protects the math
+ * pipeline from imported files with strings/NaN/Infinity in slider slots.
+ */
+function sanitizeNumericMap(
+  raw: Record<string, number> | undefined,
+): Record<string, number> {
+  const result: Record<string, number> = {};
+  if (!raw) return result;
+  for (const [key, val] of Object.entries(raw)) {
+    if (typeof val === "number" && Number.isFinite(val)) result[key] = val;
+  }
+  return result;
+}
+
+/** Keeps only entries whose value is a string. */
+function sanitizeStringMap(
+  raw: Record<string, string> | undefined,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!raw) return result;
+  for (const [key, val] of Object.entries(raw)) {
+    if (typeof val === "string") result[key] = val;
+  }
+  return result;
+}
+
+/**
+ * Validates a single portfolio holding from an imported file, dropping
+ * malformed entries instead of letting them crash the UI later.
+ */
+function isValidHolding(
+  value: unknown,
+): value is import("../types/portfolio-types").PortfolioHolding {
+  if (typeof value !== "object" || value === null) return false;
+  const h = value as Record<string, unknown>;
+  if (typeof h["symbol"] !== "string" || h["symbol"].trim() === "")
+    return false;
+  if (
+    typeof h["allocationPct"] !== "number" ||
+    !Number.isFinite(h["allocationPct"])
   )
+    return false;
+  const optionalNumber = (key: string) =>
+    h[key] === undefined ||
+    (typeof h[key] === "number" && Number.isFinite(h[key]));
+  if (!optionalNumber("currentPrice")) return false;
+  if (!optionalNumber("startPrice")) return false;
+  if (
+    h["projectionStartDate"] !== undefined &&
+    typeof h["projectionStartDate"] !== "string"
+  )
+    return false;
+  return true;
 }
 
 /**
@@ -104,52 +160,59 @@ function isValidBudgetItem(item: unknown): item is BudgetItem {
  * compatibility — missing fields are filled by normalizeState().
  */
 export function isValidTH4State(value: unknown): value is TH4State {
-  if (typeof value !== "object" || value === null) return false
-  const v = value as Record<string, unknown>
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
 
-  if (typeof v["theme"] !== "string") return false
-  if (typeof v["sliders"] !== "object" || v["sliders"] === null) return false
-  if (typeof v["inputs"] !== "object" || v["inputs"] === null) return false
-  if (typeof v["toggles"] !== "object" || v["toggles"] === null) return false
+  if (typeof v["theme"] !== "string") return false;
+  if (typeof v["sliders"] !== "object" || v["sliders"] === null) return false;
+  if (typeof v["inputs"] !== "object" || v["inputs"] === null) return false;
+  if (typeof v["toggles"] !== "object" || v["toggles"] === null) return false;
 
-  const t = v["toggles"] as Record<string, unknown>
+  const t = v["toggles"] as Record<string, unknown>;
   const boolOrUndefined = (key: string) =>
-    t[key] === undefined || typeof t[key] === "boolean"
+    t[key] === undefined || typeof t[key] === "boolean";
 
-  if (typeof t["advanced"] !== "boolean") return false
-  if (typeof t["rollover"] !== "boolean") return false
-  if (typeof t["showInflation"] !== "boolean") return false
-  if (typeof t["portfolio"] !== "boolean") return false
-  if (!boolOrUndefined("fees")) return false
-  if (!boolOrUndefined("monteCarlo")) return false
-  if (!boolOrUndefined("fire")) return false
-  if (!boolOrUndefined("scenarios")) return false
-  if (!boolOrUndefined("budget")) return false
+  if (typeof t["advanced"] !== "boolean") return false;
+  if (typeof t["rollover"] !== "boolean") return false;
+  if (typeof t["showInflation"] !== "boolean") return false;
+  if (typeof t["portfolio"] !== "boolean") return false;
+  if (!boolOrUndefined("fees")) return false;
+  if (!boolOrUndefined("monteCarlo")) return false;
+  if (!boolOrUndefined("fire")) return false;
+  if (!boolOrUndefined("scenarios")) return false;
+  if (!boolOrUndefined("budget")) return false;
   if (
     t["monteCarloMode"] !== undefined &&
     t["monteCarloMode"] !== "combined" &&
     t["monteCarloMode"] !== "individual"
   )
-    return false
+    return false;
 
   if (
     v["budgetItems"] !== undefined &&
-    !(Array.isArray(v["budgetItems"]) && v["budgetItems"].every(isValidBudgetItem))
+    !(
+      Array.isArray(v["budgetItems"]) &&
+      v["budgetItems"].every(isValidBudgetItem)
+    )
   )
-    return false
+    return false;
 
-  if (v["scenarios"] !== undefined && !Array.isArray(v["scenarios"])) return false
-  if (v["activePage"] !== undefined && typeof v["activePage"] !== "string") return false
+  if (v["scenarios"] !== undefined && !Array.isArray(v["scenarios"]))
+    return false;
+  if (v["activePage"] !== undefined && typeof v["activePage"] !== "string")
+    return false;
 
   // Validate stock field if present
   if (v["stock"] !== undefined) {
-    if (typeof v["stock"] !== "object" || v["stock"] === null) return false
-    const s = v["stock"] as Record<string, unknown>
-    if (s["apiUrl"] !== undefined && typeof s["apiUrl"] !== "string") return false
-    if (s["holdings"] !== undefined && !Array.isArray(s["holdings"])) return false
+    if (typeof v["stock"] !== "object" || v["stock"] === null) return false;
+    const s = v["stock"] as Record<string, unknown>;
+    if (s["apiUrl"] !== undefined && typeof s["apiUrl"] !== "string")
+      return false;
+    if (s["holdings"] !== undefined && !Array.isArray(s["holdings"]))
+      return false;
   }
 
-  return true
+  return true;
 }
 
 /* ---------- Normalisation ---------- */
@@ -167,37 +230,39 @@ export function normalizeState(raw: TH4State): TH4State {
   const toggles: TH4State["toggles"] = {
     ...DEFAULT_TOGGLES,
     ...stripUndefined(raw.toggles),
-  }
+  };
 
-  const stock = raw.stock ?? DEFAULT_STATE.stock!
+  const stock = raw.stock ?? DEFAULT_STATE.stock!;
   // Handle legacy format with symbols array
-  const legacySymbols = (stock as unknown as { symbols?: string[] }).symbols
+  const legacySymbols = (stock as unknown as { symbols?: string[] }).symbols;
   const holdings = stock.holdings
-    ? stock.holdings.map((h) => ({ ...h }))
+    ? stock.holdings.filter(isValidHolding).map((h) => ({ ...h }))
     : legacySymbols
-      ? legacySymbols.map((s: string) => ({ symbol: s, allocationPct: 0 }))
-      : []
+      ? legacySymbols
+          .filter((s): s is string => typeof s === "string" && s.trim() !== "")
+          .map((s: string) => ({ symbol: s, allocationPct: 0 }))
+      : [];
 
   return {
     theme: raw.theme || DEFAULT_STATE.theme,
-    sliders: { ...DEFAULT_SLIDERS, ...raw.sliders },
-    inputs: { ...DEFAULT_INPUTS, ...raw.inputs },
+    sliders: { ...DEFAULT_SLIDERS, ...sanitizeNumericMap(raw.sliders) },
+    inputs: { ...DEFAULT_INPUTS, ...sanitizeStringMap(raw.inputs) },
     toggles,
     stock: {
       apiUrl: stock.apiUrl || DEFAULT_STATE.stock!.apiUrl,
       holdings,
     },
-    budgetItems: raw.budgetItems ?? [],
+    budgetItems: (raw.budgetItems ?? []).filter(isValidBudgetItem),
     scenarios: raw.scenarios ?? [],
     activePage: raw.activePage ?? DEFAULT_STATE.activePage,
-  }
+  };
 }
 
 /** Removes keys whose value is undefined so they don't overwrite defaults in a spread. */
 function stripUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
-  const result: Record<string, unknown> = {}
+  const result: Record<string, unknown> = {};
   for (const [key, val] of Object.entries(obj)) {
-    if (val !== undefined) result[key] = val
+    if (val !== undefined) result[key] = val;
   }
-  return result as Partial<T>
+  return result as Partial<T>;
 }

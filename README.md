@@ -1,75 +1,58 @@
-# React + TypeScript + Vite
+# th4dev — Investment Growth Calculator
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A client-side investment planning app built with React 18, TypeScript, Vite,
+Stitches, Radix UI, and Recharts. Everything runs in the browser — no backend,
+no accounts; state persistence is opt-in via localStorage or JSON export.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Dual investment lanes (A/B)** with monthly compound growth, contributions,
+  withdrawals, fees, and inflation adjustment
+- **Partial years** — horizon, contribution stop year, and withdrawal start
+  year all accept fractional values (e.g. `10.5`), resolved to whole months
+- **Rollover** — roll Investment A's ending balance into B at A's finish year
+- **Target solver** — enter a target ending balance and the app solves for the
+  monthly withdrawal that lands on it
+- **Monte Carlo simulation** — percentile bands (P10–P90) from randomized
+  annual returns, in combined, individual, or rollover modes
+- **Portfolio capital preservation** — required share prices per holding to
+  keep pace with the projection (live quotes via a configurable stock API)
+- **FIRE calculator, budget builder, scenario snapshots, PDF export**
 
-## React Compiler
+## Development
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
+```sh
+npm install
+npm run dev        # start Vite dev server
+npm test           # run vitest suite
+npm run lint       # eslint
+npm run build      # prettier + tsc -b + vite build → dist/
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Deployment (AWS)
 
-```js
-// eslint.config.js
-import reactX from "eslint-plugin-react-x";
-import reactDom from "eslint-plugin-react-dom";
+The site deploys as a static bundle to S3 behind CloudFront.
 
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs["recommended-typescript"],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
+**Quick sync** (existing buckets/distributions):
+
+```sh
+DEV_BUCKET=... DEV_DIST_ID=... npm run deploy-dev
+IO_BUCKET=...  IO_DIST_ID=...  npm run deploy-io
+npm run deploy-all
+```
+
+**CodeBuild**: `buildspec.yml` installs, builds, and emits `dist/` as the
+artifact.
+
+**CDK** (full infrastructure — S3 + CloudFront with security headers + ACM +
+Route 53):
+
+```sh
+cd infra
+npm install
+npm run configure   # writes deploy-config.json (see deploy-config.example.json)
+npm test            # CDK assertion tests
+npm run deploy:all
 ```
 
 ## Local Subdomain Testing
@@ -82,4 +65,5 @@ This project supports subdomain-based routing in development.
 Why HTTPS is required:
 
 - Browsers enforce HTTPS for `.dev` domains via HSTS preload.
-- If you use HTTP with a `.dev` hostname, browsers will try TLS anyway and can show SSL errors.
+- If you use HTTP with a `.dev` hostname, browsers will try TLS anyway and can
+  show SSL errors.
