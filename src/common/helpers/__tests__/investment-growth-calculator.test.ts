@@ -88,13 +88,13 @@ describe("basic growth", () => {
     expect(c.calculateGrowth(false).numeric).toBeGreaterThan(10000);
   });
 
-  // Exact check: $10 000, 12 % annual (1 % / month), frozen Jan → (1.01)^24 months
-  // = 10 000 × 1.26973… → floor = 12 697
-  it("exact compound result: 10000 × (1.01)^24 at 12% for 1 year", () => {
+  // Exact check: $10 000, 12 % annual (1 % / month) → (1.01)^12 months
+  // = 10 000 × 1.12682… → floor = 11 268
+  it("exact compound result: 10000 × (1.01)^12 at 12% for 1 year", () => {
     const c = new InvestmentCalculator(
       makeProps({ projectedGain: 12, yearsOfGrowth: 1 }),
     );
-    expect(c.calculateGrowth(false).numeric).toBe(12697);
+    expect(c.calculateGrowth(false).numeric).toBe(11268);
   });
 
   it("more years produce a higher value", () => {
@@ -116,19 +116,18 @@ describe("basic growth", () => {
 // ── growth matrix ─────────────────────────────────────────────────────────────
 
 describe("getGrowthMatrix", () => {
-  it("has yearsOfGrowth+1 entries after calculateGrowth", () => {
+  it("has yearsOfGrowth entries after calculateGrowth (one per full year)", () => {
     for (const y of [0, 1, 5, 10]) {
       const c = new InvestmentCalculator(
         makeProps({ yearsOfGrowth: y, projectedGain: 0 }),
       );
       c.calculateGrowth(false);
-      expect(c.getGrowthMatrix()).toHaveLength(y + 1);
+      expect(c.getGrowthMatrix()).toHaveLength(y);
     }
   });
 
   it("year-0 entry matches the initial amount when gain is 0%", () => {
-    // With 0% gain the balance never changes.
-    // Year 0 includes the current year from month 0 (frozen Jan), so result = 10000.
+    // With 0% gain the balance never changes across the first full year.
     const c = new InvestmentCalculator(
       makeProps({ projectedGain: 0, yearsOfGrowth: 1 }),
     );
@@ -157,15 +156,15 @@ describe("getGrowthMatrix", () => {
     const c = new InvestmentCalculator(makeProps({ yearsOfGrowth: 2 }));
     c.calculateGrowth(false);
     c.calculateGrowth(false);
-    expect(c.getGrowthMatrix()).toHaveLength(3); // not 6
+    expect(c.getGrowthMatrix()).toHaveLength(2); // not 4
   });
 });
 
 // ── monthly contributions ─────────────────────────────────────────────────────
 
 describe("monthly contributions", () => {
-  // With 0% gain contributions are additive: 10000 + 12*100 + 12*100 = 12400
-  it("exact: $100/month at 0% gain for 1 year → 12400", () => {
+  // With 0% gain contributions are additive: 10000 + 12*100 = 11200
+  it("exact: $100/month at 0% gain for 1 year → 11200", () => {
     const c = new InvestmentCalculator(
       makeProps({
         projectedGain: 0,
@@ -173,7 +172,7 @@ describe("monthly contributions", () => {
         yearsOfGrowth: 1,
       }),
     );
-    expect(c.calculateGrowth(false).numeric).toBe(12400);
+    expect(c.calculateGrowth(false).numeric).toBe(11200);
   });
 
   it("contributions produce more than no contributions", () => {
@@ -246,13 +245,12 @@ describe("withdrawals (advanced mode)", () => {
 
 describe("inflation adjustment", () => {
   // With 10% inflation and 0% gain over 1 year:
-  // Year 0: inflAdj → 10000 * (1 - 0.1) = 9000
-  // Year 1: inflAdj → 9000 * (1 - 0.1) = 8100
-  it("exact: 10% inflation, 0% gain, 1 year → inflation-adjusted = 8100", () => {
+  // inflAdj → 10000 * (1 - 0.1) = 9000
+  it("exact: 10% inflation, 0% gain, 1 year → inflation-adjusted = 9000", () => {
     const c = new InvestmentCalculator(
       makeProps({ projectedGain: 0, depreciationRate: 10, yearsOfGrowth: 1 }),
     );
-    expect(c.calculateGrowth(true).numeric).toBe(8100);
+    expect(c.calculateGrowth(true).numeric).toBe(9000);
   });
 
   it("inflation-adjusted value is less than nominal", () => {
@@ -337,7 +335,8 @@ describe("edge cases – zero years, large amounts, mixed cashflows", () => {
     );
     expect(c.calculateGrowth(false).numeric).toBe(10000);
     c.calculateGrowth(false);
-    expect(c.getGrowthMatrix()).toHaveLength(1);
+    // No months are simulated for a 0-year horizon, so no data points.
+    expect(c.getGrowthMatrix()).toHaveLength(0);
   });
 
   it("very large initial amount (1 billion) does not overflow", () => {
@@ -355,8 +354,7 @@ describe("edge cases – zero years, large amounts, mixed cashflows", () => {
 
   it("contributions and withdrawals applied simultaneously", () => {
     // 0% gain: each month +200 contribution and -100 withdrawal → net +100/month
-    // year 0: 12 months → 10000 + 12*200 - 12*100 = 11200
-    // year 1: 12 months → 11200 + 12*200 - 12*100 = 12400
+    // 1 year → 12 months → 10000 + 12*200 - 12*100 = 11200
     const c = new InvestmentCalculator(
       makeProps({
         projectedGain: 0,
@@ -368,8 +366,8 @@ describe("edge cases – zero years, large amounts, mixed cashflows", () => {
       }),
     );
     const result = c.calculateGrowth(false).numeric;
-    // Net contribution is +100/month × 24 months = +2400
-    expect(result).toBe(12400);
+    // Net contribution is +100/month × 12 months = +1200
+    expect(result).toBe(11200);
   });
 
   it("yearContributionsStop of 0 is treated as no-stop (falsy guard)", () => {
@@ -419,13 +417,13 @@ describe("partial years", () => {
     expect(calc(1.5)).toBeLessThan(calc(2));
   });
 
-  it("exact: 12% gain for 1.5 years compounds 30 months (frozen Jan)", () => {
-    // Year 0 = 12 months, year 1 = 12 months, partial = 6 months → (1.01)^30
+  it("exact: 12% gain for 1.5 years compounds 18 months", () => {
+    // 1 full year = 12 months, partial = 6 months → (1.01)^18
     const c = new InvestmentCalculator(
       makeProps({ projectedGain: 12, yearsOfGrowth: 1.5 }),
     );
     expect(c.calculateGrowth(false).numeric).toBe(
-      Math.floor(10000 * Math.pow(1.01, 30)),
+      Math.floor(10000 * Math.pow(1.01, 18)),
     );
   });
 
@@ -434,8 +432,8 @@ describe("partial years", () => {
       makeProps({ projectedGain: 0, yearsOfGrowth: 2.5 }),
     );
     c.calculateGrowth(false);
-    // Years 0, 1, 2 plus the trailing 6-month point
-    expect(c.getGrowthMatrix()).toHaveLength(4);
+    // Full years 1, 2 plus the trailing 6-month partial point
+    expect(c.getGrowthMatrix()).toHaveLength(3);
   });
 
   it("final matrix point lands 6 months after the last full year", () => {
@@ -467,8 +465,8 @@ describe("partial years", () => {
   });
 
   it("fractional withdrawal start year begins after the right month count", () => {
-    // Start at 0.5 years within a 1-year (24-month, frozen Jan) horizon →
-    // withdrawals for months 6..23 = 18 × $100
+    // Start at 0.5 years within a 1-year (12-month) horizon →
+    // withdrawals for months 6..11 = 6 × $100
     const c = new InvestmentCalculator(
       makeProps({
         projectedGain: 0,
@@ -478,7 +476,7 @@ describe("partial years", () => {
         advanced: true,
       }),
     );
-    expect(c.calculateGrowth(false).numeric).toBe(8200);
+    expect(c.calculateGrowth(false).numeric).toBe(9400);
   });
 
   it("rollover fires for a fractional rollover year", () => {
@@ -495,12 +493,12 @@ describe("partial years", () => {
   });
 
   it("partial-year inflation adjustment is pro-rated", () => {
-    // 10% inflation, 0% gain, 0.5 years → year 0 full adjustment (×0.9),
-    // partial 6 months → ×0.9^0.5
+    // 10% inflation, 0% gain, 0.5 years → a single 6-month partial
+    // adjustment, pro-rated as ×0.9^0.5 (no full-year chunk is processed)
     const c = new InvestmentCalculator(
       makeProps({ projectedGain: 0, depreciationRate: 10, yearsOfGrowth: 0.5 }),
     );
-    const expected = Math.floor(10000 * 0.9 * Math.pow(0.9, 0.5));
+    const expected = Math.floor(10000 * Math.pow(0.9, 0.5));
     expect(c.calculateGrowth(true).numeric).toBe(expected);
   });
 });

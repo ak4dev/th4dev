@@ -433,6 +433,66 @@ describe("partial (fractional) years", () => {
       expect(Number.isFinite(b.p50)).toBe(true);
     }
   });
+
+  it("does not double-count A's balance at the fractional rollover's floor-year checkpoint", () => {
+    // Regression test: injectionMonth used to be computed as
+    // toMonths(rolloverYear - 1), which for a fractional rolloverYear
+    // rounds to a month *before* the floor-year checkpoint is recorded,
+    // making that checkpoint add A on top of a B that already contains
+    // the injected A (double count) before dropping A the following year.
+    const paramsA = {
+      ...baseParams,
+      initialAmount: 100000,
+      yearsOfGrowth: 10,
+      volatility: 0,
+      simCount: 1,
+    };
+    const paramsB = {
+      ...baseParams,
+      initialAmount: 100000,
+      yearsOfGrowth: 10,
+      volatility: 0,
+      simCount: 1,
+    };
+    const bands = runRolloverSimulation(paramsA, paramsB, 4.5);
+    // The floor-year checkpoint (year 4) is still pre-rollover — the
+    // injection hasn't landed yet — so it should track the combined
+    // (non-rollover) sum, not spike above it.
+    const combinedBands = runCombinedSimulation(paramsA, paramsB);
+    expect(bands[4].p50).toBeCloseTo(combinedBands[4].p50, 0);
+    // Year 5 is past the rollover point and should exceed the combined
+    // sum, since A's value is now compounding inside B.
+    expect(bands[5].p50).toBeGreaterThan(combinedBands[5].p50);
+  });
+
+  it("applies the rollover injection for a rollover year below 1", () => {
+    // Regression test: injectionMonth used to be
+    // toMonths(rolloverYear - 1), which for rolloverYear < 1 rounds to a
+    // negative month that the simulation loop (month >= 0) never reaches,
+    // silently dropping the entire rollover.
+    const paramsA = {
+      ...baseParams,
+      initialAmount: 100000,
+      yearsOfGrowth: 5,
+      volatility: 0,
+      simCount: 1,
+    };
+    const paramsB = {
+      ...baseParams,
+      initialAmount: 100000,
+      yearsOfGrowth: 5,
+      volatility: 0,
+      simCount: 1,
+    };
+    const bands = runRolloverSimulation(paramsA, paramsB, 0.5);
+    // By year 1, the rollover should already have landed, so the balance
+    // should exceed B's own initial amount grown alone for a year plus A's
+    // un-invested initial (i.e. it must include A's injected, compounding value).
+    const bPlainInitialGrowth = 100000 * Math.pow(1 + 0.1 / 12, 12);
+    expect(bands[1].p50).toBeGreaterThan(
+      bPlainInitialGrowth + paramsA.initialAmount,
+    );
+  });
 });
 
 describe("computeBands edge cases", () => {

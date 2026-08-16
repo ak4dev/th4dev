@@ -111,7 +111,13 @@ function simulateOnce(
   const stopYear = contributionStopYear || yearsOfGrowth;
   const contributionEndMonth = toMonths(stopYear - 1);
   const withdrawalStartMonth = Math.max(0, toMonths(withdrawalStartYear - 1));
-  const injectionMonth = injection ? toMonths(injection.year - 1) : -1;
+  // Injection lands in the last month of the rollover year's processing
+  // block, so it's already reflected in that year's checkpoint (matching
+  // the "rollover at year N shows up in year N's snapshot" convention).
+  // Must round injection.year to months first, then subtract — subtracting
+  // a whole year before rounding breaks fractional years (e.g. year 0.5
+  // would round to a negative month and the injection would never fire).
+  const injectionMonth = injection ? toMonths(injection.year) - 1 : -1;
 
   const monthlyFeeRate = annualFee / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
   let monthlyRate = 0;

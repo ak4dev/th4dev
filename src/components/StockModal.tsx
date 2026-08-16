@@ -236,7 +236,9 @@ export default function StockModal({
     const incoming = addInput
       .split(",")
       .map((s) => s.trim().toUpperCase())
-      .filter((s) => s && !symbols.includes(s));
+      .filter(
+        (s, i, arr) => s && !symbols.includes(s) && arr.indexOf(s) === i,
+      );
     if (incoming.length) {
       setHoldings([
         ...holdings,

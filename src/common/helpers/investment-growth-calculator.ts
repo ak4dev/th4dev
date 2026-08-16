@@ -29,7 +29,6 @@ import {
 export class InvestmentCalculator {
   private readonly props: InvestmentCalculatorProps;
   private readonly today: Date = new Date();
-  private readonly currentMonth: number = this.today.getMonth();
   private readonly growthMatrix: LineGraphEntry[] = [];
   private cumulativeFees: number = 0;
   /** Absolute months elapsed since today while simulating */
@@ -75,10 +74,10 @@ export class InvestmentCalculator {
       Math.round(this.props.yearsOfGrowth * MONTHS_PER_YEAR) -
       fullYears * MONTHS_PER_YEAR;
 
-    // Calculate growth year by year (whole years)
-    for (let year = 0; year <= fullYears; year++) {
+    // Calculate growth year by year (whole years), rolling from today —
+    // year 0 covers months 0-11 from today, year 1 covers months 12-23, etc.
+    for (let year = 0; year < fullYears; year++) {
       const result = this.calculateYearGrowth(
-        year,
         nominalAmount,
         inflationAdjustedAmount,
         monthlyGrowthRate,
@@ -90,7 +89,7 @@ export class InvestmentCalculator {
 
       // Store data point for charting
       this.addGrowthDataPoint(
-        addYears(this.today, year),
+        addYears(this.today, year + 1),
         nominalAmount,
         inflationAdjustedAmount,
         showInflation,
@@ -100,7 +99,6 @@ export class InvestmentCalculator {
     // Process the final partial year, if any (e.g. the ".5" in 10.5 years)
     if (extraMonths > 0) {
       const result = this.calculateYearGrowth(
-        fullYears + 1,
         nominalAmount,
         inflationAdjustedAmount,
         monthlyGrowthRate,
@@ -235,7 +233,6 @@ export class InvestmentCalculator {
   /**
    * Calculates growth for a single year (or partial final year) including all
    * monthly operations
-   * @param year - The year number (0-based)
    * @param startingNominal - Starting nominal amount
    * @param startingInflationAdjusted - Starting inflation-adjusted amount
    * @param monthlyGrowthRate - Monthly growth rate as decimal
@@ -243,7 +240,6 @@ export class InvestmentCalculator {
    * @returns Object containing nominal and inflation-adjusted amounts
    */
   private calculateYearGrowth(
-    year: number,
     startingNominal: number,
     startingInflationAdjusted: number,
     monthlyGrowthRate: number,
@@ -252,12 +248,8 @@ export class InvestmentCalculator {
     let nominal = startingNominal;
     let inflationAdjusted = startingInflationAdjusted;
 
-    // Determine starting month (current month for year 0, January for subsequent years)
-    const startMonth = year === 0 ? this.currentMonth : 0;
-    const endMonth = Math.min(startMonth + monthsToProcess, MONTHS_PER_YEAR);
-
-    // Process each month in the year
-    for (let month = startMonth; month < endMonth; month++) {
+    // Process each month in this chunk (rolling from today, not calendar-aligned)
+    for (let month = 0; month < monthsToProcess; month++) {
       // Apply withdrawals first
       if (this.shouldApplyWithdrawal()) {
         nominal -= this.props.monthlyWithdrawal;
@@ -384,9 +376,9 @@ export class InvestmentCalculator {
 
   /**
    * Determines if the one-time rollover should be applied after the month that
-   * was just processed. The rollover lands at the end of calendar year
-   * `yearOfRollover` (matching the year-end data point), with fractional years
-   * extending that boundary by whole months.
+   * was just processed. The rollover lands `yearOfRollover` years (fractional
+   * years resolve to whole months) from today, matching shouldApplyWithdrawal
+   * and shouldApplyContribution's rolling-month semantics.
    * @returns True if rollover should be applied now
    */
   private shouldApplyRollover(): boolean {
@@ -399,10 +391,9 @@ export class InvestmentCalculator {
       return false;
     }
 
-    const rolloverMonth =
-      MONTHS_PER_YEAR -
-      this.currentMonth +
-      InvestmentCalculator.toMonths(this.props.yearOfRollover);
+    const rolloverMonth = InvestmentCalculator.toMonths(
+      this.props.yearOfRollover,
+    );
 
     return this.monthsElapsed === rolloverMonth;
   }

@@ -69,9 +69,11 @@ describe("solveForWithdrawal", () => {
     });
     const actual = calc.calculateGrowth(false).numeric;
 
-    // The withdrawal is rounded to nearest dollar; use ±0.5% tolerance.
-    expect(actual).toBeGreaterThanOrEqual(target * 0.995);
-    expect(actual).toBeLessThanOrEqual(target * 1.005);
+    // The withdrawal is rounded to the nearest dollar, and over a 10-year
+    // (120-month) horizon that up-to-$0.50 rounding error compounds monthly
+    // with the rest of the balance — use ±1% tolerance to accommodate it.
+    expect(actual).toBeGreaterThanOrEqual(target * 0.99);
+    expect(actual).toBeLessThanOrEqual(target * 1.01);
   });
 
   it("higher withdrawal → lower final balance (monotonicity)", () => {
