@@ -6,7 +6,6 @@ import React, { useState } from "react";
 import { format } from "date-fns";
 import * as Icons from "@radix-ui/react-icons";
 import * as Dialog from "@radix-ui/react-dialog";
-import * as Switch from "@radix-ui/react-switch";
 import { styled, keyframes } from "../../../stitches.config";
 import { compactModernInputStyles } from "../../common/constants/input-styles";
 import {
@@ -157,41 +156,26 @@ const CloseButton = styled(Dialog.Close, {
   "&:hover": { color: "$foreground" },
 });
 
-const EncryptRow = styled("div", {
+const EncryptToggleButton = styled("button", {
+  all: "unset",
+  color: "$comment",
+  padding: "0.75rem",
+  marginBottom: "0.5rem",
+  cursor: "pointer",
+  borderRadius: 5,
   display: "flex",
   alignItems: "center",
-  justifyContent: "space-between",
-  gap: "0.75rem",
-  padding: "0.5rem 0.75rem",
-  marginBottom: "0.25rem",
-});
-
-const EncryptLabel = styled("span", {
-  fontSize: "0.8rem",
-  color: "$foreground",
-});
-
-const SwitchRoot = styled(Switch.Root, {
-  all: "unset",
-  width: 36,
-  height: 20,
-  backgroundColor: "$comment",
-  borderRadius: "9999px",
-  position: "relative",
-  cursor: "pointer",
-  flexShrink: 0,
-  "&[data-state='checked']": { backgroundColor: "$purple" },
-});
-
-const SwitchThumb = styled(Switch.Thumb, {
-  display: "block",
-  width: 16,
-  height: 16,
-  backgroundColor: "$foreground",
-  borderRadius: "9999px",
-  transition: "transform 0.2s",
-  transform: "translateX(2px)",
-  "[data-state='checked'] &": { transform: "translateX(18px)" },
+  justifyContent: "center",
+  transition: "background-color 0.2s ease, color 0.2s ease",
+  "&:hover": {
+    backgroundColor: "$purple",
+    color: "$foreground",
+  },
+  variants: {
+    enabled: {
+      true: { color: "$green" },
+    },
+  },
 });
 
 /* ==================================================
@@ -358,15 +342,22 @@ export default function StateIOButtons({ getState, setState }: Props) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
-      <EncryptRow title="Encrypt exported files with a password so the saved numbers aren't stored in plain text">
-        <EncryptLabel>Encrypt export</EncryptLabel>
-        <SwitchRoot
-          checked={encryptExports}
-          onCheckedChange={setEncryptExports}
-        >
-          <SwitchThumb />
-        </SwitchRoot>
-      </EncryptRow>
+      <EncryptToggleButton
+        enabled={encryptExports}
+        onClick={() => setEncryptExports((v) => !v)}
+        title={
+          encryptExports
+            ? "Encrypted export: on — exported files are password-protected"
+            : "Encrypted export: off — exported files are plain text"
+        }
+        aria-pressed={encryptExports}
+      >
+        {encryptExports ? (
+          <Icons.LockClosedIcon width={20} height={20} />
+        ) : (
+          <Icons.LockOpen2Icon width={20} height={20} />
+        )}
+      </EncryptToggleButton>
 
       {/* Export button */}
       <SidebarButton onClick={handleExport} title="Export JSON">
