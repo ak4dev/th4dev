@@ -11,9 +11,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "sync": "aws s3 sync ./dist/assets/ s3://$BUCKET/assets/ --cache-control 'public, max-age=31536000, immutable' && aws s3 sync ./dist/ s3://$BUCKET --exclude 'assets/*' --cache-control 'no-cache, must-revalidate' && aws cloudfront create-invalidation --distribution-id $DIST_ID --paths '/*'",
-    "deploy-dev": "npm run build && BUCKET=$DEV_BUCKET DIST_ID=$DEV_DIST_ID npm run sync",
-    "deploy-io": "npm run build && BUCKET=$IO_BUCKET DIST_ID=$IO_DIST_ID npm run sync",
-    "deploy-all": "npm run build && BUCKET=$DEV_BUCKET DIST_ID=$DEV_DIST_ID npm run sync && BUCKET=$IO_BUCKET DIST_ID=$IO_DIST_ID npm run sync",
+    "deploy": "npm run build && BUCKET=$TH4_BUCKET DIST_ID=$TH4_DIST_ID npm run sync",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -41,7 +39,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
-    "prettier": "^3.9.6",
+    "prettier": "3.9.6",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.48.0",
     "vite": "^8.0.0-beta.13",

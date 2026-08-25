@@ -232,9 +232,11 @@ function computeTargetPriceToday(
  * Investment A and, while advanced mode is on, one for Investment B.
  */
 export interface PortfolioLane {
-  /** Balance today — the calculator's starting amount (year-0 row of the schedule) */
-  initialValue: number;
-  /** Projected ending balance from the calculator — the total the projection preserves */
+  /**
+   * Portfolio value today — the calculator's starting amount. Every required
+   * price is derived from it, so the projection chart, the target prices and
+   * the preservation schedule all share one base.
+   */
   portfolioValue: number;
   /**
    * Effective monthly withdrawal in USD. With dynamic withdrawal on this is
@@ -472,7 +474,7 @@ export default function PortfolioPanel({
       {/* Capital preservation schedule — requires fetched prices */}
       <CapitalPreservationSchedule
         growthMatrix={active.growthMatrix}
-        initialValue={active.initialValue}
+        initialValue={active.portfolioValue}
         holdings={holdings}
         withdrawalStartYear={active.withdrawalStartYear}
         monthlyWithdrawal={active.monthlyWithdrawal}

@@ -58,6 +58,10 @@ describe("invalid input", () => {
     expect(numeric({ currentAmount: "-500" })).toBe(0);
   });
 
+  it("returns 0 for whitespace-only currentAmount", () => {
+    expect(numeric({ currentAmount: " " })).toBe(0);
+  });
+
   it("returns 0 when projectedGain exceeds MAX", () => {
     expect(numeric({ projectedGain: MAX_PROJECTED_GAIN + 1 })).toBe(0);
   });

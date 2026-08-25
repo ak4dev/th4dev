@@ -43,6 +43,24 @@ const FEATURES: ReadonlyArray<readonly [string, string]> = [
     "FIRE, Budget, Scenarios, PDF",
     "FIRE number and years to FIRE, a monthly budget by category that feeds FIRE, named snapshots for side-by-side comparison, and a downloadable PDF report.",
   ],
+  [
+    "Themes",
+    "the theme switcher applies the selected palette across the app and persists it when local storage is enabled.",
+  ],
+];
+
+const STEPS: ReadonlyArray<string> = [
+  "Start with Investment A: current amount, expected annual return, and time horizon. Year fields accept partial years such as 10.5.",
+  "Enable Advanced to unlock monthly contributions, contribution stop year, withdrawals, withdrawal start year, the tool toggles, and the Investment B comparison lane.",
+  "Use Target Value to solve backwards for the monthly withdrawal that lands on a chosen ending balance (hidden while Dynamic Withdrawal is on).",
+  "Toggle Inflated for inflation-adjusted numbers and Rollover to roll A into B at A's finish year.",
+  "Toggle Portfolio to map the calculated total into a stock allocation model: add symbols, fetch prices, set allocations to 100%, and read the capital preservation schedule.",
+];
+
+const OUTPUTS: ReadonlyArray<string> = [
+  "Click an ending total to open the year-by-year table with nominal value, inflation-adjusted value, and percent change.",
+  "The projection chart overlays Investment A and B, highlights weak performance, and shows dashed target lines.",
+  "Info panels surface target hit timing, contribution and withdrawal milestones, and preservation timing.",
 ];
 
 const SHORTCUTS: ReadonlyArray<readonly [readonly string[], string]> = [
@@ -202,6 +220,24 @@ export default function LandingReadme({
             <li key={name}>
               <strong>{name}</strong> — {text}
             </li>
+          ))}
+        </FeatureList>
+      </Section>
+
+      <Section>
+        <Heading>How to use it</Heading>
+        <FeatureList as="ol">
+          {STEPS.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </FeatureList>
+      </Section>
+
+      <Section>
+        <Heading>Outputs</Heading>
+        <FeatureList>
+          {OUTPUTS.map((output) => (
+            <li key={output}>{output}</li>
           ))}
         </FeatureList>
       </Section>

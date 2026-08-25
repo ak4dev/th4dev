@@ -164,8 +164,10 @@ filingStatus)` — greedy algorithm: withdraw from taxable first
 - New toggle: `taxWithdrawal: boolean` in `TogglesState`
 - Visible only when `toggles.fire === true` (nested under FIRE)
 - Follow standard toggle addition pattern (`TogglesState` in types.ts,
-  `DEFAULT_TOGGLES` + `isValidTH4State` in state-manager.ts, `SwitchRow`
-  in InvestmentCalculatorModern.tsx)
+  `DEFAULT_TOGGLES` in state-manager.ts — `isValidTH4State` needs no
+  change, it iterates `DEFAULT_TOGGLES`). Because this toggle is nested
+  under FIRE it is not a flat `TOOL_TOGGLES` row: render its switch
+  conditionally in the FIRE section of InvestmentCalculatorModern.tsx
 
 ### Test File
 
@@ -539,13 +541,14 @@ Feature 5 aggregates data from all other features.
 
 All features follow these project conventions:
 
-- TypeScript strict mode, no semicolons
+- TypeScript strict mode, Prettier-formatted (`npm run format`)
 - Stitches for styled components, Radix UI for interactive primitives
 - Number inputs use `inputStyles` from `src/common/constants/input-styles.ts`
 - Spinner-free inputs: `type="text"` with `inputMode="decimal"`
-- Toggles: add to `TogglesState` (types.ts only — never redeclare it),
-  `DEFAULT_TOGGLES` and `isValidTH4State` backward-compat (state-manager.ts),
-  `SwitchRow` in the hub's Tools section
+- Toggles: add to `TogglesState` (types.ts only — never redeclare it) and
+  `DEFAULT_TOGGLES` (state-manager.ts; `isValidTH4State` iterates
+  `DEFAULT_TOGGLES`, so backward-compat is automatic), then an entry in
+  `TOOL_TOGGLES` for the hub's Tools section
 - Tests: Vitest with `describe`/`it`/`expect`, mock localStorage,
   one describe per exported function, edge cases included
 - No emojis in UI text

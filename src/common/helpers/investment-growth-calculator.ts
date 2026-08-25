@@ -89,7 +89,9 @@ export class InvestmentCalculator {
     this.cumulativeFees = 0;
     this.monthsElapsed = 0;
     this.dynamicMonthly = 0;
-    this.nominal = parseInt(this.props.currentAmount || "0") || 0;
+    // isValidInput() guarantees currentAmount is set; parseInt still yields NaN
+    // for whitespace-only input, which Number() accepts as 0
+    this.nominal = parseInt(this.props.currentAmount!) || 0;
     this.inflationAdjusted = this.nominal;
     // A rollover due at month 0 lands before the first month is simulated
     this.applyRolloverIfDue();

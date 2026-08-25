@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { addMonths, addYears } from "date-fns";
-import { buildChartRows, buildTableRows } from "../growth-rows";
+import { buildChartRows, buildTableRows, endingAmounts } from "../growth-rows";
 import { InvestmentCalculator } from "../investment-growth-calculator";
 import type { LineGraphEntry } from "../../types/types";
-import type { PercentileBand } from "../monte-carlo";
+import { runRolloverSimulation, type PercentileBand } from "../monte-carlo";
 
 const TODAY = new Date(2026, 0, 15);
 
@@ -93,7 +93,51 @@ describe("buildChartRows", () => {
     expect(rows).toHaveLength(4);
     expect(rows[3].investmentA).toBe(1270);
     expect(rows[3].mc?.p50).toBe(1270);
-    expect(rows[3].date).toBe("2028");
+    expect(rows[3].date).toBe("2028-07");
+  });
+
+  it("gives each lane's partial year its own row instead of pairing by index", () => {
+    const build = (years: number) => {
+      const calc = new InvestmentCalculator({
+        currentAmount: "10000",
+        projectedGain: 10,
+        yearsOfGrowth: years,
+        monthlyContribution: 0,
+        monthlyWithdrawal: 0,
+        yearWithdrawalsBegin: 0,
+        maxMonthlyWithdrawal: 10000,
+        depreciationRate: 0,
+      });
+      calc.calculateGrowth(false);
+      return calc.getGrowthMatrix();
+    };
+    const matrixA = build(10.5);
+    const matrixB = build(12);
+    const rows = buildChartRows({
+      matrixA,
+      matrixB,
+      advanced: true,
+      initialA: 10000,
+      initialB: 10000,
+      bands: {},
+    });
+
+    // A's 10.5-year point sits alone, half a year after the shared 2036 row
+    const partialA = matrixA[matrixA.length - 1];
+    const partialRow = rows.find((r) => r.date === "2036-07");
+    expect(partialRow).toMatchObject({
+      investmentA: partialA.y,
+      investmentB: null,
+    });
+
+    // B's 11-year point keeps its own year rather than landing on A's partial
+    const yearElevenB = matrixB[10];
+    expect(rows.find((r) => r.investmentB === yearElevenB.y)?.date).toBe(
+      "2037",
+    );
+    expect(rows.map((r) => r.date)).toEqual([
+      ...new Set(rows.map((r) => r.date)),
+    ]);
   });
 
   it("matches the real calculator's matrix convention", () => {
@@ -124,7 +168,7 @@ describe("buildChartRows", () => {
     expect(rows[1].investmentA).toBeGreaterThan(10000);
   });
 
-  it("pads null rows up to the last band year for offset B bands", () => {
+  it("creates rows for band years past the end of the matrices", () => {
     const rows = buildChartRows({
       matrixA: yearlyMatrix([1100, 1210]),
       advanced: true,
@@ -215,5 +259,70 @@ describe("buildTableRows", () => {
       expect(row.nominal).toBeGreaterThan(row.inflationAdjusted);
       expect(row.pctChange).toBeGreaterThan(0);
     });
+  });
+});
+
+describe("endingAmounts", () => {
+  const laneProps = (currentAmount: string, yearsOfGrowth: number) => ({
+    currentAmount,
+    projectedGain: 10,
+    yearsOfGrowth,
+    monthlyContribution: 0,
+    monthlyWithdrawal: 0,
+    yearWithdrawalsBegin: 0,
+    maxMonthlyWithdrawal: 10000,
+    depreciationRate: 0,
+  });
+
+  it("resolves the nominal track by the inflation toggle", () => {
+    const matrix = [entry(addYears(TODAY, 1), 14496, 16453)];
+    expect(endingAmounts(matrix, true, 10000)).toEqual({
+      nominal: 16453,
+      inflationAdjusted: 14496,
+    });
+    expect(endingAmounts(matrix, false, 10000)).toEqual({
+      nominal: 14496,
+      inflationAdjusted: 16453,
+    });
+  });
+
+  it("rolls a 0-year lane's starting balance into the receiving lane", () => {
+    const laneA = new InvestmentCalculator(laneProps("50000", 0));
+    laneA.calculateGrowth(false);
+    // A 0-year horizon simulates no chunks, so there is no matrix to read
+    expect(laneA.getGrowthMatrix()).toHaveLength(0);
+
+    const ending = endingAmounts(laneA.getGrowthMatrix(), false, 50000);
+    expect(ending).toEqual({ nominal: 50000, inflationAdjusted: 50000 });
+
+    const laneB = new InvestmentCalculator({
+      ...laneProps("20000", 5),
+      rollOver: true,
+      investmentToRoll: ending,
+      yearOfRollover: 0,
+    });
+    const finalB = laneB.calculateGrowth(false).numeric;
+    expect(finalB).toBeGreaterThan(115000);
+
+    // The deterministic line must agree with Monte Carlo at zero volatility
+    const mcParams = (initialAmount: number, yearsOfGrowth: number) => ({
+      initialAmount,
+      projectedGain: 10,
+      yearsOfGrowth,
+      monthlyContribution: 0,
+      monthlyWithdrawal: 0,
+      withdrawalStartYear: 0,
+      depreciationRate: 0,
+      showInflation: false,
+      volatility: 0,
+      simCount: 5,
+      seed: 1,
+    });
+    const bands = runRolloverSimulation(
+      mcParams(50000, 0),
+      mcParams(20000, 5),
+      0,
+    );
+    expect(bands.at(-1)?.p50).toBe(finalB);
   });
 });

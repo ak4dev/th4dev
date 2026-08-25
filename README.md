@@ -37,13 +37,13 @@ The site deploys as a static bundle to S3 behind CloudFront. Hashed files
 under `assets/` are uploaded with a one-year immutable cache header; everything
 else (`index.html`) is `no-cache`, so a new deploy is picked up immediately.
 
-**Quick sync** (existing buckets/distributions):
+**Quick sync** (existing bucket/distribution):
 
 ```sh
-DEV_BUCKET=... DEV_DIST_ID=... npm run deploy-dev
-IO_BUCKET=...  IO_DIST_ID=...  npm run deploy-io
-npm run deploy-all
+TH4_BUCKET=... TH4_DIST_ID=... npm run deploy
 ```
+
+`th4.dev` (and `*.th4.dev`) is the only deployment target.
 
 **CodeBuild**: `buildspec.yml` installs, builds, and emits `dist/` as the
 artifact.

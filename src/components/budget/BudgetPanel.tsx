@@ -348,6 +348,9 @@ export default function BudgetPanel({
   const [withdrawalSet, setWithdrawalSet] = useState(0);
   // Range frozen for the item being dragged, so the max does not chase its own value
   const [drag, setDrag] = useState<{ id: string; max: number } | null>(null);
+  // Only the item that installed the freeze may release it: pressing another
+  // slider moves focus, and that blur must not clear the new item's freeze
+  const releaseDrag = (id: string) => setDrag((d) => (d?.id === id ? null : d));
 
   const monthlyTotal = getMonthlyTotal(items);
   const annualTotal = getAnnualTotal(items);
@@ -512,9 +515,9 @@ export default function BudgetPanel({
                   onPointerDown={() =>
                     setDrag({ id: item.id, max: sliderMax(item.amount) })
                   }
-                  onPointerUp={() => setDrag(null)}
-                  onPointerCancel={() => setDrag(null)}
-                  onBlur={() => setDrag(null)}
+                  onPointerUp={() => releaseDrag(item.id)}
+                  onPointerCancel={() => releaseDrag(item.id)}
+                  onBlur={() => releaseDrag(item.id)}
                   onValueChange={([amount]) =>
                     setItems(updateBudgetItem(item.id, { amount }, items))
                   }

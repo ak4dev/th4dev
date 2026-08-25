@@ -52,6 +52,7 @@ import {
   type MonteCarloParams,
   type PercentileBand,
 } from "../common/helpers/monte-carlo";
+import { endingAmounts } from "../common/helpers/growth-rows";
 import { normalizeState } from "../common/helpers/state-manager";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
 import type {
@@ -472,6 +473,7 @@ function buildLane(
   const key = (name: string) => `${name}${id}`;
   const currentAmount =
     inputs[key("currentAmount")] || String(DEFAULT_INITIAL_AMOUNT);
+  const start = parseInt(currentAmount) || 0;
   const years = s[key("yearsOfGrowth")] ?? DEFAULT_YEARS_OF_GROWTH;
   const dynamic = isDynamic(t);
   const props: InvestmentCalculatorProps = {
@@ -502,12 +504,7 @@ function buildLane(
   const calc = new InvestmentCalculator(props);
   const total = calc.calculateGrowth(t.showInflation).numeric;
   const matrix = calc.getGrowthMatrix();
-  const last = matrix.at(-1);
-  const ending: RolloverAmounts = last
-    ? t.showInflation
-      ? { nominal: last.alternateY, inflationAdjusted: last.y }
-      : { nominal: last.y, inflationAdjusted: last.alternateY }
-    : { nominal: 0, inflationAdjusted: 0 };
+  const ending = endingAmounts(matrix, t.showInflation, start);
   const withdrawals = calc.getWithdrawalSchedule().filter((m) => m > 0);
 
   // The target slider spans up to the no-withdrawal ending balance. Targets
@@ -535,7 +532,7 @@ function buildLane(
   return {
     id,
     props,
-    initialAmount: parseInt(currentAmount) || 0,
+    initialAmount: start,
     calc,
     total,
     matrix,
@@ -568,8 +565,7 @@ function buildLanes(ctx: LaneContext): { A: Lane; B: Lane } {
 }
 
 const portfolioLane = (l: Lane): PortfolioLane => ({
-  initialValue: l.initialAmount,
-  portfolioValue: l.total,
+  portfolioValue: l.initialAmount,
   monthlyWithdrawal: l.withdrawals[0] ?? 0,
   projectedGain: l.props.projectedGain,
   withdrawalStartYear: l.props.yearWithdrawalsBegin,
@@ -628,17 +624,12 @@ function runMonteCarlo({ a, b, mode, rolloverYear }: McInput): {
       };
     case "combined":
       return { mcBandsA: runCombinedSimulation(a, b), mcBandsB: [] };
-    case "individual": {
-      // Round so fractional A horizons still align with integer chart years
-      const offsetYears = Math.round(a.yearsOfGrowth);
+    case "individual":
+      // Each lane's bands index its own path, so B's cone tracks B's own line
       return {
         mcBandsA: runMonteCarloSimulation(a),
-        mcBandsB: runMonteCarloSimulation(b).map((band) => ({
-          ...band,
-          year: band.year + offsetYears,
-        })),
+        mcBandsB: runMonteCarloSimulation(b),
       };
-    }
     default:
       return { mcBandsA: runMonteCarloSimulation(a), mcBandsB: [] };
   }

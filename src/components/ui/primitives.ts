@@ -113,6 +113,18 @@ export const DialogContent = styled(Dialog.Content, {
   variants: {
     size: {
       sm: { width: "min(380px, 90vw)" },
+      // Scrolling shell for content that brings its own chrome. Width hugs
+      // that content: any excess is transparent but still inside the content
+      // box, so clicks there would not dismiss the dialog.
+      lg: {
+        width: "fit-content",
+        maxWidth: "95vw",
+        maxHeight: "90vh",
+        overflowY: "auto",
+        backgroundColor: "transparent",
+        border: "none",
+        padding: 0,
+      },
     },
   },
 });

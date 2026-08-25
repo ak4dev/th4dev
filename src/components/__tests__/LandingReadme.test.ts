@@ -56,6 +56,23 @@ describe("LandingReadme", () => {
     expect(markup).toMatch(/percentage of the balance.*floor.*ceiling/);
   });
 
+  it("keeps the walkthrough and output guidance in the page", () => {
+    const markup = html(false);
+    for (const phrase of [
+      "How to use it",
+      "Investment A",
+      "Advanced",
+      "Target Value",
+      "Rollover",
+      "Outputs",
+      "year-by-year",
+      "dashed target lines",
+    ]) {
+      expect(markup).toContain(phrase);
+    }
+    expect(markup).toContain("<ol");
+  });
+
   it("documents the global keyboard shortcuts", () => {
     const markup = html(false);
     for (const key of ["Ctrl", "Shift", "F", "S", "H", "Enter"]) {

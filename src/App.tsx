@@ -4,13 +4,13 @@
 
 import { useState, useEffect, useMemo } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { styled, themeClasses, keyframes } from "../stitches.config";
+import { styled, themeClasses } from "../stitches.config";
 import { ThemeSelector } from "./components/ThemeSwitcher";
 import StateIOPopover from "./components/sidebar/StateIOPopover";
 import SubdomainRouter from "./components/SubdomainRouter";
 import StockModal from "./components/StockModal";
 import LandingReadme from "./components/LandingReadme";
-import { DialogOverlay } from "./components/ui/primitives";
+import { DialogContent, DialogOverlay } from "./components/ui/primitives";
 import {
   DEFAULT_STATE,
   isValidTH4State,
@@ -44,28 +44,13 @@ const Content = styled("div", {
   overflow: "auto",
 });
 
-const contentShow = keyframes({
-  from: { opacity: 0, transform: "translate(-50%, -52%) scale(0.97)" },
-  to: { opacity: 1, transform: "translate(-50%, -50%) scale(1)" },
-});
-
+// The help dialog sits above the stock modal's layer
 const HelpOverlay = styled(DialogOverlay, {
   backgroundColor: "rgba(0,0,0,0.65)",
   zIndex: 200,
 });
 
-const HelpContent = styled(Dialog.Content, {
-  position: "fixed",
-  top: "50%",
-  left: "50%",
-  transform: "translate(-50%, -50%)",
-  width: "min(1160px, 95vw)",
-  maxHeight: "90vh",
-  overflowY: "auto",
-  animation: `${String(contentShow)} 150ms ease`,
-  zIndex: 201,
-  "&:focus": { outline: "none" },
-});
+const HelpContent = styled(DialogContent, { zIndex: 201 });
 
 /* ==================================================
  * State Persistence (opt-in)
@@ -167,7 +152,8 @@ function getRootOriginAndPage(): {
 } {
   const { protocol, hostname, port, search } = window.location;
   const parts = hostname.split(".");
-  const pageParam = new URLSearchParams(search).get("p");
+  // An empty ?p= is not an explicit page — let the remembered page win
+  const pageParam = new URLSearchParams(search).get("p") || null;
 
   // On localhost / bare IP there is no meaningful subdomain
   const isLocal =
@@ -205,10 +191,12 @@ if (rootOrigin) {
 }
 
 // Clean up the ?p= query param after reading so the URL stays tidy
-if (!rootOrigin && explicitPage !== null) {
+if (!rootOrigin) {
   const url = new URL(window.location.href);
-  url.searchParams.delete("p");
-  window.history.replaceState(null, "", url.toString());
+  if (url.searchParams.has("p")) {
+    url.searchParams.delete("p");
+    window.history.replaceState(null, "", url.toString());
+  }
 }
 
 /* ==================================================
@@ -383,7 +371,7 @@ export default function App() {
       <Dialog.Root open={helpOpen} onOpenChange={setHelpOpen}>
         <Dialog.Portal>
           <HelpOverlay />
-          <HelpContent aria-describedby={undefined}>
+          <HelpContent size="lg" aria-describedby={undefined}>
             <Dialog.Title style={{ display: "none" }}>Help</Dialog.Title>
             <LandingReadme
               onNavigate={(page) => {

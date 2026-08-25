@@ -47,7 +47,7 @@ Use the feature area: `fees`, `monte-carlo`, `fire`, `scenarios`, `budget`, `pdf
 - **Components**: Radix UI primitives for accessible toggles, popovers, sliders
 - **Charts**: Recharts (`ComposedChart` with Area + Line)
 - **Testing**: Vitest with `globals: true`, test files in `src/**/__tests__/**/*.test.ts`
-- **No semicolons at EOL**: Project uses no-semicolon style in most files
+- **Formatting**: Prettier (pinned devDependency, default config) formats the whole repo — `npm run format` writes, `prettier --check .` verifies. Prettier's defaults put semicolons at EOL; match the surrounding file, never restyle it.
 - **Comments**: Only when clarifying non-obvious logic. No commented-out code.
 - **No emojis**: Never use emoji characters in UI text, labels, or code unless explicitly requested by the user.
 - **Theme colors**: Always use Stitches theme tokens (`$cyan`, `$green`, `$comment`, etc.) for colors. Never hardcode colors outside of `stitches.config.ts` theme definitions.
