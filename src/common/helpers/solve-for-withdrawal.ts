@@ -9,6 +9,34 @@ import type { InvestmentCalculatorProps } from "../types/types";
 const ITERATIONS = 20;
 
 /**
+ * Binary-searches a monotonic `evaluate` for the input that produces `target`.
+ * The two bounds are given by which side of the target they land on rather
+ * than by their numeric order, so the same loop serves both an increasing and
+ * a decreasing function.
+ *
+ * @param evaluate - Monotonic function of the input being solved for
+ * @param over     - Input whose result is at or above `target`
+ * @param under    - Input whose result is at or below `target`
+ * @param target   - Result the returned input should produce
+ * @returns The (unrounded) input midway through the final bracket
+ */
+export function bisect(
+  evaluate: (input: number) => number,
+  over: number,
+  under: number,
+  target: number,
+): number {
+  let hi = over;
+  let lo = under;
+  for (let i = 0; i < ITERATIONS; i++) {
+    const mid = (hi + lo) / 2;
+    if (evaluate(mid) > target) hi = mid;
+    else lo = mid;
+  }
+  return (hi + lo) / 2;
+}
+
+/**
  * Binary-searches for the fixed monthly withdrawal (0 to maxMonthlyWithdrawal)
  * that causes InvestmentCalculator to produce `targetValue` as its final
  * balance, with all other props (including projectedGain) held constant. Any
@@ -42,13 +70,8 @@ export function solveForWithdrawal(
 
   if (finalValue(0) <= targetValue) return 0;
 
-  let lo = 0;
-  let hi = props.maxMonthlyWithdrawal;
-  for (let i = 0; i < ITERATIONS; i++) {
-    const mid = (lo + hi) / 2;
-    if (finalValue(mid) > targetValue) lo = mid;
-    else hi = mid;
-  }
+  // Higher withdrawal -> lower balance, so 0 is the "over" bound
+  const solved = bisect(finalValue, 0, props.maxMonthlyWithdrawal, targetValue);
 
-  return Math.min(Math.round((lo + hi) / 2), props.maxMonthlyWithdrawal);
+  return Math.min(Math.round(solved), props.maxMonthlyWithdrawal);
 }

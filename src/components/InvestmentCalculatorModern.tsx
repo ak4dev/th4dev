@@ -9,7 +9,12 @@ import * as Switch from "@radix-ui/react-switch";
 import { addMonths, differenceInCalendarMonths } from "date-fns";
 import { styled, keyframes } from "../../stitches.config";
 import { InvestmentCalculator } from "../common/helpers/investment-growth-calculator";
-import { solveForWithdrawal } from "../common/helpers/solve-for-withdrawal";
+import {
+  maxAchievable,
+  solveForTarget,
+  type TargetLever,
+  type TargetSolution,
+} from "../common/helpers/solve-for-target";
 import { formatCurrency } from "../common/helpers/format";
 import {
   dynamicWithdrawalAssumptions,
@@ -445,11 +450,10 @@ interface Lane {
   ending: RolloverAmounts;
   /** Positive monthly withdrawals actually applied, in simulation order */
   withdrawals: number[];
-  /** Target slider ceiling in display units; 0 while the target control is hidden */
+  /** Highest ending balance this lane's levers can reach, in display units */
   maxTarget: number;
   /** Stored (nominal) target converted to display units */
   displayTarget: number;
-  toNominal: (display: number) => number;
   targetStep: number;
   targetReached?: LineGraphEntry;
   /** First matrix entry whose annual growth covers the withdrawals */
@@ -464,6 +468,34 @@ interface RolloverInto {
 /** Tool toggles only take effect in advanced mode, where lane B and withdrawals exist */
 const isDynamic = (t: TogglesState) => t.advanced && t.dynamicWithdrawal;
 const isRollover = (t: TogglesState) => t.advanced && t.rollover;
+
+/**
+ * Inputs the target solver may move, in cascade order. Only controls the
+ * current mode actually shows are offered: basic mode has the return rate
+ * alone, and a dynamic policy replaces the fixed withdrawal slider. With
+ * fixed withdrawals a surplus is spent through the withdrawal by itself,
+ * while a shortfall cuts it back before raising contributions and return.
+ *
+ * @param t       - Current toggles
+ * @param surplus - Whether the target sits below the lane's projection
+ * @returns The levers to hand solveForTarget, in order
+ */
+function targetLevers(t: TogglesState, surplus: boolean): TargetLever[] {
+  if (!t.advanced) return ["projectedGain"];
+  if (isDynamic(t)) return ["monthlyContribution", "projectedGain"];
+  return surplus
+    ? ["monthlyWithdrawal"]
+    : ["monthlyWithdrawal", "monthlyContribution", "projectedGain"];
+}
+
+/** Spreads solved lever values onto one lane's slider keys */
+const laneSliderValues = (
+  id: LaneId,
+  values: Partial<Record<TargetLever, number>>,
+): Record<string, number> =>
+  Object.fromEntries(
+    Object.entries(values).map(([lever, value]) => [`${lever}${id}`, value]),
+  );
 
 function buildLane(
   id: LaneId,
@@ -507,26 +539,34 @@ function buildLane(
   const ending = endingAmounts(matrix, t.showInflation, start);
   const withdrawals = calc.getWithdrawalSchedule().filter((m) => m > 0);
 
-  // The target slider spans up to the no-withdrawal ending balance. Targets
-  // are stored nominal; the inflated/nominal ratio converts to display units.
-  // Targets only drive the fixed-withdrawal solver, so dynamic mode has none.
-  let nominalMax = 1;
-  let inflatedMax = 0;
-  const targetable = t.advanced && !dynamic;
-  if (targetable) {
-    const base0 = new InvestmentCalculator({ ...props, monthlyWithdrawal: 0 });
-    nominalMax = base0.calculateGrowth(false).numeric || 1;
-    inflatedMax = base0.calculateGrowth(true).numeric;
-  }
+  // Targets are stored nominal. The deflator that converts them to display
+  // units belongs to this lane's own plan, not to any other: the calculator
+  // runs the inflation-adjusted balance as a parallel track whose cash flows
+  // enter at nominal size, so the ratio depends on the plan's own
+  // cash-flow-versus-growth mix. The matrix's last row already carries both
+  // tracks, so no second simulation is needed.
+  const otherEnd = matrix[matrix.length - 1]?.alternateY ?? total;
+  const nominalEnd = t.showInflation ? otherEnd : total;
+  const inflatedEnd = t.showInflation ? total : otherEnd;
+  // A drained or zero-length plan has no meaningful deflator: leave it 1:1
+  const deflator =
+    nominalEnd > 0 && inflatedEnd > 0 ? inflatedEnd / nominalEnd : 1;
   const toDisplay = (nominal: number) =>
-    t.showInflation
-      ? Math.round(nominal * (inflatedMax / nominalMax))
-      : nominal;
-  const toNominal = (display: number) =>
-    t.showInflation
-      ? Math.round(display * (inflatedMax > 0 ? nominalMax / inflatedMax : 1))
-      : display;
-  const displayTarget = targetable ? toDisplay(s[key("targetValue")] || 0) : 0;
+    t.showInflation ? Math.round(nominal * deflator) : nominal;
+
+  // The target slider spans up to the best ending balance this mode's levers
+  // can reach, so a goal above the current projection is expressible. A
+  // dynamic policy can drain the maxed-out plan below zero, so the ceiling
+  // never falls below this lane's own projection and the range stays valid.
+  const maxTarget = Math.max(
+    maxAchievable(props, t.showInflation, targetLevers(t, false)),
+    total,
+    1,
+  );
+  const displayTarget = Math.min(
+    toDisplay(s[key("targetValue")] || 0),
+    maxTarget,
+  );
   const annualWithdrawal = (withdrawals[0] ?? 0) * 12;
 
   return {
@@ -538,9 +578,8 @@ function buildLane(
     matrix,
     ending,
     withdrawals,
-    maxTarget: targetable ? (t.showInflation ? inflatedMax : nominalMax) : 0,
+    maxTarget,
     displayTarget,
-    toNominal,
     // One order of magnitude below the balance so the slider stays usable at any scale
     targetStep:
       10 ** Math.max(2, Math.floor(Math.log10(Math.max(total, 1000))) - 1),
@@ -672,6 +711,7 @@ function TargetControl({
           value={
             draft ?? (lane.displayTarget ? String(lane.displayTarget) : "")
           }
+          maxLength={12}
           onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ""))}
           onBlur={commitDraft}
           onKeyDown={(e) => {
@@ -803,10 +843,10 @@ function LanePanel({
               0.01,
               sliders[`annualFee${id}`] || 0,
             )}
-          {/* Sets the fixed monthly withdrawal that ends at this balance */}
-          {!dynamic && <TargetControl lane={lane} onTarget={onTarget} />}
         </>
       )}
+      {/* Goal for the ending balance; drives whichever inputs the mode offers */}
+      <TargetControl lane={lane} onTarget={onTarget} />
     </Panel>
   );
 }
@@ -876,6 +916,13 @@ export default function InvestmentCalculatorRadixModern({
   ) => setToggles((prev) => ({ ...prev, [key]: val }));
   // Fixed per mount so Monte Carlo bands only change when their inputs do
   const [seed] = useState(randomSeed);
+  // The solver's own verdict on the last target it solved per lane. It is UI
+  // state rather than a stored slider: the stored target is always the
+  // achievable one, so only the "(capped)" annotation resets on reload.
+  const [targetClamped, setTargetClamped] = useState<Record<LaneId, boolean>>({
+    A: false,
+    B: false,
+  });
 
   // Scenario snapshot support
   const currentTH4State = useMemo(
@@ -947,44 +994,75 @@ export default function InvestmentCalculatorRadixModern({
   /* ---------------- Target Value Handlers ---------------- */
 
   /**
-   * Solves the fixed monthly withdrawal that ends at `target` (in display
-   * units) and commits target and withdrawal atomically; 0 clears both.
+   * Nominal ending balance of the plan a solve produced, which is what a
+   * target is stored as. Slider granularity means a solve lands near, not
+   * exactly on, the request, so storing the reached balance keeps the
+   * displayed goal attainable; measuring the nominal track directly (rather
+   * than deflating `achieved` back) keeps a display-mode flip an exact no-op.
+   */
+  const solvedNominal = (lane: Lane, solution: TargetSolution): number =>
+    new InvestmentCalculator({
+      ...lane.props,
+      ...solution.values,
+    }).calculateGrowth(false).numeric;
+
+  /**
+   * Commits the lane's goal (given in display units) along with every input
+   * the solver had to move to reach it, atomically. The balance the solved
+   * plan actually reaches is what gets stored, so the control never shows a
+   * value the plan misses; 0, empty, or a non-finite entry clears the goal and
+   * leaves the other sliders where they are.
    */
   const handleTarget = (lane: Lane) => (target: number) => {
-    const withdrawal = target
-      ? solveForWithdrawal(lane.props, target, toggles.showInflation)
-      : 0;
+    if (!target || !Number.isFinite(target)) {
+      setTargetClamped((prev) => ({ ...prev, [lane.id]: false }));
+      setSliders((prev) => ({ ...prev, [`targetValue${lane.id}`]: 0 }));
+      return;
+    }
+    const solution = solveForTarget(
+      lane.props,
+      target,
+      toggles.showInflation,
+      targetLevers(toggles, target < lane.total),
+    );
+    setTargetClamped((prev) => ({ ...prev, [lane.id]: solution.clamped }));
     setSliders((prev) => ({
       ...prev,
-      [`targetValue${lane.id}`]: target ? lane.toNominal(target) : 0,
-      [`monthlyWithdrawal${lane.id}`]: withdrawal,
+      ...laneSliderValues(lane.id, solution.values),
+      [`targetValue${lane.id}`]: solvedNominal(lane, solution),
     }));
   };
 
   /**
    * Targets are stored nominal, so switching display mode re-solves each
-   * lane's withdrawal against its target converted into the new mode.
+   * lane's levers against its target converted into the new mode.
    */
   const handleInflationToggle = (showInflation: boolean) => {
     setToggles((prev) => ({ ...prev, showInflation }));
-    setSliders((prev) => {
-      const next = buildLanes({
-        sliders: prev,
+    const nextToggles = { ...toggles, showInflation };
+    const clamped: Partial<Record<LaneId, boolean>> = {};
+    const updates: Record<string, number> = {};
+    // B's rollover carries A's ending, so each lane is rebuilt against the
+    // levers the previous lane's solve just committed
+    for (const id of ["A", "B"] as const) {
+      const lane = buildLanes({
+        sliders: { ...sliders, ...updates },
         inputs,
-        toggles: { ...toggles, showInflation },
-      });
-      const updates: Record<string, number> = {};
-      for (const lane of [next.A, next.B]) {
-        if (lane.displayTarget > 0) {
-          updates[`monthlyWithdrawal${lane.id}`] = solveForWithdrawal(
-            lane.props,
-            lane.displayTarget,
-            showInflation,
-          );
-        }
-      }
-      return { ...prev, ...updates };
-    });
+        toggles: nextToggles,
+      })[id];
+      if (lane.displayTarget <= 0) continue;
+      const solution = solveForTarget(
+        lane.props,
+        lane.displayTarget,
+        showInflation,
+        targetLevers(nextToggles, lane.displayTarget < lane.total),
+      );
+      clamped[id] = solution.clamped;
+      Object.assign(updates, laneSliderValues(lane.id, solution.values));
+      updates[`targetValue${lane.id}`] = solvedNominal(lane, solution);
+    }
+    setTargetClamped((prev) => ({ ...prev, ...clamped }));
+    setSliders((prev) => ({ ...prev, ...updates }));
   };
 
   /* ---------------- Info Panel ---------------- */
@@ -1000,6 +1078,9 @@ export default function InvestmentCalculatorRadixModern({
     const { id, props: p } = l;
     const stop = sliders[`contributionStopYear${id}`];
     const withdrawing = l.withdrawals.length > 0;
+    // A capped target is the most the solver could reach, not the request
+    const capped =
+      l.displayTarget > 0 && targetClamped[l.id] ? " (capped)" : "";
     return [
       ...(toggles.advanced
         ? [
@@ -1023,14 +1104,18 @@ export default function InvestmentCalculatorRadixModern({
                   },
                 ]
               : []),
-            {
-              label: `(${id}) Target Reached`,
-              value: l.targetReached
-                ? `${l.targetReached.x.getFullYear()} (yr ${yearsFromToday(l.targetReached.x)})`
-                : l.displayTarget > 0
-                  ? `> ${p.yearsOfGrowth} yrs`
-                  : "N/A",
-            },
+          ]
+        : []),
+      {
+        label: `(${id}) Target Reached`,
+        value: l.targetReached
+          ? `${l.targetReached.x.getFullYear()} (yr ${yearsFromToday(l.targetReached.x)})${capped}`
+          : l.displayTarget > 0
+            ? `> ${p.yearsOfGrowth} yrs${capped}`
+            : "N/A",
+      },
+      ...(toggles.advanced
+        ? [
             {
               label: `(${id}) Safe Withdrawal from`,
               value: l.safeFrom
