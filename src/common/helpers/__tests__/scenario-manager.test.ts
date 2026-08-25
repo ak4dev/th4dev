@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  loadScenarios,
   saveScenario,
   deleteScenario,
   renameScenario,
@@ -8,70 +7,22 @@ import {
   MAX_SCENARIOS,
   type ScenarioSnapshot,
 } from "../scenario-manager";
+import { DEFAULT_TOGGLES } from "../state-manager";
 import type { TH4State } from "../../types/types";
 
 /* ---------- Helpers ---------- */
 
 function makeMockState(overrides?: Partial<TH4State>): TH4State {
   return {
+    theme: "nord",
     sliders: { projectedGainA: 10, yearsOfGrowthA: 30 },
     inputs: { currentAmountA: "100000" },
-    toggles: {
-      advanced: false,
-      rollover: false,
-      showInflation: false,
-      portfolio: false,
-      fees: false,
-      monteCarlo: false,
-      fire: false,
-      scenarios: false,
-    },
+    toggles: DEFAULT_TOGGLES,
     ...overrides,
-  } as TH4State;
+  };
 }
 
-/* ---------- localStorage mock ---------- */
-
-let storage: Record<string, string> = {};
-
-beforeEach(() => {
-  storage = {};
-  vi.stubGlobal("localStorage", {
-    getItem: (k: string) => storage[k] ?? null,
-    setItem: (k: string, v: string) => {
-      storage[k] = v;
-    },
-    removeItem: (k: string) => {
-      delete storage[k];
-    },
-  });
-});
-
 /* ---------- Tests ---------- */
-
-describe("loadScenarios", () => {
-  it("returns empty array when nothing stored", () => {
-    expect(loadScenarios()).toEqual([]);
-  });
-
-  it("returns empty array for corrupt data", () => {
-    storage["th4_scenarios"] = "not json";
-    expect(loadScenarios()).toEqual([]);
-  });
-
-  it("returns stored scenarios", () => {
-    const snap: ScenarioSnapshot = {
-      id: "s1",
-      name: "Test",
-      createdAt: "2024-01-01T00:00:00.000Z",
-      state: makeMockState(),
-    };
-    storage["th4_scenarios"] = JSON.stringify({ scenarios: [snap] });
-    const result = loadScenarios();
-    expect(result).toHaveLength(1);
-    expect(result[0].name).toBe("Test");
-  });
-});
 
 describe("saveScenario", () => {
   it("saves a new scenario to empty array", () => {
@@ -80,12 +31,6 @@ describe("saveScenario", () => {
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe("My Scenario");
     expect(result[0].state.inputs?.currentAmountA).toBe("100000");
-  });
-
-  it("does not write to localStorage", () => {
-    const state = makeMockState();
-    saveScenario("Test", state, []);
-    expect(storage["th4_scenarios"]).toBeUndefined();
   });
 
   it("appends to existing scenarios", () => {
@@ -129,13 +74,6 @@ describe("deleteScenario", () => {
     expect(result).toHaveLength(0);
   });
 
-  it("does not write to localStorage", () => {
-    const state = makeMockState();
-    const saved = saveScenario("Test", state, []);
-    deleteScenario(saved[0].id, saved);
-    expect(storage["th4_scenarios"]).toBeUndefined();
-  });
-
   it("does nothing if id not found", () => {
     const state = makeMockState();
     const saved = saveScenario("Keep", state, []);
@@ -152,13 +90,6 @@ describe("renameScenario", () => {
     const result = renameScenario(id, "NewName", saved);
     expect(result[0].name).toBe("NewName");
     expect(result[0].id).toBe(id);
-  });
-
-  it("does not write to localStorage", () => {
-    const state = makeMockState();
-    const saved = saveScenario("Test", state, []);
-    renameScenario(saved[0].id, "Renamed", saved);
-    expect(storage["th4_scenarios"]).toBeUndefined();
   });
 
   it("leaves other scenarios unchanged", () => {

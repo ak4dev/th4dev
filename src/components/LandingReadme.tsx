@@ -1,389 +1,135 @@
-import { useState } from "react";
-import * as Icons from "@radix-ui/react-icons";
+/* ==================================================
+ * Landing / Help Page
+ *
+ * Rendered as the root landing page and inside the
+ * Ctrl+Shift+H help overlay.
+ * ================================================== */
+
+import { Fragment } from "react";
 import { styled } from "../../stitches.config";
+import { ActionButton } from "./ui/primitives";
+
+/* ==================================================
+ * Content
+ * ================================================== */
+
+const FEATURES: ReadonlyArray<readonly [string, string]> = [
+  [
+    "Dual lanes (A/B)",
+    "monthly compound growth with contributions, withdrawals, fees, and inflation adjustment. Enable Advanced to unlock contributions, withdrawals, Investment B, and the tool toggles.",
+  ],
+  [
+    "Partial years",
+    "horizon, contribution stop year, and withdrawal start year accept fractional values such as 10.5, resolved to whole months.",
+  ],
+  ["Rollover", "roll Investment A's ending balance into B at A's finish year."],
+  [
+    "Target solver",
+    "enter a target ending balance and the app solves for the monthly withdrawal that lands on it.",
+  ],
+  [
+    "Dynamic Withdrawal",
+    "withdraw a percentage of the balance, re-evaluated each withdrawal year and clamped between a floor and a ceiling; the same policy is applied in Monte Carlo.",
+  ],
+  [
+    "Monte Carlo",
+    "P10–P90 percentile bands from randomized annual returns, in combined, individual, or rollover modes.",
+  ],
+  [
+    "Portfolio capital preservation",
+    "required share prices per holding to keep pace with the projection, with live quotes via a configurable stock API.",
+  ],
+  [
+    "FIRE, Budget, Scenarios, PDF",
+    "FIRE number and years to FIRE, a monthly budget by category that feeds FIRE, named snapshots for side-by-side comparison, and a downloadable PDF report.",
+  ],
+];
+
+const SHORTCUTS: ReadonlyArray<readonly [readonly string[], string]> = [
+  [["Ctrl", "Shift", "F"], "Open the calculator from any page"],
+  [["Ctrl", "Shift", "S"], "Open or close the stock data modal"],
+  [["Ctrl", "Shift", "H"], "Toggle this help overlay"],
+  [["Enter"], "Submit the ticker list in the stock modal symbol field"],
+];
+
+/* ==================================================
+ * Styled Components
+ * ================================================== */
 
 const Page = styled("main", {
-  minHeight: "calc(100vh - 2rem)",
+  width: "min(760px, 100%)",
+  margin: "24px auto",
+  padding: "28px 24px 32px",
   display: "grid",
-  placeItems: "center",
-  padding: "24px 16px 32px",
-  background:
-    "radial-gradient(circle at top left, color-mix(in srgb, var(--colors-cyan) 22%, transparent), transparent 28%), radial-gradient(circle at bottom right, color-mix(in srgb, var(--colors-purple) 18%, transparent), transparent 32%)",
-});
-
-const Window = styled("section", {
-  width: "min(1120px, 100%)",
-  border:
-    "1px solid color-mix(in srgb, var(--colors-comment) 55%, transparent)",
-  borderRadius: "18px",
-  overflow: "hidden",
-  backgroundColor:
-    "color-mix(in srgb, var(--colors-background) 82%, black 18%)",
-  boxShadow: "0 24px 80px rgba(0, 0, 0, 0.28)",
-});
-
-const TitleBar = styled("div", {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: "12px",
-  padding: "12px 16px",
-  borderBottom:
-    "1px solid color-mix(in srgb, var(--colors-comment) 45%, transparent)",
-  backgroundColor:
-    "color-mix(in srgb, var(--colors-currentLine) 88%, black 12%)",
-});
-
-const TitleMeta = styled("div", {
-  display: "flex",
-  alignItems: "center",
-  gap: "10px",
-  color: "$comment",
-  fontSize: "0.82rem",
-  letterSpacing: "0.04em",
-  textTransform: "uppercase",
-});
-
-const StatusText = styled("span", {
-  color: "$cyan",
-  fontSize: "0.8rem",
-});
-
-const ContentGrid = styled("div", {
-  display: "grid",
-  gridTemplateColumns: "minmax(220px, 280px) minmax(0, 1fr)",
-  "@media(max-width: 920px)": {
-    gridTemplateColumns: "1fr",
-  },
-});
-
-const CommandRail = styled("aside", {
-  padding: "20px 16px",
-  borderRight:
-    "1px solid color-mix(in srgb, var(--colors-comment) 35%, transparent)",
-  background:
-    "linear-gradient(180deg, color-mix(in srgb, var(--colors-currentLine) 88%, black 12%), color-mix(in srgb, var(--colors-background) 96%, black 4%))",
-  "@media(max-width: 920px)": {
-    borderRight: 0,
-    borderBottom:
-      "1px solid color-mix(in srgb, var(--colors-comment) 35%, transparent)",
-  },
-});
-
-const RailTitle = styled("div", {
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-  color: "$foreground",
-  fontSize: "0.82rem",
-  marginBottom: "16px",
-});
-
-const TabList = styled("div", {
-  border:
-    "1px solid color-mix(in srgb, var(--colors-comment) 35%, transparent)",
-  borderRadius: "16px",
-  padding: "12px",
-  display: "grid",
-  gap: "8px",
-});
-
-const TabButton = styled("button", {
-  appearance: "none",
-  width: "100%",
-  display: "grid",
-  gap: "4px",
-  textAlign: "left",
-  padding: "12px 14px",
+  gap: "24px",
   borderRadius: "12px",
-  border:
-    "1px solid color-mix(in srgb, var(--colors-comment) 24%, transparent)",
-  backgroundColor: "transparent",
-  color: "$comment",
-  cursor: "pointer",
-  transition:
-    "background-color 120ms ease, border-color 120ms ease, color 120ms ease",
-  "&:hover": {
-    backgroundColor:
-      "color-mix(in srgb, var(--colors-currentLine) 70%, transparent)",
-    borderColor: "color-mix(in srgb, var(--colors-comment) 40%, transparent)",
-    color: "$foreground",
-  },
-  '&[data-active="true"]': {
-    backgroundColor:
-      "color-mix(in srgb, var(--colors-currentLine) 88%, transparent)",
-    borderColor: "color-mix(in srgb, var(--colors-cyan) 32%, transparent)",
-    color: "$foreground",
-    boxShadow: "inset 2px 0 0 var(--colors-cyan)",
-  },
-});
-
-const TabTitle = styled("span", {
-  fontSize: "0.88rem",
-  fontWeight: 700,
-  color: "inherit",
-});
-
-const TabMeta = styled("span", {
-  fontSize: "0.78rem",
-  color: "$comment",
-});
-
-const MainPane = styled("div", {
-  padding: "22px 20px 20px",
-  display: "grid",
-  gap: "18px",
-  "@media(min-width: 920px)": {
-    padding: "26px 24px 22px",
-  },
-});
-
-const Hero = styled("section", {
-  display: "grid",
-  alignContent: "center",
-  gap: "12px",
-  minHeight: "calc(100vh - 280px)",
-  "@media(max-width: 920px)": {
-    minHeight: "calc(100vh - 220px)",
-  },
-});
-
-const HeaderLine = styled("div", {
-  display: "flex",
-  alignItems: "center",
-  gap: "10px",
-  color: "$green",
-  fontSize: "0.84rem",
-  letterSpacing: "0.06em",
-  textTransform: "uppercase",
-});
-
-const Title = styled("h1", {
-  fontSize: "clamp(1.8rem, 3vw, 3rem)",
-  lineHeight: 1.05,
+  border: "1px solid $currentLine",
+  backgroundColor: "$background",
   color: "$foreground",
+});
+
+const Heading = styled("h2", {
   margin: 0,
-  width: "100%",
-  maxWidth: "none",
-});
-
-const Lead = styled("p", {
-  margin: 0,
-  color: "$comment",
-  fontSize: "1rem",
-  lineHeight: 1.7,
-  maxWidth: "100%",
-});
-
-const ActionRow = styled("div", {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: "10px",
-  marginTop: "4px",
-});
-
-const ActionButton = styled("button", {
-  all: "unset",
-  cursor: "pointer",
-  display: "inline-flex",
-  alignItems: "center",
-  gap: "10px",
-  padding: "10px 14px",
-  borderRadius: "999px",
-  border: "1px solid color-mix(in srgb, var(--colors-cyan) 38%, transparent)",
-  color: "$background",
-  backgroundColor: "$cyan",
-  fontSize: "0.88rem",
-  fontWeight: 700,
-  textDecoration: "none",
-  "&:hover": {
-    transform: "translateY(-1px)",
-    boxShadow:
-      "0 10px 26px color-mix(in srgb, var(--colors-cyan) 28%, transparent)",
-  },
-});
-
-const MutedChip = styled("div", {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: "8px",
-  padding: "10px 12px",
-  borderRadius: "999px",
-  border:
-    "1px solid color-mix(in srgb, var(--colors-comment) 36%, transparent)",
-  color: "$comment",
-  fontSize: "0.82rem",
-});
-
-const SectionGrid = styled("div", {
-  display: "grid",
-  gap: "14px",
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-  "@media(max-width: 920px)": {
-    gridTemplateColumns: "1fr",
-  },
-});
-
-const Card = styled("section", {
-  border:
-    "1px solid color-mix(in srgb, var(--colors-comment) 35%, transparent)",
-  borderRadius: "14px",
-  padding: "14px",
-  backgroundColor:
-    "color-mix(in srgb, var(--colors-currentLine) 66%, transparent)",
-  display: "grid",
-  gap: "12px",
-});
-
-const CardTitle = styled("h2", {
-  margin: 0,
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
   fontSize: "0.95rem",
-  color: "$foreground",
-});
-
-const ReadmeList = styled("div", {
-  display: "grid",
-  gap: "10px",
-});
-
-const ReadmeItem = styled("div", {
-  display: "grid",
-  gridTemplateColumns: "1.35rem minmax(0, 1fr)",
-  gap: "10px",
-  alignItems: "start",
-});
-
-const Bullet = styled("span", {
+  fontWeight: 600,
   color: "$cyan",
-  fontWeight: 700,
+  variants: { level: { page: { fontSize: "1.6rem", color: "$foreground" } } },
 });
 
-const ItemText = styled("div", {
+const Text = styled("p", {
+  margin: 0,
+  color: "$comment",
+  fontSize: "0.92rem",
+  lineHeight: 1.65,
+});
+
+const Section = styled("section", { display: "grid", gap: "10px" });
+
+const FeatureList = styled("ul", {
+  margin: 0,
+  padding: "0 0 0 1.2rem",
+  display: "grid",
+  gap: "8px",
   color: "$comment",
   fontSize: "0.9rem",
-  lineHeight: 1.65,
-  "& strong": {
-    color: "$foreground",
-    fontWeight: 700,
-  },
+  lineHeight: 1.6,
+  "& strong": { color: "$foreground" },
 });
 
-const HotkeyList = styled("div", {
-  display: "grid",
-  gap: "12px",
-});
-
-const HotkeyRow = styled("div", {
-  display: "grid",
-  gridTemplateColumns: "minmax(140px, auto) minmax(0, 1fr)",
-  gap: "12px",
-  alignItems: "center",
-  "@media(max-width: 560px)": {
-    gridTemplateColumns: "1fr",
-  },
-});
-
-const KeyCombo = styled("div", {
-  display: "flex",
-  flexWrap: "wrap",
-  alignItems: "center",
-  gap: "6px",
-});
-
-const Keycap = styled("span", {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: "6px",
-  minHeight: "32px",
-  padding: "0 10px",
-  borderRadius: "8px",
-  border:
-    "1px solid color-mix(in srgb, var(--colors-comment) 36%, transparent)",
-  backgroundColor:
-    "color-mix(in srgb, var(--colors-currentLine) 84%, transparent)",
-  color: "$foreground",
-  fontSize: "0.82rem",
-  fontWeight: 700,
-  boxShadow: "inset 0 -2px 0 rgba(0, 0, 0, 0.18)",
-});
-
-const KeyJoin = styled("span", {
-  color: "$comment",
-  fontSize: "0.8rem",
-});
-
-const HotkeyText = styled("p", {
+const ShortcutList = styled("dl", {
   margin: 0,
+  display: "grid",
+  gridTemplateColumns: "auto minmax(0, 1fr)",
+  gap: "8px 16px",
+  alignItems: "center",
   color: "$comment",
   fontSize: "0.88rem",
-  lineHeight: 1.6,
+  "& dd": { margin: 0 },
+  "& kbd": {
+    padding: "2px 8px",
+    borderRadius: "6px",
+    backgroundColor: "$currentLine",
+    color: "$foreground",
+    fontFamily: "inherit",
+    fontSize: "0.8rem",
+    fontWeight: 600,
+  },
 });
 
-const FooterBar = styled("div", {
-  display: "flex",
-  flexWrap: "wrap",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: "10px",
-  padding: "10px 14px",
-  borderTop:
-    "1px solid color-mix(in srgb, var(--colors-comment) 35%, transparent)",
-  backgroundColor:
-    "color-mix(in srgb, var(--colors-currentLine) 92%, black 8%)",
-  color: "$background",
-  fontSize: "0.82rem",
-});
-
-const FooterMode = styled("span", {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: "8px",
-  padding: "4px 8px",
-  borderRadius: "6px",
-  backgroundColor: "$green",
-  color: "$background",
-  fontWeight: 700,
-});
-
-const FooterPath = styled("span", {
-  color: "$foreground",
-});
-
-const FooterHint = styled("span", {
-  color: "$comment",
-});
-
-const StorageToggleBar = styled("div", {
+const StorageBar = styled("div", {
   display: "flex",
   alignItems: "flex-start",
   gap: "14px",
   padding: "14px 16px",
-  margin: "0 0 4px",
   borderRadius: "10px",
-  border: "1px solid color-mix(in srgb, var(--colors-orange) 50%, transparent)",
-  backgroundColor: "color-mix(in srgb, var(--colors-orange) 8%, transparent)",
-});
-
-const StorageToggleLabel = styled("div", {
-  flex: 1,
-  display: "flex",
-  flexDirection: "column",
-  gap: "4px",
-});
-
-const StorageToggleTitle = styled("span", {
-  fontSize: "0.82rem",
-  fontWeight: 700,
-  color: "$orange",
-});
-
-const StorageToggleDisclaimer = styled("span", {
-  fontSize: "0.73rem",
-  color: "$comment",
-  lineHeight: 1.5,
+  border: "1px solid $orange",
+  "& strong": {
+    display: "block",
+    marginBottom: "4px",
+    fontSize: "0.85rem",
+    color: "$orange",
+  },
+  "& p": { fontSize: "0.78rem", lineHeight: 1.5 },
 });
 
 const ToggleSwitch = styled("button", {
@@ -394,15 +140,7 @@ const ToggleSwitch = styled("button", {
   height: "22px",
   borderRadius: "999px",
   position: "relative",
-  transition: "background 0.2s",
-  marginTop: "2px",
-  variants: {
-    on: {
-      true: { backgroundColor: "$orange" },
-      false: { backgroundColor: "$comment" },
-    },
-  },
-  defaultVariants: { on: false },
+  transition: "background-color 0.2s",
   "&::after": {
     content: '""',
     position: "absolute",
@@ -413,455 +151,109 @@ const ToggleSwitch = styled("button", {
     backgroundColor: "$background",
     transition: "left 0.2s",
   },
-});
-
-const ToggleSwitchOn = styled(ToggleSwitch, {
-  "&::after": { left: "21px" },
-});
-
-const ToggleSwitchOff = styled(ToggleSwitch, {
-  "&::after": { left: "3px" },
-});
-
-const DOC_TABS = [
-  {
-    id: "general",
-    title: "General",
-    meta: "Default documentation",
+  variants: {
+    on: {
+      true: { backgroundColor: "$orange", "&::after": { left: "21px" } },
+      false: { backgroundColor: "$comment", "&::after": { left: "3px" } },
+    },
   },
-  {
-    id: "financial-workspace",
-    title: "Financial Workspace",
-    meta: "Active tool documentation",
-  },
-] as const;
+});
 
-type DocTabId = (typeof DOC_TABS)[number]["id"];
+/* ==================================================
+ * Component
+ * ================================================== */
 
-function getCalculatorUrl() {
-  const { protocol, hostname, port } = window.location;
-  const isLocalHost =
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "[::1]";
-  const isIPv4 = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname);
-
-  if (isLocalHost || isIPv4 || !hostname.includes(".")) {
-    return null;
-  }
-
-  const normalizedHost = hostname.startsWith("www.")
-    ? hostname.slice(4)
-    : hostname;
-
-  return `${protocol}//f.${normalizedHost}${port ? `:${port}` : ""}`;
-}
-
-function getWorkspaceLabel() {
-  const host = window.location.hostname
-    .replace(/^www\./, "")
-    .replace(/^f\./, "");
-
-  if (!host || host === "localhost" || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
-    return "workspace";
-  }
-
-  const firstToken = host.split(".")[0]?.trim().toLowerCase();
-  return firstToken || "workspace";
+interface LandingReadmeProps {
+  onNavigate: (page: string) => void;
+  localStorageEnabled: boolean;
+  onLocalStorageToggle: (enabled: boolean) => void;
 }
 
 export default function LandingReadme({
   onNavigate,
-  localStorageEnabled = false,
+  localStorageEnabled,
   onLocalStorageToggle,
-}: {
-  onNavigate?: (page: string) => void;
-  localStorageEnabled?: boolean;
-  onLocalStorageToggle?: (enabled: boolean) => void;
-}) {
-  const calculatorUrl = getCalculatorUrl();
-  const workspaceLabel = getWorkspaceLabel();
-  const [activeTab, setActiveTab] = useState<DocTabId>(DOC_TABS[0].id);
-  const activeDocument =
-    DOC_TABS.find((tab) => tab.id === activeTab) ?? DOC_TABS[0];
-  const isGeneralTab = activeDocument.id === "general";
-
+}: LandingReadmeProps) {
   return (
     <Page>
-      <Window>
-        <TitleBar>
-          <TitleMeta>
-            <Icons.FileTextIcon />
-            <span>README</span>
-          </TitleMeta>
-          <StatusText>normal</StatusText>
-        </TitleBar>
+      <Section>
+        <Heading as="h1" level="page">
+          Investment Growth Calculator
+        </Heading>
+        <Text>
+          A client-side investment planning tool: project two investment lanes
+          over decades, compare them, and stress-test the plan. Everything runs
+          in your browser with no backend and no accounts, and nothing is stored
+          unless you opt in below. Much of this project is AI generated and may
+          contain errors; verify independently before relying on it for
+          decisions.
+        </Text>
+        <div>
+          <ActionButton onClick={() => onNavigate("f")}>
+            Open calculator
+          </ActionButton>
+        </div>
+      </Section>
 
-        <ContentGrid>
-          <CommandRail>
-            <RailTitle>
-              <Icons.ReaderIcon />
-              <span>Documentation</span>
-            </RailTitle>
-            <TabList>
-              {DOC_TABS.map((tab) => (
-                <TabButton
-                  key={tab.id}
-                  type="button"
-                  data-active={tab.id === activeDocument.id}
-                  onClick={() => setActiveTab(tab.id)}
-                >
-                  <TabTitle>{tab.title}</TabTitle>
-                  <TabMeta>{tab.meta}</TabMeta>
-                </TabButton>
-              ))}
-            </TabList>
-          </CommandRail>
+      <Section>
+        <Heading>Features</Heading>
+        <FeatureList>
+          {FEATURES.map(([name, text]) => (
+            <li key={name}>
+              <strong>{name}</strong> — {text}
+            </li>
+          ))}
+        </FeatureList>
+      </Section>
 
-          <MainPane>
-            <Hero>
-              <HeaderLine>
-                <Icons.CodeIcon />
-                <span>{workspaceLabel} Workbench</span>
-              </HeaderLine>
-              {isGeneralTab ? (
-                <>
-                  <Title>General usage and disclaimer</Title>
-                  <Lead>
-                    This is a guide of general features available in this tool.
-                    Most of this project is AI generated and may contain errors.
-                    Do not rely on it for decisions without independent
-                    verification.
-                  </Lead>
-                </>
-              ) : (
-                <>
-                  <Title>A practical guide to the financial workspace.</Title>
-                  <Lead>
-                    This tool supports long-horizon investment modeling with
-                    comparison tracks, rollover behavior, target solving,
-                    inflation-adjusted views, stock-backed portfolio analysis,
-                    and state persistence. This guide will expand as additional
-                    tools are added.
-                  </Lead>
-                  <ActionRow>
-                    {onNavigate ? (
-                      <ActionButton onClick={() => onNavigate("f")}>
-                        <Icons.OpenInNewWindowIcon />
-                        <span>Open financial workspace</span>
-                      </ActionButton>
-                    ) : calculatorUrl ? (
-                      <ActionButton as="a" href={calculatorUrl}>
-                        <Icons.OpenInNewWindowIcon />
-                        <span>Open financial workspace</span>
-                      </ActionButton>
-                    ) : (
-                      <MutedChip>
-                        <Icons.GlobeIcon />
-                        <span>
-                          Financial workspace link is unavailable on this host.
-                        </span>
-                      </MutedChip>
-                    )}
-                  </ActionRow>
-                </>
-              )}
-            </Hero>
+      <Section>
+        <Heading>Keyboard shortcuts</Heading>
+        <ShortcutList>
+          {SHORTCUTS.map(([keys, text]) => (
+            <Fragment key={text}>
+              <dt>
+                {keys.map((key, i) => (
+                  <Fragment key={key}>
+                    {i > 0 && " + "}
+                    <kbd>{key}</kbd>
+                  </Fragment>
+                ))}
+              </dt>
+              <dd>{text}</dd>
+            </Fragment>
+          ))}
+        </ShortcutList>
+      </Section>
 
-            {isGeneralTab ? (
-              <>
-                {/* localStorage opt-in toggle — always visible on general tab */}
-                {onLocalStorageToggle && (
-                  <StorageToggleBar>
-                    <StorageToggleLabel>
-                      <StorageToggleTitle>
-                        {localStorageEnabled
-                          ? "Local storage is ON"
-                          : "Local storage: off (default)"}
-                      </StorageToggleTitle>
-                      <StorageToggleDisclaimer>
-                        {localStorageEnabled
-                          ? "All tool state (inputs, portfolio, theme) is being saved to this browser. Disable to stop storing data and clear what has been saved."
-                          : "No data is stored in this browser. All session data is lost on page reload. Enable to persist your data locally — data stays on your machine only and is never transmitted."}
-                      </StorageToggleDisclaimer>
-                    </StorageToggleLabel>
-                    {localStorageEnabled ? (
-                      <ToggleSwitchOn
-                        on={true}
-                        aria-label="Disable local storage"
-                        onClick={() => onLocalStorageToggle(false)}
-                      />
-                    ) : (
-                      <ToggleSwitchOff
-                        on={false}
-                        aria-label="Enable local storage"
-                        onClick={() => onLocalStorageToggle(true)}
-                      />
-                    )}
-                  </StorageToggleBar>
-                )}
-                <Card>
-                  <CardTitle>
-                    <Icons.InfoCircledIcon />
-                    <span>General usage and disclaimer</span>
-                  </CardTitle>
-                  <ReadmeList>
-                    <ReadmeItem>
-                      <Bullet>•</Bullet>
-                      <ItemText>
-                        This section is a guide of general features available in
-                        this application.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>•</Bullet>
-                      <ItemText>
-                        <strong>Theme Switcher</strong> applies the selected
-                        color palette immediately.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>•</Bullet>
-                      <ItemText>
-                        <strong>Export</strong> saves current state as JSON and
-                        <strong> Import</strong> restores a previously saved
-                        configuration.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>•</Bullet>
-                      <ItemText>
-                        <strong>Hotkeys:</strong> Ctrl+Shift+F opens the
-                        financial workspace from any page, Ctrl+Shift+S opens
-                        the stock modal, Ctrl+Shift+H toggles this help overlay,
-                        and Enter submits symbols from the modal input.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>•</Bullet>
-                      <ItemText>
-                        Most of this tool is AI generated and should not be
-                        trusted without independent review and verification.
-                      </ItemText>
-                    </ReadmeItem>
-                  </ReadmeList>
-                </Card>
-              </>
-            ) : (
-              <SectionGrid>
-                <Card>
-                  <CardTitle>
-                    <Icons.MixerHorizontalIcon />
-                    <span>How To Use It</span>
-                  </CardTitle>
-                  <ReadmeList>
-                    <ReadmeItem>
-                      <Bullet>1</Bullet>
-                      <ItemText>
-                        Start with <strong>Investment A</strong>: set the
-                        current amount, expected annual return, and time
-                        horizon. Year fields accept partial years — type a value
-                        like <strong>10.5</strong> and press Enter.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>2</Bullet>
-                      <ItemText>
-                        Enable <strong>Advanced</strong> to unlock monthly
-                        contributions, contribution stop year, withdrawals,
-                        withdrawal start, and the
-                        <strong> Investment B</strong> comparison lane.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>3</Bullet>
-                      <ItemText>
-                        Use <strong>Target Value</strong> to solve backwards for
-                        the monthly withdrawal that lands on your chosen ending
-                        balance.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>4</Bullet>
-                      <ItemText>
-                        Toggle <strong>Inflated</strong> for inflation-adjusted
-                        numbers and
-                        <strong> Rollover</strong> to roll A into B at A&apos;s
-                        finish year.
-                      </ItemText>
-                    </ReadmeItem>
-                  </ReadmeList>
-                </Card>
-
-                <Card>
-                  <CardTitle>
-                    <Icons.BarChartIcon />
-                    <span>Outputs</span>
-                  </CardTitle>
-                  <ReadmeList>
-                    <ReadmeItem>
-                      <Bullet>-</Bullet>
-                      <ItemText>
-                        Click ending totals to open year-by-year tables with
-                        nominal value, inflation-adjusted value, and percent
-                        change.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>-</Bullet>
-                      <ItemText>
-                        The projection chart overlays Investment A and B,
-                        highlights weak performance, and shows dashed target
-                        lines.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>-</Bullet>
-                      <ItemText>
-                        Info panels surface target hit timing, contribution and
-                        withdrawal milestones, and preservation timing.
-                      </ItemText>
-                    </ReadmeItem>
-                  </ReadmeList>
-                </Card>
-
-                <Card>
-                  <CardTitle>
-                    <Icons.KeyboardIcon />
-                    <span>Hotkeys</span>
-                  </CardTitle>
-                  <HotkeyList>
-                    <HotkeyRow>
-                      <KeyCombo>
-                        <Keycap>
-                          <Icons.KeyboardIcon />
-                          Ctrl
-                        </Keycap>
-                        <KeyJoin>+</KeyJoin>
-                        <Keycap>Shift</Keycap>
-                        <KeyJoin>+</KeyJoin>
-                        <Keycap>S</Keycap>
-                      </KeyCombo>
-                      <HotkeyText>
-                        Open or close the stock data modal from anywhere in the
-                        app.
-                      </HotkeyText>
-                    </HotkeyRow>
-                    <HotkeyRow>
-                      <KeyCombo>
-                        <Keycap>
-                          <Icons.EnterIcon />
-                          Enter
-                        </Keycap>
-                      </KeyCombo>
-                      <HotkeyText>
-                        Inside the stock modal symbol field, submit the current
-                        comma-separated ticker list.
-                      </HotkeyText>
-                    </HotkeyRow>
-                  </HotkeyList>
-                </Card>
-
-                <Card>
-                  <CardTitle>
-                    <Icons.GearIcon />
-                    <span>Portfolio Mode</span>
-                  </CardTitle>
-                  <ReadmeList>
-                    <ReadmeItem>
-                      <Bullet>-</Bullet>
-                      <ItemText>
-                        Toggle <strong>Portfolio</strong> to map the calculated
-                        total into a stock allocation model.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>-</Bullet>
-                      <ItemText>
-                        Add symbols, fetch prices, set allocations to 100%, and
-                        generate withdrawal-based projections.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>-</Bullet>
-                      <ItemText>
-                        Capital preservation schedules show the required price
-                        path per holding for the active withdrawal window.
-                      </ItemText>
-                    </ReadmeItem>
-                  </ReadmeList>
-                </Card>
-
-                <Card>
-                  <CardTitle>
-                    <Icons.LightningBoltIcon />
-                    <span>Advanced Tools</span>
-                  </CardTitle>
-                  <ReadmeList>
-                    <ReadmeItem>
-                      <Bullet>-</Bullet>
-                      <ItemText>
-                        <strong>Fees</strong> applies an annual expense ratio to
-                        each investment track, deducted from the portfolio
-                        balance each year.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>-</Bullet>
-                      <ItemText>
-                        <strong>Monte Carlo</strong> runs simulated projections
-                        with configurable volatility, displaying confidence
-                        bands (p10 through p90) on the chart.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>-</Bullet>
-                      <ItemText>
-                        <strong>FIRE</strong> calculates your Financial
-                        Independence number, years to FIRE, Coast FIRE
-                        threshold, and required monthly savings based on your
-                        inputs.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>-</Bullet>
-                      <ItemText>
-                        <strong>Budget</strong> builds a monthly expense
-                        breakdown by category. Totals feed into FIRE
-                        calculations when both tools are active.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>-</Bullet>
-                      <ItemText>
-                        <strong>Scenarios</strong> saves and loads named
-                        snapshots of your full configuration for side-by-side
-                        comparison.
-                      </ItemText>
-                    </ReadmeItem>
-                    <ReadmeItem>
-                      <Bullet>-</Bullet>
-                      <ItemText>
-                        <strong>Export PDF</strong> generates a downloadable
-                        report with your assumptions, metrics, and chart.
-                      </ItemText>
-                    </ReadmeItem>
-                  </ReadmeList>
-                </Card>
-              </SectionGrid>
-            )}
-          </MainPane>
-        </ContentGrid>
-
-        <FooterBar>
-          <FooterMode>
-            <Icons.CodeIcon />
-            {activeDocument.title}
-          </FooterMode>
-          <FooterPath>~/{workspaceLabel}/README</FooterPath>
-          <FooterHint>Live reference for current tool capabilities</FooterHint>
-        </FooterBar>
-      </Window>
+      <Section>
+        <Heading>Storage and privacy</Heading>
+        <StorageBar>
+          <div>
+            <strong>
+              {localStorageEnabled
+                ? "Local storage is ON"
+                : "Local storage: off (default)"}
+            </strong>
+            <Text>
+              {localStorageEnabled
+                ? "All tool state (inputs, portfolio, theme) is being saved to this browser. Disable to stop storing data and clear what has been saved."
+                : "No data is stored in this browser. All session data is lost on page reload. Enable to persist your data locally — data stays on your machine only and is never transmitted."}
+            </Text>
+          </div>
+          <ToggleSwitch
+            on={localStorageEnabled}
+            role="switch"
+            aria-checked={localStorageEnabled}
+            aria-label="Local storage"
+            onClick={() => onLocalStorageToggle(!localStorageEnabled)}
+          />
+        </StorageBar>
+        <Text>
+          Export and Import in the sidebar save and restore the full state as a
+          JSON file, encrypted by default, without storing anything in the
+          browser.
+        </Text>
+      </Section>
     </Page>
   );
 }

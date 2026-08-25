@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { getDaysInMonth } from "date-fns";
 import { interpolateDailyForMonth } from "../interpolate-daily";
 import type { LineGraphEntry } from "../../types/types";
 
@@ -11,13 +10,11 @@ const entry = (y: number, alternateY: number, date: Date): LineGraphEntry => ({
 
 describe("interpolateDailyForMonth", () => {
   it("returns one entry per calendar day in the source month", () => {
-    const jan = new Date("2026-01-01");
-    const feb = new Date("2026-02-01");
     const result = interpolateDailyForMonth(
-      entry(300, 280, jan),
-      entry(331, 308, feb),
+      entry(300, 280, new Date("2026-01-01")),
+      entry(331, 308, new Date("2026-02-01")),
     );
-    expect(result).toHaveLength(getDaysInMonth(jan)); // 31
+    expect(result).toHaveLength(31);
   });
 
   it("first day value equals the 'from' value exactly", () => {
@@ -74,6 +71,37 @@ describe("interpolateDailyForMonth", () => {
       expected.setDate(expected.getDate() + i);
       expect(pt.x.toDateString()).toBe(expected.toDateString());
     });
+  });
+
+  it("spans exactly the days until the next row when rows are anchored late in the month", () => {
+    // Rows anchored on the 31st clamp to Feb 28 / Mar 31 (date-fns addMonths)
+    const jan31 = new Date(2026, 0, 31);
+    const feb28 = new Date(2026, 1, 28);
+    const mar31 = new Date(2026, 2, 31);
+
+    const janRows = interpolateDailyForMonth(
+      entry(0, 0, jan31),
+      entry(280, 280, feb28),
+    );
+    expect(janRows).toHaveLength(28);
+    expect(janRows[27].x).toEqual(new Date(2026, 1, 27));
+    expect(janRows[27].y).toBe(270); // 280 × 27/28
+
+    const febRows = interpolateDailyForMonth(
+      entry(0, 0, feb28),
+      entry(310, 310, mar31),
+    );
+    expect(febRows).toHaveLength(31);
+    expect(febRows[30].x).toEqual(new Date(2026, 2, 30));
+  });
+
+  it("emits a single row when both entries fall on the same day", () => {
+    const day = new Date(2026, 3, 1);
+    const result = interpolateDailyForMonth(
+      entry(100, 90, day),
+      entry(200, 180, day),
+    );
+    expect(result).toEqual([entry(100, 90, day)]);
   });
 });
 

@@ -2,7 +2,7 @@
  * Main Application Component
  * ================================================== */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { styled, themeClasses, keyframes } from "../stitches.config";
 import { ThemeSelector } from "./components/ThemeSwitcher";
@@ -10,13 +10,14 @@ import StateIOPopover from "./components/sidebar/StateIOPopover";
 import SubdomainRouter from "./components/SubdomainRouter";
 import StockModal from "./components/StockModal";
 import LandingReadme from "./components/LandingReadme";
-import { DEFAULT_STATE, normalizeState } from "./common/helpers/state-manager";
+import { DialogOverlay } from "./components/ui/primitives";
+import {
+  DEFAULT_STATE,
+  isValidTH4State,
+  normalizeState,
+} from "./common/helpers/state-manager";
+import type { NormalizedState } from "./common/helpers/state-manager";
 import type { TH4State } from "./common/types/types";
-import type { PortfolioHolding } from "./common/types/portfolio-types";
-import type { BudgetItem } from "./common/helpers/budget-manager";
-import type { ScenarioSnapshot } from "./common/helpers/scenario-manager";
-
-export type { TH4State };
 
 /* ==================================================
  * Styled Components
@@ -43,21 +44,13 @@ const Content = styled("div", {
   overflow: "auto",
 });
 
-const overlayShow = keyframes({
-  from: { opacity: 0 },
-  to: { opacity: 1 },
-});
-
 const contentShow = keyframes({
   from: { opacity: 0, transform: "translate(-50%, -52%) scale(0.97)" },
   to: { opacity: 1, transform: "translate(-50%, -50%) scale(1)" },
 });
 
-const HelpOverlay = styled(Dialog.Overlay, {
-  position: "fixed",
-  inset: 0,
+const HelpOverlay = styled(DialogOverlay, {
   backgroundColor: "rgba(0,0,0,0.65)",
-  animation: `${String(overlayShow)} 150ms ease`,
   zIndex: 200,
 });
 
@@ -75,34 +68,26 @@ const HelpContent = styled(Dialog.Content, {
 });
 
 /* ==================================================
- * Default State — imported from state-manager module
- * ================================================== */
-
-const defaultState = DEFAULT_STATE;
-
-/* ==================================================
  * State Persistence (opt-in)
  * ================================================== */
 
 const STORAGE_KEY = "th4_app_state";
 /** Stores only the user's consent preference — not financial data */
 const STORAGE_CONSENT_KEY = "th4_localstorage_enabled";
+/** Standalone keys written by older builds before persistence was opt-in */
+const LEGACY_KEYS = ["th4_budget", "th4_scenarios"];
 
-interface PersistedState {
-  theme?: string;
-  sliders?: Record<string, number>;
-  inputs?: Record<string, string>;
-  toggles?: TH4State["toggles"];
-  stockApiUrl?: string;
-  stockHoldings?: PortfolioHolding[];
-  budgetItems?: BudgetItem[];
-  scenarios?: ScenarioSnapshot[];
-  activePage?: string;
+/** Removes every key this app may have written, current and legacy */
+function purgeStoredData(): void {
+  for (const key of [STORAGE_KEY, ...LEGACY_KEYS]) localStorage.removeItem(key);
 }
 
 function loadConsent(): boolean {
   try {
-    return localStorage.getItem(STORAGE_CONSENT_KEY) === "true";
+    const enabled = localStorage.getItem(STORAGE_CONSENT_KEY) === "true";
+    // Without opt-in nothing may remain in storage, including pre-consent legacy data
+    if (!enabled) purgeStoredData();
+    return enabled;
   } catch {
     return false;
   }
@@ -114,26 +99,47 @@ function saveConsent(enabled: boolean): void {
       localStorage.setItem(STORAGE_CONSENT_KEY, "true");
     } else {
       localStorage.removeItem(STORAGE_CONSENT_KEY);
-      localStorage.removeItem(STORAGE_KEY);
-      // Clean up legacy standalone keys
-      localStorage.removeItem("th4_budget");
-      localStorage.removeItem("th4_scenarios");
+      purgeStoredData();
     }
   } catch {
     // ignore
   }
 }
 
-function loadPersistedState(): PersistedState {
+/**
+ * Hydrates the persisted TH4State through the same guard and normaliser as
+ * a file import, so stale or corrupt entries fall back to defaults.
+ * `defaultPage` fills in for records that predate activePage.
+ */
+function loadPersistedState(defaultPage: string): NormalizedState | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as PersistedState) : {};
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    // Older builds persisted { stockApiUrl, stockHoldings } instead of { stock }
+    const candidate =
+      parsed["stock"] === undefined &&
+      (parsed["stockApiUrl"] !== undefined ||
+        parsed["stockHoldings"] !== undefined)
+        ? {
+            ...parsed,
+            stock: {
+              apiUrl: parsed["stockApiUrl"],
+              holdings: parsed["stockHoldings"],
+            },
+          }
+        : parsed;
+    if (!isValidTH4State(candidate)) return null;
+    return normalizeState({
+      ...candidate,
+      activePage: candidate.activePage ?? defaultPage,
+    });
   } catch {
-    return {};
+    return null;
   }
 }
 
-function savePersistedState(state: PersistedState): void {
+function savePersistedState(state: TH4State): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
@@ -149,13 +155,19 @@ function savePersistedState(state: PersistedState): void {
  * origin.  On localhost / bare IP addresses no redirect is performed.
  * ================================================== */
 
-function getRootOriginAndPage(): { rootOrigin: string | null; page: string } {
+/**
+ * `explicitPage` is a page the URL asked for (?p= or a page subdomain) and
+ * takes priority over a remembered page; `defaultPage` is the hostname
+ * fallback used when neither exists.
+ */
+function getRootOriginAndPage(): {
+  rootOrigin: string | null;
+  explicitPage: string | null;
+  defaultPage: string;
+} {
   const { protocol, hostname, port, search } = window.location;
   const parts = hostname.split(".");
-
-  // Read explicit page param first (e.g. ?p=f)
-  const params = new URLSearchParams(search);
-  const pageParam = params.get("p");
+  const pageParam = new URLSearchParams(search).get("p");
 
   // On localhost / bare IP there is no meaningful subdomain
   const isLocal =
@@ -166,32 +178,34 @@ function getRootOriginAndPage(): { rootOrigin: string | null; page: string } {
     !hostname.includes(".");
 
   if (isLocal) {
-    return { rootOrigin: null, page: pageParam ?? hostname };
+    return { rootOrigin: null, explicitPage: pageParam, defaultPage: hostname };
   }
 
   const knownPageSubdomains = ["f"];
   const subdomain = parts[0];
-  const isPageSubdomain = knownPageSubdomains.includes(subdomain);
 
-  if (isPageSubdomain) {
+  if (knownPageSubdomains.includes(subdomain)) {
     const rootHost = parts.slice(1).join(".");
     const portSuffix = port ? `:${port}` : "";
-    const rootOrigin = `${protocol}//${rootHost}${portSuffix}`;
-    return { rootOrigin, page: subdomain };
+    return {
+      rootOrigin: `${protocol}//${rootHost}${portSuffix}`,
+      explicitPage: subdomain,
+      defaultPage: subdomain,
+    };
   }
 
-  return { rootOrigin: null, page: pageParam ?? subdomain };
+  return { rootOrigin: null, explicitPage: pageParam, defaultPage: subdomain };
 }
 
-const { rootOrigin, page: initialPage } = getRootOriginAndPage();
+const { rootOrigin, explicitPage, defaultPage } = getRootOriginAndPage();
 
 // Redirect subdomain visits to the root origin so localStorage is unified
 if (rootOrigin) {
-  window.location.replace(`${rootOrigin}?p=${initialPage}`);
+  window.location.replace(`${rootOrigin}?p=${explicitPage ?? defaultPage}`);
 }
 
 // Clean up the ?p= query param after reading so the URL stays tidy
-if (!rootOrigin && new URLSearchParams(window.location.search).has("p")) {
+if (!rootOrigin && explicitPage !== null) {
   const url = new URL(window.location.href);
   url.searchParams.delete("p");
   window.history.replaceState(null, "", url.toString());
@@ -210,41 +224,58 @@ export default function App() {
   const [localStorageEnabled, setLocalStorageEnabledRaw] =
     useState(loadConsent);
 
-  // Hydrate from localStorage only when the user has opted in
-  const persisted = localStorageEnabled ? loadPersistedState() : {};
+  // Hydrate once, only when the user has opted in
+  const [initial] = useState<NormalizedState>(
+    () =>
+      (localStorageEnabled && loadPersistedState(defaultPage)) || {
+        ...DEFAULT_STATE,
+        activePage: defaultPage,
+      },
+  );
 
-  const [theme, setTheme] = useState(persisted.theme ?? defaultState.theme);
-  const [sliders, setSliders] = useState(
-    persisted.sliders ?? defaultState.sliders,
-  );
-  const [inputs, setInputs] = useState(persisted.inputs ?? defaultState.inputs);
-  const [toggles, setToggles] = useState(
-    persisted.toggles ?? defaultState.toggles,
-  );
-  const [stockApiUrl, setStockApiUrl] = useState(
-    persisted.stockApiUrl ?? defaultState.stock!.apiUrl,
-  );
-  const [stockHoldings, setStockHoldings] = useState<PortfolioHolding[]>(
-    persisted.stockHoldings ?? defaultState.stock!.holdings,
-  );
-  const [budgetItems, setBudgetItems] = useState<BudgetItem[]>(
-    persisted.budgetItems ?? [],
-  );
-  const [scenarios, setScenarios] = useState<ScenarioSnapshot[]>(
-    persisted.scenarios ?? [],
+  const [theme, setTheme] = useState(initial.theme);
+  const [sliders, setSliders] = useState(initial.sliders);
+  const [inputs, setInputs] = useState(initial.inputs);
+  const [toggles, setToggles] = useState(initial.toggles);
+  const [stockApiUrl, setStockApiUrl] = useState(initial.stock.apiUrl);
+  const [stockHoldings, setStockHoldings] = useState(initial.stock.holdings);
+  const [budgetItems, setBudgetItems] = useState(initial.budgetItems);
+  const [scenarios, setScenarios] = useState(initial.scenarios);
+  // An explicit ?p=/subdomain page wins over the remembered page
+  const [activePage, setActivePage] = useState(
+    explicitPage ?? initial.activePage,
   );
   const [stockModalOpen, setStockModalOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-
-  // activePage seeded from persisted state, ?p= param, or subdomain
-  const [activePage, setActivePage] = useState(
-    persisted.activePage ?? initialPage,
-  );
 
   const setLocalStorageEnabled = (enabled: boolean) => {
     saveConsent(enabled);
     setLocalStorageEnabledRaw(enabled);
   };
+
+  const appState = useMemo<TH4State>(
+    () => ({
+      theme,
+      sliders,
+      inputs,
+      toggles,
+      stock: { apiUrl: stockApiUrl, holdings: stockHoldings },
+      budgetItems,
+      scenarios,
+      activePage,
+    }),
+    [
+      theme,
+      sliders,
+      inputs,
+      toggles,
+      stockApiUrl,
+      stockHoldings,
+      budgetItems,
+      scenarios,
+      activePage,
+    ],
+  );
 
   /** Apply theme class to document body */
   useEffect(() => {
@@ -255,32 +286,21 @@ export default function App() {
     if (cls) document.body.classList.add(cls);
   }, [theme]);
 
-  /** Persist financial state when user has opted in */
+  /** Persist financial state when user has opted in; re-check the stored consent in case another tab revoked it */
   useEffect(() => {
-    if (!localStorageEnabled) return;
-    savePersistedState({
-      theme,
-      sliders,
-      inputs,
-      toggles,
-      stockApiUrl,
-      stockHoldings,
-      budgetItems,
-      scenarios,
-      activePage,
-    });
-  }, [
-    localStorageEnabled,
-    theme,
-    sliders,
-    inputs,
-    toggles,
-    stockApiUrl,
-    stockHoldings,
-    budgetItems,
-    scenarios,
-    activePage,
-  ]);
+    if (!localStorageEnabled || !loadConsent()) return;
+    savePersistedState(appState);
+  }, [localStorageEnabled, appState]);
+
+  /** Stop persisting when consent is revoked (or storage cleared) from another tab */
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if ((e.key === STORAGE_CONSENT_KEY || e.key === null) && !loadConsent())
+        setLocalStorageEnabledRaw(false);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   /** Keyboard shortcuts */
   useEffect(() => {
@@ -313,11 +333,11 @@ export default function App() {
     setSliders(state.sliders);
     setInputs(state.inputs);
     setToggles(state.toggles);
-    setBudgetItems(state.budgetItems ?? []);
-    setScenarios(state.scenarios ?? []);
-    setActivePage(state.activePage ?? "f");
-    setStockApiUrl(state.stock!.apiUrl);
-    setStockHoldings(state.stock!.holdings);
+    setStockApiUrl(state.stock.apiUrl);
+    setStockHoldings(state.stock.holdings);
+    setBudgetItems(state.budgetItems);
+    setScenarios(state.scenarios);
+    setActivePage(state.activePage);
   };
 
   return (
@@ -348,19 +368,7 @@ export default function App() {
 
       <Sidebar>
         <ThemeSelector activeTheme={theme} onThemeChange={setTheme} />
-        <StateIOPopover
-          getState={() => ({
-            theme,
-            sliders,
-            inputs,
-            toggles,
-            stock: { apiUrl: stockApiUrl, holdings: stockHoldings },
-            budgetItems,
-            scenarios,
-            activePage,
-          })}
-          setState={setAppState}
-        />
+        <StateIOPopover getState={() => appState} setState={setAppState} />
       </Sidebar>
 
       <StockModal

@@ -16,6 +16,7 @@ import { format } from "date-fns";
 import { styled } from "../../../stitches.config";
 import type { PortfolioProjection } from "../../common/types/portfolio-types";
 import { CHART_HEIGHT } from "../../common/constants/app-constants";
+import { formatPrice } from "../../common/helpers/format";
 
 /* ==================================================
  * Styled Components
@@ -53,14 +54,6 @@ const LINE_COLORS = [
   "var(--colors-red)",
 ];
 
-const COMPACT_MAX_FRACTION_DIGITS = 2;
-
-const priceFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: COMPACT_MAX_FRACTION_DIGITS,
-});
-
 /* ==================================================
  * Props
  * ================================================== */
@@ -84,24 +77,13 @@ export default function PortfolioProjectionChart({
 
   if (symbols.length === 0) return null;
 
-  // Build flat data array keyed by year label
-  const allYears = new Set<number>();
-  symbols.forEach((sym) =>
-    projection[sym].forEach((pt) => allYears.add(pt.year)),
-  );
-
-  const data = Array.from(allYears)
-    .sort((a, b) => a - b)
-    .map((year) => {
-      const entry: Record<string, string | number> = {
-        date: format(projection[symbols[0]][year]?.date ?? new Date(), "yyyy"),
-      };
-      symbols.forEach((sym) => {
-        const pt = projection[sym].find((p) => p.year === year);
-        if (pt) entry[sym] = pt.requiredPrice;
-      });
-      return entry;
-    });
+  // Every series shares the same year axis, so row i is year i for all symbols
+  const data = projection[symbols[0]].map((pt, i) => ({
+    date: format(pt.date, "yyyy"),
+    ...Object.fromEntries(
+      symbols.map((sym) => [sym, projection[sym][i]?.requiredPrice]),
+    ),
+  }));
 
   const fg = "var(--colors-foreground)";
 
@@ -117,7 +99,7 @@ export default function PortfolioProjectionChart({
             label={{ value: "Year", position: "insideBottomRight", fill: fg }}
           />
           <YAxis
-            tickFormatter={(v: number) => priceFormatter.format(v)}
+            tickFormatter={formatPrice}
             tick={{ fontSize: 12, fill: fg }}
             label={{
               value: "Required Price",
@@ -128,7 +110,7 @@ export default function PortfolioProjectionChart({
           />
           <Tooltip
             formatter={(v: number | undefined) =>
-              v != null ? priceFormatter.format(v) : ""
+              v != null ? formatPrice(v) : ""
             }
             labelFormatter={(label) => `Year: ${label}`}
             contentStyle={{

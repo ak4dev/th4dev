@@ -14,7 +14,6 @@ import { DEFAULT_THEME } from "./src/common/constants/app-constants";
  */
 export const themeObjects = {
   dracula: {
-    name: "dracula",
     colors: {
       background: "#282a36",
       currentLine: "#44475a",
@@ -30,7 +29,6 @@ export const themeObjects = {
     },
   },
   gruvbox: {
-    name: "gruvbox",
     colors: {
       background: "#282828",
       currentLine: "#3c3836",
@@ -46,7 +44,6 @@ export const themeObjects = {
     },
   },
   nord: {
-    name: "nord",
     colors: {
       background: "#2e3440",
       currentLine: "#3b4252",
@@ -62,7 +59,6 @@ export const themeObjects = {
     },
   },
   solarizedDark: {
-    name: "solarizedDark",
     colors: {
       background: "#002b36",
       currentLine: "#073642",
@@ -78,7 +74,6 @@ export const themeObjects = {
     },
   },
   solarizedLight: {
-    name: "solarizedLight",
     colors: {
       background: "#fdf6e3",
       currentLine: "#eee8d5",
@@ -94,7 +89,6 @@ export const themeObjects = {
     },
   },
   catpuccinoLight: {
-    name: "catpuccinoLight",
     colors: {
       background: "#f5f0e1",
       currentLine: "#e4dfd0",
@@ -110,7 +104,6 @@ export const themeObjects = {
     },
   },
   catpuccinoDark: {
-    name: "catpuccinoDark",
     colors: {
       background: "#2b2a27",
       currentLine: "#3b3a36",
@@ -126,7 +119,6 @@ export const themeObjects = {
     },
   },
   oneDark: {
-    name: "oneDark",
     colors: {
       background: "#282c34",
       currentLine: "#2c313c",
@@ -142,7 +134,6 @@ export const themeObjects = {
     },
   },
   oneLight: {
-    name: "oneLight",
     colors: {
       background: "#fafafa",
       currentLine: "#e5e5e5",
@@ -158,7 +149,6 @@ export const themeObjects = {
     },
   },
   tomorrowNight: {
-    name: "tomorrowNight",
     colors: {
       background: "#1d1f21",
       currentLine: "#282a2e",
@@ -174,7 +164,6 @@ export const themeObjects = {
     },
   },
   molokai: {
-    name: "molokai",
     colors: {
       background: "#272822",
       currentLine: "#3e3d32",
@@ -190,7 +179,6 @@ export const themeObjects = {
     },
   },
   tokyoNight: {
-    name: "tokyoNight",
     colors: {
       background: "#1a1b26",
       currentLine: "#16161e",
@@ -206,7 +194,6 @@ export const themeObjects = {
     },
   },
   tokyoNightStorm: {
-    name: "tokyoNightStorm",
     colors: {
       background: "#1f2335",
       currentLine: "#16161e",
@@ -222,7 +209,6 @@ export const themeObjects = {
     },
   },
   tokyoNightDay: {
-    name: "tokyoNightDay",
     colors: {
       background: "#ffffff",
       currentLine: "#e5e9f0",
@@ -238,6 +224,8 @@ export const themeObjects = {
     },
   },
 };
+
+export type ThemeKey = keyof typeof themeObjects;
 
 /* ==================================================
  * Stitches Setup

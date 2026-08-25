@@ -5,17 +5,21 @@
 import { InvestmentCalculator } from "./investment-growth-calculator";
 import type { InvestmentCalculatorProps } from "../types/types";
 
-/** Bisection iterations — 52 gives sub-cent precision */
-const ITERATIONS = 52;
+/** Bisection iterations: 20 halvings of the $10,000 ceiling resolve to under a cent */
+const ITERATIONS = 20;
 
 /**
- * Binary-searches for the monthly withdrawal amount that causes
- * InvestmentCalculator to produce exactly `targetValue` as its final balance,
- * with all other props (including projectedGain) held constant.
+ * Binary-searches for the fixed monthly withdrawal (0 to maxMonthlyWithdrawal)
+ * that causes InvestmentCalculator to produce `targetValue` as its final
+ * balance, with all other props (including projectedGain) held constant. Any
+ * dynamic withdrawal policy is ignored while solving, since the result is a
+ * fixed amount.
  *
- * Higher withdrawal → lower ending balance, so the function is monotonically
- * decreasing in withdrawal. If the target exceeds the 0-withdrawal result the
- * target is unreachable; returns 0 in that case.
+ * Higher withdrawal -> lower ending balance, so the function is monotonically
+ * decreasing in withdrawal. Returns 0 when the target is at or above the
+ * 0-withdrawal result, or outside advanced mode (where withdrawals are inert);
+ * returns maxMonthlyWithdrawal when even the ceiling cannot bring the balance
+ * down to the target.
  *
  * @param props        - Full InvestmentCalculatorProps (gain % is NOT modified)
  * @param targetValue  - Desired ending portfolio value in USD
@@ -27,35 +31,24 @@ export function solveForWithdrawal(
   targetValue: number,
   showInflation: boolean,
 ): number {
-  if (targetValue < 0) return 0;
+  if (targetValue < 0 || !props.advanced) return 0;
 
-  // If even 0 withdrawal can't reach the target, the target is above projection
-  const atZero = new InvestmentCalculator({ ...props, monthlyWithdrawal: 0 });
-  if (atZero.calculateGrowth(showInflation).numeric <= targetValue) {
-    return 0;
-  }
+  const finalValue = (monthlyWithdrawal: number) =>
+    new InvestmentCalculator({
+      ...props,
+      dynamicWithdrawal: undefined,
+      monthlyWithdrawal,
+    }).calculateGrowth(showInflation).numeric;
 
-  // Upper bound: use the maximum allowed monthly withdrawal as the ceiling so
-  // the binary search can find the withdrawal that drains the portfolio to 0.
-  const ceiling = props.maxMonthlyWithdrawal;
-
-  const atCeiling = new InvestmentCalculator({
-    ...props,
-    monthlyWithdrawal: ceiling,
-  });
-  const floorResult = atCeiling.calculateGrowth(showInflation).numeric;
+  if (finalValue(0) <= targetValue) return 0;
 
   let lo = 0;
-  let hi = floorResult >= targetValue ? ceiling * 2 : ceiling;
-
+  let hi = props.maxMonthlyWithdrawal;
   for (let i = 0; i < ITERATIONS; i++) {
     const mid = (lo + hi) / 2;
-    const calc = new InvestmentCalculator({ ...props, monthlyWithdrawal: mid });
-    const result = calc.calculateGrowth(showInflation).numeric;
-    // More withdrawal → lower result; we want result ≈ targetValue
-    if (result > targetValue) lo = mid;
+    if (finalValue(mid) > targetValue) lo = mid;
     else hi = mid;
   }
 
-  return Math.round((lo + hi) / 2);
+  return Math.min(Math.round((lo + hi) / 2), props.maxMonthlyWithdrawal);
 }

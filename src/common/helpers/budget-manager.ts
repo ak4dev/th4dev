@@ -7,6 +7,8 @@
  * consent-gated useEffect in App.tsx.
  * ================================================== */
 
+import { MONTHS_PER_YEAR } from "../constants/app-constants";
+
 /* ---------- Types ---------- */
 
 export interface BudgetItem {
@@ -16,14 +18,9 @@ export interface BudgetItem {
   category: string;
 }
 
-export interface BudgetStore {
-  items: BudgetItem[];
-}
-
 /* ---------- Constants ---------- */
 
-const STORAGE_KEY = "th4_budget";
-const MAX_ITEMS = 50;
+export const MAX_ITEMS = 50;
 
 export const DEFAULT_CATEGORIES = [
   "Housing",
@@ -39,18 +36,7 @@ export const DEFAULT_CATEGORIES = [
   "Other",
 ] as const;
 
-/* ---------- Persistence ---------- */
-
-export function loadBudget(): BudgetItem[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as BudgetStore;
-    return Array.isArray(parsed.items) ? parsed.items : [];
-  } catch {
-    return [];
-  }
-}
+export type BudgetCategory = (typeof DEFAULT_CATEGORIES)[number];
 
 /* ---------- CRUD ---------- */
 
@@ -58,49 +44,36 @@ export function addBudgetItem(
   name: string,
   amount: number,
   category: string,
-  existing?: BudgetItem[],
+  items: BudgetItem[],
 ): BudgetItem[] {
-  const items = existing ?? loadBudget();
-
   if (items.length >= MAX_ITEMS) {
     throw new Error(`Maximum of ${MAX_ITEMS} budget items reached.`);
   }
-
   const id = `budget-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const item: BudgetItem = { id, name, amount: Math.max(0, amount), category };
-
-  const updated = [...items, item];
-  return updated;
+  return [...items, { id, name, amount: Math.max(0, amount), category }];
 }
 
 export function updateBudgetItem(
   id: string,
   changes: Partial<Pick<BudgetItem, "name" | "amount" | "category">>,
-  existing?: BudgetItem[],
+  items: BudgetItem[],
 ): BudgetItem[] {
-  const items = existing ?? loadBudget();
-  const updated = items.map((item) =>
-    item.id === id
-      ? {
+  return items.map((item) =>
+    item.id !== id
+      ? item
+      : {
           ...item,
           ...changes,
-          amount:
-            changes.amount !== undefined
-              ? Math.max(0, changes.amount)
-              : item.amount,
-        }
-      : item,
+          amount: Math.max(0, changes.amount ?? item.amount),
+        },
   );
-  return updated;
 }
 
 export function deleteBudgetItem(
   id: string,
-  existing?: BudgetItem[],
+  items: BudgetItem[],
 ): BudgetItem[] {
-  const items = existing ?? loadBudget();
-  const updated = items.filter((item) => item.id !== id);
-  return updated;
+  return items.filter((item) => item.id !== id);
 }
 
 /* ---------- Calculations ---------- */
@@ -110,7 +83,7 @@ export function getMonthlyTotal(items: BudgetItem[]): number {
 }
 
 export function getAnnualTotal(items: BudgetItem[]): number {
-  return getMonthlyTotal(items) * 12;
+  return getMonthlyTotal(items) * MONTHS_PER_YEAR;
 }
 
 export function getTotalByCategory(items: BudgetItem[]): Map<string, number> {
@@ -121,18 +94,3 @@ export function getTotalByCategory(items: BudgetItem[]): Map<string, number> {
   }
   return map;
 }
-
-export function getCategoryPercentages(
-  items: BudgetItem[],
-): Map<string, number> {
-  const totals = getTotalByCategory(items);
-  const monthly = getMonthlyTotal(items);
-  if (monthly === 0) return new Map();
-  const pcts = new Map<string, number>();
-  for (const [cat, amt] of totals) {
-    pcts.set(cat, (amt / monthly) * 100);
-  }
-  return pcts;
-}
-
-export { MAX_ITEMS };

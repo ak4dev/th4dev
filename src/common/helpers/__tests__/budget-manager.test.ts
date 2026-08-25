@@ -1,60 +1,14 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  loadBudget,
   addBudgetItem,
   updateBudgetItem,
   deleteBudgetItem,
   getMonthlyTotal,
   getAnnualTotal,
   getTotalByCategory,
-  getCategoryPercentages,
   MAX_ITEMS,
   type BudgetItem,
 } from "../budget-manager";
-
-/* ---------- localStorage mock ---------- */
-
-let storage: Record<string, string> = {};
-
-beforeEach(() => {
-  storage = {};
-  vi.stubGlobal("localStorage", {
-    getItem: (k: string) => storage[k] ?? null,
-    setItem: (k: string, v: string) => {
-      storage[k] = v;
-    },
-    removeItem: (k: string) => {
-      delete storage[k];
-    },
-  });
-});
-
-/* ---------- loadBudget ---------- */
-
-describe("loadBudget", () => {
-  it("returns empty array when nothing stored", () => {
-    expect(loadBudget()).toEqual([]);
-  });
-
-  it("returns empty array for corrupt data", () => {
-    storage["th4_budget"] = "not json";
-    expect(loadBudget()).toEqual([]);
-  });
-
-  it("returns stored items", () => {
-    const item: BudgetItem = {
-      id: "b1",
-      name: "Rent",
-      amount: 1500,
-      category: "Housing",
-    };
-    storage["th4_budget"] = JSON.stringify({ items: [item] });
-    const result = loadBudget();
-    expect(result).toHaveLength(1);
-    expect(result[0].name).toBe("Rent");
-    expect(result[0].amount).toBe(1500);
-  });
-});
 
 /* ---------- addBudgetItem ---------- */
 
@@ -67,21 +21,17 @@ describe("addBudgetItem", () => {
     expect(result[0].category).toBe("Housing");
   });
 
-  it("appends to existing items", () => {
+  it("appends to existing items without mutating the input", () => {
     const first = addBudgetItem("Rent", 1500, "Housing", []);
     const result = addBudgetItem("Groceries", 600, "Food", first);
     expect(result).toHaveLength(2);
     expect(result[1].name).toBe("Groceries");
+    expect(first).toHaveLength(1);
   });
 
   it("clamps negative amounts to zero", () => {
     const result = addBudgetItem("Negative", -100, "Other", []);
     expect(result[0].amount).toBe(0);
-  });
-
-  it("does not write to localStorage", () => {
-    addBudgetItem("Rent", 1500, "Housing", []);
-    expect(storage["th4_budget"]).toBeUndefined();
   });
 
   it("throws when max items reached", () => {
@@ -132,18 +82,13 @@ describe("updateBudgetItem", () => {
     expect(result[0].category).toBe("Utilities");
   });
 
-  it("does not write to localStorage", () => {
-    const items = addBudgetItem("Rent", 1500, "Housing", []);
-    updateBudgetItem(items[0].id, { amount: 2000 }, items);
-    expect(storage["th4_budget"]).toBeUndefined();
-  });
-
-  it("leaves other items unchanged", () => {
+  it("leaves other items unchanged and does not mutate the input", () => {
     const first = addBudgetItem("Rent", 1500, "Housing", []);
     const both = addBudgetItem("Food", 600, "Food", first);
     const result = updateBudgetItem(both[1].id, { amount: 700 }, both);
     expect(result[0].amount).toBe(1500);
     expect(result[1].amount).toBe(700);
+    expect(both[1].amount).toBe(600);
   });
 });
 
@@ -154,12 +99,7 @@ describe("deleteBudgetItem", () => {
     const items = addBudgetItem("Rent", 1500, "Housing", []);
     const result = deleteBudgetItem(items[0].id, items);
     expect(result).toHaveLength(0);
-  });
-
-  it("does not write to localStorage", () => {
-    const items = addBudgetItem("Rent", 1500, "Housing", []);
-    deleteBudgetItem(items[0].id, items);
-    expect(storage["th4_budget"]).toBeUndefined();
+    expect(items).toHaveLength(1);
   });
 
   it("does nothing if id not found", () => {
@@ -216,34 +156,12 @@ describe("getTotalByCategory", () => {
   });
 });
 
-describe("getCategoryPercentages", () => {
-  it("returns percentages for each category", () => {
-    const items: BudgetItem[] = [
-      { id: "1", name: "Rent", amount: 750, category: "Housing" },
-      { id: "2", name: "Food", amount: 250, category: "Food" },
-    ];
-    const pcts = getCategoryPercentages(items);
-    expect(pcts.get("Housing")).toBe(75);
-    expect(pcts.get("Food")).toBe(25);
-  });
-
-  it("returns empty map for zero total", () => {
-    expect(getCategoryPercentages([])).toEqual(new Map());
-  });
-});
-
 describe("edge cases", () => {
   it("update on non-existent id returns items unchanged", () => {
     const items = addBudgetItem("Rent", 1500, "Housing", []);
     const result = updateBudgetItem("nonexistent", { amount: 2000 }, items);
     expect(result).toHaveLength(1);
     expect(result[0].amount).toBe(1500);
-  });
-
-  it("delete on non-existent id returns items unchanged", () => {
-    const items = addBudgetItem("Rent", 1500, "Housing", []);
-    const result = deleteBudgetItem("nonexistent", items);
-    expect(result).toHaveLength(1);
   });
 
   it("handles fractional amounts", () => {

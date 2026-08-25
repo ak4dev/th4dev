@@ -6,7 +6,7 @@
  * configuration.
  * ================================================== */
 
-import { useState, useCallback, useMemo } from "react";
+import { useState } from "react";
 import { styled } from "../../../stitches.config";
 import { compactModernInputStyles } from "../../common/constants/input-styles";
 import type { TH4State } from "../../common/types/types";
@@ -18,6 +18,14 @@ import {
   MAX_SCENARIOS,
   type ScenarioSnapshot,
 } from "../../common/helpers/scenario-manager";
+import { formatCurrency } from "../../common/helpers/format";
+import {
+  PanelContainer,
+  PanelTitle,
+  PanelButton,
+  CountLabel,
+  EmptyMessage,
+} from "../ui/primitives";
 
 /* ---------- Props ---------- */
 
@@ -32,25 +40,6 @@ interface ScenarioPanelProps {
 
 /* ---------- Styled Components ---------- */
 
-const Container = styled("div", {
-  backgroundColor: "$currentLine",
-  borderRadius: "12px",
-  padding: "20px",
-  marginTop: "24px",
-  boxShadow: "0 6px 16px rgba(0,0,0,0.2)",
-});
-
-const Title = styled("h4", {
-  margin: 0,
-  marginBottom: "16px",
-  fontSize: "0.95rem",
-  fontWeight: 600,
-  color: "$cyan",
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-});
-
 const SaveRow = styled("div", {
   display: "flex",
   gap: "8px",
@@ -60,50 +49,6 @@ const SaveRow = styled("div", {
 const Input = styled("input", {
   ...compactModernInputStyles,
   flex: 1,
-  "&::placeholder": {
-    color: "$comment",
-    opacity: 0.8,
-  },
-});
-
-const Button = styled("button", {
-  borderRadius: "6px",
-  border: "none",
-  padding: "8px 14px",
-  fontSize: "0.8rem",
-  fontWeight: 600,
-  cursor: "pointer",
-  transition: "opacity 0.15s",
-  "&:hover": {
-    opacity: 0.85,
-  },
-  "&:disabled": {
-    opacity: 0.4,
-    cursor: "not-allowed",
-  },
-  variants: {
-    color: {
-      cyan: {
-        backgroundColor: "$cyan",
-        color: "$background",
-      },
-      green: {
-        backgroundColor: "$green",
-        color: "$background",
-      },
-      red: {
-        backgroundColor: "$red",
-        color: "$background",
-      },
-      muted: {
-        backgroundColor: "$comment",
-        color: "$background",
-      },
-    },
-  },
-  defaultVariants: {
-    color: "cyan",
-  },
 });
 
 const ScenarioList = styled("div", {
@@ -144,40 +89,14 @@ const CardActions = styled("div", {
   flexWrap: "wrap",
 });
 
-const EmptyMessage = styled("p", {
-  fontSize: "0.82rem",
-  color: "$comment",
-  textAlign: "center",
-  padding: "16px 0",
-  margin: 0,
-});
-
-const CountLabel = styled("span", {
-  fontSize: "0.72rem",
-  color: "$comment",
-  fontWeight: 400,
-});
-
 /* ---------- Helpers ---------- */
 
-function formatCurrency(n: number): string {
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
-}
-
 function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  } catch {
-    return iso;
-  }
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 /* ---------- Component ---------- */
@@ -192,59 +111,35 @@ export default function ScenarioPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
 
-  const canSave = useMemo(
-    () => newName.trim().length > 0 && scenarios.length < MAX_SCENARIOS,
-    [newName, scenarios.length],
-  );
+  const canSave = newName.trim().length > 0 && scenarios.length < MAX_SCENARIOS;
 
-  const handleSave = useCallback(() => {
+  const handleSave = () => {
     if (!canSave) return;
-    try {
-      const updated = saveScenario(newName.trim(), currentState, scenarios);
-      setScenarios(updated);
-      setNewName("");
-    } catch {
-      // max reached
-    }
-  }, [canSave, newName, currentState, scenarios, setScenarios]);
+    setScenarios(saveScenario(newName.trim(), currentState, scenarios));
+    setNewName("");
+  };
 
-  const handleDelete = useCallback(
-    (id: string) => {
-      const updated = deleteScenario(id, scenarios);
-      setScenarios(updated);
-    },
-    [scenarios, setScenarios],
-  );
-
-  const handleLoad = useCallback(
-    (scenario: ScenarioSnapshot) => {
-      onLoadScenario(scenario.state);
-    },
-    [onLoadScenario],
-  );
-
-  const handleStartRename = useCallback((scenario: ScenarioSnapshot) => {
+  const startRename = (scenario: ScenarioSnapshot) => {
     setEditingId(scenario.id);
     setEditName(scenario.name);
-  }, []);
+  };
 
-  const handleFinishRename = useCallback(() => {
+  const finishRename = () => {
     if (editingId && editName.trim()) {
-      const updated = renameScenario(editingId, editName.trim(), scenarios);
-      setScenarios(updated);
+      setScenarios(renameScenario(editingId, editName.trim(), scenarios));
     }
     setEditingId(null);
     setEditName("");
-  }, [editingId, editName, scenarios, setScenarios]);
+  };
 
   return (
-    <Container>
-      <Title>
+    <PanelContainer>
+      <PanelTitle>
         Scenario Snapshots{" "}
         <CountLabel>
           ({scenarios.length}/{MAX_SCENARIOS})
         </CountLabel>
-      </Title>
+      </PanelTitle>
 
       <SaveRow>
         <Input
@@ -254,14 +149,14 @@ export default function ScenarioPanel({
           onKeyDown={(e) => e.key === "Enter" && handleSave()}
           maxLength={60}
         />
-        <Button color="cyan" disabled={!canSave} onClick={handleSave}>
+        <PanelButton color="cyan" disabled={!canSave} onClick={handleSave}>
           Save
-        </Button>
+        </PanelButton>
       </SaveRow>
 
       <ScenarioList>
         {scenarios.length === 0 && (
-          <EmptyMessage>
+          <EmptyMessage css={{ padding: "16px 0" }}>
             No saved scenarios yet. Save one to compare later.
           </EmptyMessage>
         )}
@@ -276,11 +171,11 @@ export default function ScenarioPanel({
                   <Input
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleFinishRename()}
-                    onBlur={handleFinishRename}
+                    onKeyDown={(e) => e.key === "Enter" && finishRename()}
+                    onBlur={finishRename}
                     autoFocus
                     maxLength={60}
-                    css={{ flex: 1, marginRight: "8px" }}
+                    css={{ marginRight: "8px" }}
                   />
                 ) : (
                   <ScenarioName>{s.name}</ScenarioName>
@@ -292,22 +187,28 @@ export default function ScenarioPanel({
                 {preview.returnPct}% · {preview.years}yr
               </ScenarioMeta>
               <CardActions>
-                <Button color="green" onClick={() => handleLoad(s)}>
+                <PanelButton
+                  color="green"
+                  onClick={() => onLoadScenario(s.state)}
+                >
                   Load
-                </Button>
+                </PanelButton>
                 {!isEditing && (
-                  <Button color="muted" onClick={() => handleStartRename(s)}>
+                  <PanelButton color="muted" onClick={() => startRename(s)}>
                     Rename
-                  </Button>
+                  </PanelButton>
                 )}
-                <Button color="red" onClick={() => handleDelete(s.id)}>
+                <PanelButton
+                  color="red"
+                  onClick={() => setScenarios(deleteScenario(s.id, scenarios))}
+                >
                   Delete
-                </Button>
+                </PanelButton>
               </CardActions>
             </ScenarioCard>
           );
         })}
       </ScenarioList>
-    </Container>
+    </PanelContainer>
   );
 }

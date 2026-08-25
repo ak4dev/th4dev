@@ -163,8 +163,9 @@ filingStatus)` — greedy algorithm: withdraw from taxable first
 
 - New toggle: `taxWithdrawal: boolean` in `TogglesState`
 - Visible only when `toggles.fire === true` (nested under FIRE)
-- Follow standard toggle addition pattern (types.ts, state-manager.ts,
-  InvestmentCalculatorModern.tsx, StateIOPopover.tsx)
+- Follow standard toggle addition pattern (`TogglesState` in types.ts,
+  `DEFAULT_TOGGLES` + `isValidTH4State` in state-manager.ts, `SwitchRow`
+  in InvestmentCalculatorModern.tsx)
 
 ### Test File
 
@@ -478,7 +479,7 @@ Add `rebalanceAllocation?: AssetAllocation` to `TH4State`.
   apply rebalancing at specified frequency, track portfolio value
 - `compareStrategies(params)` — runs all 4 strategies, returns
   `RebalanceComparison` with percentile statistics
-- Uses same RNG seeding pattern as existing `monte-carlo.ts`
+- Uses the same seeded PRNG pattern as `monte-carlo.ts` (`seed?: number`)
 
 ### UI: New Component
 
@@ -494,7 +495,7 @@ Add `rebalanceAllocation?: AssetAllocation` to `TH4State`.
 
 **`src/components/InvestmentCalculatorModern.tsx`**:
 
-- New toggle: `rebalancing: boolean` in `TogglesState`
+- New toggle: `rebalancing: boolean` in `TogglesState` (types.ts)
 - Visible when `toggles.portfolio === true` (nested under Portfolio)
 - Panel rendered below PortfolioPanel
 
@@ -542,9 +543,9 @@ All features follow these project conventions:
 - Stitches for styled components, Radix UI for interactive primitives
 - Number inputs use `inputStyles` from `src/common/constants/input-styles.ts`
 - Spinner-free inputs: `type="text"` with `inputMode="decimal"`
-- Toggles: add to `TogglesState` (types.ts + InvestmentCalculatorModern.tsx),
-  `DEFAULT_TOGGLES` (state-manager.ts), `isValidTH4State` backward-compat,
-  `StateIOPopover` type guard
+- Toggles: add to `TogglesState` (types.ts only — never redeclare it),
+  `DEFAULT_TOGGLES` and `isValidTH4State` backward-compat (state-manager.ts),
+  `SwitchRow` in the hub's Tools section
 - Tests: Vitest with `describe`/`it`/`expect`, mock localStorage,
   one describe per exported function, edge cases included
 - No emojis in UI text

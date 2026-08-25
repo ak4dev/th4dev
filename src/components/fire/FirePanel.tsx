@@ -6,13 +6,16 @@
  * the user's existing investment inputs.
  * ================================================== */
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useId, useState } from "react";
 import { styled } from "../../../stitches.config";
 import { compactModernInputStyles } from "../../common/constants/input-styles";
 import {
-  calculateFire,
-  type FireResult,
-} from "../../common/helpers/fire-calculator";
+  MAX_AGE,
+  MAX_ANNUAL_EXPENSES,
+} from "../../common/constants/app-constants";
+import { calculateFire } from "../../common/helpers/fire-calculator";
+import { formatCurrency } from "../../common/helpers/format";
+import { PanelContainer, PanelTitle, Separator } from "../ui/primitives";
 
 /* ---------- Props ---------- */
 
@@ -32,25 +35,6 @@ interface FirePanelProps {
 }
 
 /* ---------- Styled Components ---------- */
-
-const Container = styled("div", {
-  backgroundColor: "$currentLine",
-  borderRadius: "12px",
-  padding: "20px",
-  marginTop: "24px",
-  boxShadow: "0 6px 16px rgba(0,0,0,0.2)",
-});
-
-const Title = styled("h4", {
-  margin: 0,
-  marginBottom: "16px",
-  fontSize: "0.95rem",
-  fontWeight: 600,
-  color: "$cyan",
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-});
 
 const MetricsGrid = styled("div", {
   display: "grid",
@@ -158,106 +142,96 @@ const BadgeTag = styled("span", {
   },
 });
 
-const Separator = styled("hr", {
-  border: "none",
-  borderTop: "1px solid $comment",
-  opacity: 0.2,
-  margin: "14px 0",
-});
+const STATUS_LABEL = {
+  achieved: "FIRE Achieved",
+  shortfall: "Shortfall",
+  onTrack: "Coast FIRE",
+  needsWork: "Building",
+} as const;
+
+/* ---------- Numeric field ---------- */
+
+interface NumFieldProps {
+  label: string;
+  value: number;
+  onCommit: (v: number) => void;
+  min: number;
+  max: number;
+  /** Committed when the field is blank or unparseable */
+  fallback: number;
+  decimal?: boolean;
+}
+
+/**
+ * Free-typing numeric input: keeps a local draft while focused and
+ * commits the clamped value on blur / Enter, then falls back to
+ * displaying the prop so external updates (e.g. scenario load) show
+ * through without a sync effect.
+ */
+function NumField({
+  label,
+  value,
+  onCommit,
+  min,
+  max,
+  fallback,
+  decimal = false,
+}: NumFieldProps) {
+  const id = useId();
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commit = () => {
+    if (draft === null) return;
+    const n = decimal ? parseFloat(draft) : parseInt(draft, 10);
+    onCommit(Number.isNaN(n) ? fallback : Math.min(max, Math.max(min, n)));
+    setDraft(null);
+  };
+
+  return (
+    <InputCell>
+      <InputLabel htmlFor={id}>{label}</InputLabel>
+      <Input
+        id={id}
+        type="text"
+        inputMode={decimal ? "decimal" : "numeric"}
+        value={draft ?? String(value)}
+        onChange={(e) =>
+          setDraft(e.target.value.replace(decimal ? /[^0-9.]/g : /[^0-9]/g, ""))
+        }
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && commit()}
+      />
+    </InputCell>
+  );
+}
 
 /* ---------- Component ---------- */
 
-function formatCurrency(n: number): string {
-  if (!isFinite(n)) return "N/A";
-  return `$${n.toLocaleString()}`;
-}
-
-export default function FirePanel(props: FirePanelProps) {
+export default function FirePanel({
+  onAnnualExpensesChange,
+  onSafeWithdrawalRateChange,
+  onCurrentAgeChange,
+  onTargetRetirementAgeChange,
+  ...fireInputs
+}: FirePanelProps) {
   const {
-    currentSavings,
     monthlySavings,
-    annualReturn,
-    inflationRate,
     annualExpenses,
     safeWithdrawalRate,
     currentAge,
     targetRetirementAge,
-    onAnnualExpensesChange,
-    onSafeWithdrawalRateChange,
-    onCurrentAgeChange,
-    onTargetRetirementAgeChange,
-  } = props;
+  } = fireInputs;
+  const result = calculateFire(fireInputs);
 
-  // Local text state so users can type freely; commit on blur/Enter
-  const [expensesText, setExpensesText] = useState(
-    String(annualExpenses || ""),
-  );
-  const [swrText, setSwrText] = useState(String(safeWithdrawalRate || ""));
-  const [ageText, setAgeText] = useState(String(currentAge || ""));
-  const [retireText, setRetireText] = useState(
-    String(targetRetirementAge || ""),
-  );
-
-  // Sync local text when props change externally (e.g. scenario load).
-  // Single batched effect avoids cascading re-renders.
-  useEffect(() => {
-    setExpensesText(String(annualExpenses || "")); // eslint-disable-line react-hooks/set-state-in-effect -- syncing controlled text from parent props
-    setSwrText(String(safeWithdrawalRate || ""));
-    setAgeText(String(currentAge || ""));
-    setRetireText(String(targetRetirementAge || ""));
-  }, [annualExpenses, safeWithdrawalRate, currentAge, targetRetirementAge]);
-
-  const commitExpenses = useCallback(() => {
-    const n = parseInt(expensesText, 10);
-    const val = Number.isNaN(n) ? 0 : Math.max(0, n);
-    onAnnualExpensesChange(val);
-    setExpensesText(String(val || ""));
-  }, [expensesText, onAnnualExpensesChange]);
-
-  const commitSwr = useCallback(() => {
-    const n = parseFloat(swrText);
-    const val = Number.isNaN(n) ? 4 : Math.min(10, Math.max(1, n));
-    onSafeWithdrawalRateChange(val);
-    setSwrText(String(val));
-  }, [swrText, onSafeWithdrawalRateChange]);
-
-  const commitAge = useCallback(() => {
-    const n = parseInt(ageText, 10);
-    const val = Number.isNaN(n) ? 30 : Math.min(100, Math.max(18, n));
-    onCurrentAgeChange(val);
-    setAgeText(String(val));
-  }, [ageText, onCurrentAgeChange]);
-
-  const commitRetire = useCallback(() => {
-    const n = parseInt(retireText, 10);
-    const val = Number.isNaN(n) ? 65 : Math.min(100, Math.max(18, n));
-    onTargetRetirementAgeChange(val);
-    setRetireText(String(val));
-  }, [retireText, onTargetRetirementAgeChange]);
-
-  const result: FireResult = useMemo(
-    () =>
-      calculateFire({
-        currentSavings,
-        monthlySavings,
-        annualReturn,
-        inflationRate,
-        annualExpenses,
-        safeWithdrawalRate,
-        currentAge,
-        targetRetirementAge,
-      }),
-    [
-      currentSavings,
-      monthlySavings,
-      annualReturn,
-      inflationRate,
-      annualExpenses,
-      safeWithdrawalRate,
-      currentAge,
-      targetRetirementAge,
-    ],
-  );
+  const status =
+    result.progressPct >= 100
+      ? "achieved"
+      : result.isShortfall
+        ? "shortfall"
+        : result.isCoastFire
+          ? "onTrack"
+          : "needsWork";
+  const achieved = status === "achieved";
 
   const progressStatus =
     result.progressPct >= 75
@@ -266,81 +240,48 @@ export default function FirePanel(props: FirePanelProps) {
         ? "mid"
         : "low";
 
-  const overallStatus =
-    result.progressPct >= 100
-      ? "achieved"
-      : result.isShortfall
-        ? "shortfall"
-        : result.isCoastFire
-          ? "onTrack"
-          : "needsWork";
-
-  const statusLabel =
-    result.progressPct >= 100
-      ? "FIRE Achieved"
-      : result.isShortfall
-        ? "Shortfall"
-        : result.isCoastFire
-          ? "Coast FIRE"
-          : "Building";
-
   return (
-    <Container>
-      <Title>
+    <PanelContainer>
+      <PanelTitle>
         FIRE Calculator
-        <BadgeTag variant={overallStatus}>{statusLabel}</BadgeTag>
-      </Title>
+        <BadgeTag variant={status}>{STATUS_LABEL[status]}</BadgeTag>
+      </PanelTitle>
 
       {/* Editable inputs — 2x2 grid */}
       <InputGrid>
-        <InputCell>
-          <InputLabel>Annual Expenses</InputLabel>
-          <Input
-            type="text"
-            inputMode="numeric"
-            value={expensesText}
-            onChange={(e) =>
-              setExpensesText(e.target.value.replace(/[^0-9]/g, ""))
-            }
-            onBlur={commitExpenses}
-            onKeyDown={(e) => e.key === "Enter" && commitExpenses()}
-          />
-        </InputCell>
-        <InputCell>
-          <InputLabel>SWR (%)</InputLabel>
-          <Input
-            type="text"
-            inputMode="decimal"
-            value={swrText}
-            onChange={(e) => setSwrText(e.target.value.replace(/[^0-9.]/g, ""))}
-            onBlur={commitSwr}
-            onKeyDown={(e) => e.key === "Enter" && commitSwr()}
-          />
-        </InputCell>
-        <InputCell>
-          <InputLabel>Current Age</InputLabel>
-          <Input
-            type="text"
-            inputMode="numeric"
-            value={ageText}
-            onChange={(e) => setAgeText(e.target.value.replace(/[^0-9]/g, ""))}
-            onBlur={commitAge}
-            onKeyDown={(e) => e.key === "Enter" && commitAge()}
-          />
-        </InputCell>
-        <InputCell>
-          <InputLabel>Retire at Age</InputLabel>
-          <Input
-            type="text"
-            inputMode="numeric"
-            value={retireText}
-            onChange={(e) =>
-              setRetireText(e.target.value.replace(/[^0-9]/g, ""))
-            }
-            onBlur={commitRetire}
-            onKeyDown={(e) => e.key === "Enter" && commitRetire()}
-          />
-        </InputCell>
+        <NumField
+          label="Annual Expenses"
+          value={annualExpenses}
+          onCommit={onAnnualExpensesChange}
+          min={0}
+          max={MAX_ANNUAL_EXPENSES}
+          fallback={0}
+        />
+        <NumField
+          label="SWR (%)"
+          value={safeWithdrawalRate}
+          onCommit={onSafeWithdrawalRateChange}
+          decimal
+          min={1}
+          max={10}
+          fallback={4}
+        />
+        <NumField
+          label="Current Age"
+          value={currentAge}
+          onCommit={onCurrentAgeChange}
+          min={18}
+          max={MAX_AGE}
+          fallback={30}
+        />
+        <NumField
+          label="Retire at Age"
+          value={targetRetirementAge}
+          onCommit={onTargetRetirementAgeChange}
+          min={18}
+          max={MAX_AGE}
+          fallback={65}
+        />
       </InputGrid>
 
       <Separator />
@@ -348,13 +289,13 @@ export default function FirePanel(props: FirePanelProps) {
       {/* Progress */}
       <MetricCard>
         <MetricLabel>Progress to FIRE</MetricLabel>
-        <MetricValue color={result.progressPct >= 100 ? "green" : "cyan"}>
+        <MetricValue color={achieved ? "green" : "cyan"}>
           {result.progressPct}%
         </MetricValue>
         <ProgressBarContainer>
           <ProgressBarFill
             status={progressStatus}
-            css={{ width: `${Math.min(100, result.progressPct)}%` }}
+            css={{ width: `${result.progressPct}%` }}
           />
         </ProgressBarContainer>
       </MetricCard>
@@ -410,6 +351,6 @@ export default function FirePanel(props: FirePanelProps) {
           </MetricCard>
         )}
       </MetricsGrid>
-    </Container>
+    </PanelContainer>
   );
 }

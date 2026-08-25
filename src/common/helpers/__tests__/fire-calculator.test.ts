@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   calculateFireNumber,
+  realReturn,
   yearsToFire,
   coastFireNumber,
   monthlySavingsNeeded,
@@ -31,6 +32,22 @@ describe("calculateFireNumber", () => {
 
   it("negative expenses returns negative FIRE number", () => {
     expect(calculateFireNumber(-40000, 4)).toBe(-1000000);
+  });
+});
+
+describe("realReturn", () => {
+  it("equals the nominal return when inflation is 0", () => {
+    expect(realReturn(8, 0)).toBeCloseTo(8, 10);
+  });
+
+  it("uses the Fisher relation, not simple subtraction", () => {
+    // (1.08 / 1.025) - 1 = 5.366%
+    expect(realReturn(8, 2.5)).toBeCloseTo(5.366, 3);
+    expect(realReturn(8, 2.5)).toBeLessThan(8 - 2.5);
+  });
+
+  it("is negative when inflation exceeds the return", () => {
+    expect(realReturn(2, 5)).toBeLessThan(0);
   });
 });
 
@@ -147,6 +164,31 @@ describe("calculateFire (combined)", () => {
     expect(result.monthlySavingsNeeded).toBeNull();
   });
 
+  it("exactly at the FIRE number reports 100%", () => {
+    const result = calculateFire({ ...baseInputs, currentSavings: 1000000 });
+    expect(result.progressPct).toBe(100);
+    expect(result.yearsToFire).toBe(0);
+  });
+
+  it("just below the FIRE number does not round up to 100%", () => {
+    // 99.6% of the target: still one year away, still needs contributions
+    const result = calculateFire({
+      ...baseInputs,
+      currentSavings: 996000,
+      currentAge: 55,
+      targetRetirementAge: 55,
+    });
+    expect(result.progressPct).toBe(99);
+    expect(result.yearsToFire).toBe(1);
+    expect(result.isShortfall).toBe(true);
+  });
+
+  it("just below the FIRE number keeps monthlySavingsNeeded non-null", () => {
+    const result = calculateFire({ ...baseInputs, currentSavings: 996000 });
+    expect(result.progressPct).toBe(99);
+    expect(result.monthlySavingsNeeded).not.toBeNull();
+  });
+
   it("coast FIRE flag is set correctly", () => {
     // $250k at age 30, retire at 65, 8% return
     // Coast number should be well below $250k
@@ -190,5 +232,40 @@ describe("calculateFire (combined)", () => {
     expect(result.fireNumber).toBe(Infinity);
     expect(result.progressPct).toBe(0);
     expect(result.monthlySavingsNeeded).toBeNull();
+  });
+
+  describe("inflation (today's-dollar FIRE number, real-return growth)", () => {
+    const inputs: FireInputs = { ...baseInputs, currentSavings: 100000 };
+
+    it("with 0% inflation the metrics compound at the nominal return", () => {
+      const result = calculateFire({ ...inputs, inflationRate: 0 });
+      expect(result.coastFireNumber).toBe(coastFireNumber(1000000, 8, 35));
+      expect(result.coastFireNumber).toBe(61378);
+      expect(result.isCoastFire).toBe(true);
+    });
+
+    it("higher inflation raises the coast number and can clear the coast flag", () => {
+      const nominal = calculateFire({ ...inputs, inflationRate: 0 });
+      const real = calculateFire({ ...inputs, inflationRate: 2.5 });
+      expect(real.coastFireNumber).toBe(153530);
+      expect(real.coastFireNumber).toBeGreaterThan(nominal.coastFireNumber);
+      expect(real.isCoastFire).toBe(false);
+    });
+
+    it("higher inflation lengthens years to FIRE and raises monthly savings needed", () => {
+      const nominal = calculateFire({ ...inputs, inflationRate: 0 });
+      const real = calculateFire({ ...inputs, inflationRate: 2.5 });
+      expect(real.yearsToFire!).toBeGreaterThan(nominal.yearsToFire!);
+      expect(real.monthlySavingsNeeded!).toBeGreaterThan(
+        nominal.monthlySavingsNeeded!,
+      );
+    });
+
+    it("inflation does not change the FIRE number or progress", () => {
+      const nominal = calculateFire({ ...inputs, inflationRate: 0 });
+      const real = calculateFire({ ...inputs, inflationRate: 2.5 });
+      expect(real.fireNumber).toBe(nominal.fireNumber);
+      expect(real.progressPct).toBe(nominal.progressPct);
+    });
   });
 });

@@ -15,43 +15,52 @@ export interface LineGraphEntry {
 }
 
 /**
- * Props for the InvestmentCalculator component
+ * Dynamic withdrawal policy: each withdrawal year, the annual withdrawal is
+ * re-evaluated as ratePct% of the current balance (so spending rises in
+ * up-markets and falls in downturns), then clamped to the monthly guardrails.
+ */
+export interface DynamicWithdrawal {
+  /** Annual withdrawal as a percentage of the balance at the start of each withdrawal year */
+  ratePct: number;
+  /** Minimum monthly withdrawal in USD */
+  floor: number;
+  /** Maximum monthly withdrawal in USD */
+  ceiling: number;
+}
+
+/**
+ * Both tracks of a rolled-over balance, so the inflation-adjusted figure is
+ * not deflated a second time inside the receiving investment.
+ */
+export interface RolloverAmounts {
+  nominal: number;
+  inflationAdjusted: number;
+}
+
+/**
+ * Inputs for InvestmentCalculator (a plain object, no setter callbacks)
  */
 export interface InvestmentCalculatorProps {
   /** Current investment amount as a string */
   currentAmount?: string;
-  /** Function to update the current amount */
-  setCurrentAmount: (value: string | undefined) => void;
   /** Projected annual gain percentage */
   projectedGain: number;
-  /** Function to update the projected gain */
-  setProjectedGain: (value: number) => void;
   /** Number of years for growth calculation */
   yearsOfGrowth: number;
-  /** Function to update years of growth */
-  setYearsOfGrowth: (value: number) => void;
   /** Monthly contribution amount */
   monthlyContribution: number;
-  /** Function to update monthly contribution */
-  setMonthlyContribution: (value: number) => void;
   /** Monthly withdrawal amount */
   monthlyWithdrawal: number;
-  /** Function to update monthly withdrawal */
-  setMonthlyWithdrawal: (value: number) => void;
   /** Year when withdrawals begin */
   yearWithdrawalsBegin: number;
-  /** Function to update withdrawal start year */
-  setYearWithdrawalsBegin: (value: number) => void;
   /** Year when contributions stop */
   yearContributionsStop?: number;
-  /** Function to update contribution stop year */
-  setYearContributionsStop: (value: number | undefined) => void;
   /** Whether advanced mode is enabled */
   advanced?: boolean;
   /** Whether rollover is enabled */
   rollOver?: boolean;
-  /** Amount to roll over from another investment */
-  investmentToRoll?: number;
+  /** Amount rolled in from another investment; a bare number is added to both tracks */
+  investmentToRoll?: number | RolloverAmounts;
   /** Year when rollover occurs */
   yearOfRollover?: number;
   /** Maximum monthly withdrawal allowed */
@@ -60,8 +69,28 @@ export interface InvestmentCalculatorProps {
   depreciationRate: number;
   /** Annual expense ratio / management fee as a percentage (e.g. 0.5 = 0.5%) */
   annualFee?: number;
-  /** Unique identifier for this investment */
-  investmentId: string;
+  /** Percentage-of-balance withdrawal policy; overrides monthlyWithdrawal when set */
+  dynamicWithdrawal?: DynamicWithdrawal;
+}
+
+/**
+ * Feature toggles. Core toggles (advanced, showInflation) are always visible;
+ * tool toggles are only shown in advanced mode.
+ */
+export interface TogglesState {
+  advanced: boolean;
+  rollover: boolean;
+  showInflation: boolean;
+  portfolio: boolean;
+  fees: boolean;
+  monteCarlo: boolean;
+  fire: boolean;
+  scenarios: boolean;
+  budget: boolean;
+  /** Percentage-of-balance withdrawals with floor/ceiling guardrails */
+  dynamicWithdrawal: boolean;
+  /** Monte Carlo display mode: "combined" (A+B summed) or "individual" (separate bands) */
+  monteCarloMode: "combined" | "individual";
 }
 
 /**
@@ -75,19 +104,7 @@ export interface TH4State {
   /** All text-input values keyed by input name */
   inputs: Record<string, string>;
   /** Boolean toggle switches */
-  toggles: {
-    advanced: boolean;
-    rollover: boolean;
-    showInflation: boolean;
-    portfolio: boolean;
-    fees: boolean;
-    monteCarlo: boolean;
-    fire: boolean;
-    scenarios: boolean;
-    budget: boolean;
-    /** Monte Carlo display mode: "combined" (A+B summed) or "individual" (separate bands) */
-    monteCarloMode: "combined" | "individual";
-  };
+  toggles: TogglesState;
   /** Stock API configuration and portfolio holdings */
   stock?: {
     /** API URL template — use {symbol} as the ticker placeholder */

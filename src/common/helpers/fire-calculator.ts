@@ -3,6 +3,14 @@
  *
  * Pure calculation functions for FIRE planning metrics.
  * All functions are stateless and side-effect free.
+ *
+ * Dollar convention: the FIRE Number is expressed in
+ * today's dollars (annualExpenses / SWR), so every
+ * growth-based metric in calculateFire compounds at the
+ * REAL return ((1 + nominal) / (1 + inflation) - 1) and
+ * monthlySavings is treated as constant in today's dollars.
+ * The standalone helpers below are rate-agnostic: they
+ * compound at whatever rate they are given.
  * ================================================== */
 
 import {
@@ -15,13 +23,13 @@ import {
 export interface FireInputs {
   /** Current total savings / investments */
   currentSavings: number;
-  /** Monthly savings (contributions) */
+  /** Monthly savings (contributions), constant in today's dollars */
   monthlySavings: number;
-  /** Annual expected return as a percentage (e.g. 10 = 10%) */
+  /** Nominal annual expected return as a percentage (e.g. 10 = 10%) */
   annualReturn: number;
-  /** Annual inflation rate as a percentage */
+  /** Annual inflation rate as a percentage; converts annualReturn to a real return */
   inflationRate: number;
-  /** Annual expenses in retirement */
+  /** Annual expenses in retirement, in today's dollars */
   annualExpenses: number;
   /** Safe withdrawal rate as a percentage (e.g. 4 = 4%) */
   safeWithdrawalRate: number;
@@ -34,7 +42,7 @@ export interface FireInputs {
 export interface FireResult {
   /** The nest egg needed: annualExpenses / (SWR / 100) */
   fireNumber: number;
-  /** Progress toward FIRE Number (0–100) */
+  /** Progress toward FIRE Number (0–100); 100 only once the FIRE Number is reached */
   progressPct: number;
   /** Years until portfolio reaches FIRE Number (null if unreachable) */
   yearsToFire: number | null;
@@ -72,6 +80,22 @@ export function calculateFireNumber(
 ): number {
   if (safeWithdrawalRate <= 0) return Infinity;
   return Math.round(annualExpenses / (safeWithdrawalRate / PERCENTAGE_DIVISOR));
+}
+
+/**
+ * Converts a nominal annual return into a real (inflation-adjusted)
+ * return, both as percentages: ((1 + r) / (1 + i) - 1) * 100.
+ */
+export function realReturn(
+  annualReturn: number,
+  inflationRate: number,
+): number {
+  return (
+    ((1 + annualReturn / PERCENTAGE_DIVISOR) /
+      (1 + inflationRate / PERCENTAGE_DIVISOR) -
+      1) *
+    PERCENTAGE_DIVISOR
+  );
 }
 
 /**
@@ -160,40 +184,41 @@ export function monthlySavingsNeeded(
 
 /**
  * Computes all FIRE metrics from a single set of inputs.
+ *
+ * The FIRE Number is in today's dollars, so yearsToFire, coastFireNumber
+ * and monthlySavingsNeeded all compound at the real return derived from
+ * annualReturn and inflationRate (see the module header).
  */
 export function calculateFire(inputs: FireInputs): FireResult {
   const {
     currentSavings,
     monthlySavings,
     annualReturn,
+    inflationRate,
     annualExpenses,
     safeWithdrawalRate,
     currentAge,
     targetRetirementAge,
   } = inputs;
 
+  const rate = realReturn(annualReturn, inflationRate);
   const fireNum = calculateFireNumber(annualExpenses, safeWithdrawalRate);
+  const reached = currentSavings >= fireNum;
+  // Floor so that 100 is reported only once the FIRE Number is actually reached
   const progressPct =
     fireNum > 0
       ? Math.min(
           100,
-          Math.round((currentSavings / fireNum) * PERCENTAGE_DIVISOR),
+          Math.floor((currentSavings / fireNum) * PERCENTAGE_DIVISOR),
         )
       : 0;
 
-  const yrsToFire = yearsToFire(
-    currentSavings,
-    monthlySavings,
-    annualReturn,
-    fireNum,
-  );
-
+  const yrsToFire = yearsToFire(currentSavings, monthlySavings, rate, fireNum);
   const yearsUntilRetirement = Math.max(0, targetRetirementAge - currentAge);
-  const coastNum = coastFireNumber(fireNum, annualReturn, yearsUntilRetirement);
-
+  const coastNum = coastFireNumber(fireNum, rate, yearsUntilRetirement);
   const needed = monthlySavingsNeeded(
     currentSavings,
-    annualReturn,
+    rate,
     fireNum,
     yearsUntilRetirement,
   );
@@ -206,6 +231,6 @@ export function calculateFire(inputs: FireInputs): FireResult {
     coastFireNumber: coastNum,
     isCoastFire: currentSavings >= coastNum,
     monthlySavingsNeeded: needed,
-    isShortfall: yearsUntilRetirement <= 0 && progressPct < 100 && fireNum > 0,
+    isShortfall: yearsUntilRetirement <= 0 && !reached && fireNum > 0,
   };
 }

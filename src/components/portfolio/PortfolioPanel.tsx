@@ -2,21 +2,17 @@
  * Portfolio Panel
  * ================================================== */
 
-import { useState } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import * as Icons from "@radix-ui/react-icons";
 import { styled } from "../../../stitches.config";
 import { compactModernInputStyles } from "../../common/constants/input-styles";
-import {
-  extractQuoteSymbol,
-  extractStockPrice,
-  fetchStockData,
-  normalizeStockSymbol,
-} from "../../common/helpers/stock-client";
 import { computePortfolioProjection } from "../../common/helpers/portfolio-projection";
 import type { PortfolioHolding } from "../../common/types/portfolio-types";
 import type { LineGraphEntry } from "../../common/types/types";
 import PortfolioProjectionChart from "./PortfolioProjectionChart";
 import CapitalPreservationSchedule from "./CapitalPreservationSchedule";
+import { useFetchPrices } from "./useFetchPrices";
+import { ActionButton, ErrorText, IconButton } from "../ui/primitives";
 
 /* ==================================================
  * Styled Components
@@ -45,17 +41,19 @@ const HoldingsTable = styled("div", {
   gap: "8px",
 });
 
-const HoldingRow = styled("div", {
+const GRID = {
   display: "grid",
   gridTemplateColumns: "6rem 7.25rem 6rem 6rem minmax(6rem, 1fr) auto",
   gap: "8px",
+} as const;
+
+const HoldingRow = styled("div", {
+  ...GRID,
   alignItems: "center",
 });
 
 const HeaderRow = styled("div", {
-  display: "grid",
-  gridTemplateColumns: "6rem 7.25rem 6rem 6rem minmax(6rem, 1fr) auto",
-  gap: "8px",
+  ...GRID,
   paddingBottom: "4px",
   borderBottom: "1px solid $comment",
 });
@@ -64,6 +62,11 @@ const ColLabel = styled("span", {
   fontSize: "0.7rem",
   color: "$comment",
   fontWeight: 500,
+  variants: {
+    align: {
+      right: { textAlign: "right" },
+    },
+  },
 });
 
 const SymbolTag = styled("span", {
@@ -105,35 +108,11 @@ const RefPriceCell = styled("span", {
   textAlign: "right",
 });
 
-const IconButton = styled("button", {
-  all: "unset",
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  color: "$comment",
-  padding: "2px",
-  "&:hover": { color: "$red" },
-});
-
 const Row = styled("div", {
   display: "flex",
   gap: "8px",
   alignItems: "center",
   flexWrap: "wrap",
-});
-
-const ActionButton = styled("button", {
-  all: "unset",
-  cursor: "pointer",
-  backgroundColor: "$purple",
-  color: "$background",
-  padding: "6px 14px",
-  borderRadius: 5,
-  fontSize: "0.8rem",
-  fontWeight: 600,
-  whiteSpace: "nowrap",
-  "&:hover": { opacity: 0.85 },
-  "&:disabled": { opacity: 0.4, cursor: "not-allowed" },
 });
 
 const AllocationSum = styled("span", {
@@ -144,12 +123,6 @@ const AllocationSum = styled("span", {
       false: { color: "$orange" },
     },
   },
-});
-
-const ErrorText = styled("p", {
-  color: "$red",
-  fontSize: "0.75rem",
-  margin: 0,
 });
 
 const InfoText = styled("p", {
@@ -250,43 +223,44 @@ function computeTargetPriceToday(
   );
 }
 
+/* ==================================================
+ * Props
+ * ================================================== */
+
+/**
+ * Inputs the panel needs from one investment lane. The hub builds one for
+ * Investment A and, while advanced mode is on, one for Investment B.
+ */
+export interface PortfolioLane {
+  /** Balance today — the calculator's starting amount (year-0 row of the schedule) */
+  initialValue: number;
+  /** Projected ending balance from the calculator — the total the projection preserves */
+  portfolioValue: number;
+  /**
+   * Effective monthly withdrawal in USD. With dynamic withdrawal on this is
+   * a representative amount (the first scheduled withdrawal), not a slider.
+   */
+  monthlyWithdrawal: number;
+  /** Annual projected gain percentage (e.g. 10 for 10%) */
+  projectedGain: number;
+  /** Year offset at which withdrawals begin */
+  withdrawalStartYear: number;
+  /** Number of years to project forward */
+  years: number;
+  /** InvestmentCalculator.getGrowthMatrix() — entry 0 is today + 1 year */
+  growthMatrix: LineGraphEntry[];
+}
+
+type LaneKey = "A" | "B";
+
 interface PortfolioPanelProps {
   /** Holdings state (symbol + allocation + optional fetched price) */
   holdings: PortfolioHolding[];
-  /** Setter for holdings */
-  setHoldings: (holdings: PortfolioHolding[]) => void;
+  setHoldings: Dispatch<SetStateAction<PortfolioHolding[]>>;
   /** API URL template with {symbol} placeholder */
   stockApiUrl: string;
-  /**
-   * Total portfolio value in USD, derived from investment calculator.
-   */
-  defaultPortfolioValue: number;
-  /** Monthly withdrawal amount from the investment calculator */
-  monthlyWithdrawal: number;
-  /** Annual projected gain percentage for the active investment (e.g. 10 for 10%) */
-  projectedGain: number;
-  /** Year offset at which withdrawals begin — forwarded to the preservation schedule */
-  withdrawalStartYear: number;
-  /** Number of years to project forward */
-  yearsForward: number;
-  /**
-   * Growth matrix from the investment calculator — used to derive the
-   * required stock price at each projected year (capital preservation schedule).
-   */
-  growthMatrix: LineGraphEntry[];
-  /**
-   * Optional Investment B withdrawal start year — shown as a second indicator
-   * in the capital preservation schedule when advanced mode is active.
-   */
-  withdrawalStartYearB?: number;
-  /** Optional Investment B growth matrix for the second withdrawal indicator */
-  growthMatrixB?: LineGraphEntry[];
-  /** Optional Investment B default portfolio value */
-  defaultPortfolioValueB?: number;
-  /** Optional Investment B monthly withdrawal */
-  monthlyWithdrawalB?: number;
-  /** Optional Investment B years of growth */
-  yearsForwardB?: number;
+  /** Investment A is always present; B only while advanced mode is on */
+  lanes: { A: PortfolioLane; B?: PortfolioLane };
 }
 
 /* ==================================================
@@ -297,102 +271,52 @@ export default function PortfolioPanel({
   holdings,
   setHoldings,
   stockApiUrl,
-  defaultPortfolioValue,
-  monthlyWithdrawal,
-  projectedGain,
-  withdrawalStartYear,
-  yearsForward,
-  growthMatrix,
-  withdrawalStartYearB,
-  growthMatrixB,
-  defaultPortfolioValueB,
-  monthlyWithdrawalB,
-  yearsForwardB,
+  lanes,
 }: PortfolioPanelProps) {
-  const hasB = !!growthMatrixB;
-  const [selectedInvestment, setSelectedInvestment] = useState<"A" | "B">("A");
+  const [selectedLane, setSelectedLane] = useState<LaneKey>("A");
+  // Fall back to A when B becomes unavailable
+  const activeKey: LaneKey = lanes.B && selectedLane === "B" ? "B" : "A";
+  const otherKey: LaneKey = activeKey === "A" ? "B" : "A";
+  const active = lanes[activeKey] ?? lanes.A;
+  const other = lanes[otherKey];
 
-  // Reset to A if B becomes unavailable
-  const activeInvestment = hasB ? selectedInvestment : "A";
+  // Raw allocation text per symbol while its input is being edited
+  const [allocDrafts, setAllocDrafts] = useState<Record<string, string>>({});
+  const {
+    fetchPrices,
+    loading,
+    error: fetchError,
+  } = useFetchPrices(stockApiUrl, setHoldings);
 
-  const activeDefaultPortfolioValue =
-    activeInvestment === "B" && defaultPortfolioValueB != null
-      ? defaultPortfolioValueB
-      : defaultPortfolioValue;
-  const activeMonthlyWithdrawal =
-    activeInvestment === "B" && monthlyWithdrawalB != null
-      ? monthlyWithdrawalB
-      : monthlyWithdrawal;
-  const activeYearsForward =
-    activeInvestment === "B" && yearsForwardB != null
-      ? yearsForwardB
-      : yearsForward;
-
-  // When B is selected, B's matrix is primary; A's is passed as secondary so
-  // both withdrawal-start rows are highlighted in the preservation schedule.
-  const activeGrowthMatrix =
-    activeInvestment === "B" && growthMatrixB ? growthMatrixB : growthMatrix;
-  const activeGrowthMatrixB =
-    activeInvestment === "B" ? growthMatrix : growthMatrixB;
-
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const activePortfolioValue = activeDefaultPortfolioValue;
-
-  const updateAllocation = (symbol: string, pct: number) => {
-    setHoldings(
-      holdings.map((h) =>
-        h.symbol === symbol ? { ...h, allocationPct: pct } : h,
-      ),
+  const updateAllocation = (symbol: string, pct: number) =>
+    setHoldings((prev) =>
+      prev.map((h) => (h.symbol === symbol ? { ...h, allocationPct: pct } : h)),
     );
-  };
+
+  const dropDraft = (symbol: string) =>
+    setAllocDrafts((prev) =>
+      Object.fromEntries(Object.entries(prev).filter(([s]) => s !== symbol)),
+    );
 
   const removeHolding = (symbol: string) => {
-    setHoldings(holdings.filter((h) => h.symbol !== symbol));
+    setHoldings((prev) => prev.filter((h) => h.symbol !== symbol));
+    dropDraft(symbol);
   };
 
-  const handleFetchPrices = async () => {
-    if (!holdings.length) return;
-    setLoading(true);
-    setFetchError(null);
+  // Keep the raw text while typing so "12." and "0.5" survive the controlled re-render
+  const editAllocation = (symbol: string, raw: string) => {
+    const cleaned = raw.replace(/[^0-9.]/g, "");
+    setAllocDrafts((prev) => ({ ...prev, [symbol]: cleaned }));
+    const parsed = parseFloat(cleaned);
+    if (!Number.isNaN(parsed)) updateAllocation(symbol, Math.min(100, parsed));
+    else if (cleaned === "") updateAllocation(symbol, 0);
+  };
 
-    try {
-      const symbols = holdings.map((h) => h.symbol);
-      const results = await fetchStockData(stockApiUrl, symbols);
-
-      const resultBySymbol = new Map(
-        results.map((result) => {
-          const responseSymbol =
-            result.data != null ? extractQuoteSymbol(result.data) : undefined;
-          return [
-            normalizeStockSymbol(responseSymbol || result.symbol),
-            result,
-          ] as const;
-        }),
-      );
-
-      const updated = holdings.map((h) => {
-        const result = resultBySymbol.get(normalizeStockSymbol(h.symbol));
-        if (!result || result.error || !result.data) return h;
-        const price = extractStockPrice(result.data);
-        return price !== undefined
-          ? {
-              ...h,
-              currentPrice: price,
-              startPrice: h.startPrice ?? price,
-              projectionStartDate:
-                h.projectionStartDate ?? new Date().toISOString(),
-            }
-          : h;
-      });
-
-      setHoldings(updated);
-    } catch (err) {
-      setFetchError(String(err));
-    } finally {
-      setLoading(false);
-    }
+  const commitAllocation = (symbol: string) => {
+    const draft = allocDrafts[symbol];
+    if (draft === undefined) return;
+    updateAllocation(symbol, Math.min(100, parseFloat(draft) || 0));
+    dropDraft(symbol);
   };
 
   const totalAllocation = holdings.reduce((s, h) => s + h.allocationPct, 0);
@@ -403,52 +327,49 @@ export default function PortfolioPanel({
   );
 
   const projection =
-    holdingsWithPrice.length > 0 && activePortfolioValue > 0
+    holdingsWithPrice.length > 0 && active.portfolioValue > 0
       ? computePortfolioProjection({
           holdings: holdingsWithPrice,
-          totalPortfolioValue: activePortfolioValue,
-          monthlyWithdrawal: activeMonthlyWithdrawal,
-          yearsForward: activeYearsForward,
+          totalPortfolioValue: active.portfolioValue,
+          monthlyWithdrawal: active.monthlyWithdrawal,
+          yearsForward: active.years,
         })
       : {};
 
-  const hasProjection = Object.keys(projection).length > 0;
+  const showChart = allocationValid && Object.keys(projection).length > 0;
+  const projectionHint = !holdingsWithPrice.length
+    ? "Fetch current prices to generate the projection."
+    : !allocationValid
+      ? "Set allocations that sum to 100% to see the projection."
+      : null;
 
   return (
     <Wrapper>
       <SectionTitleRow>
         <SectionTitle>Portfolio Capital Preservation</SectionTitle>
-        {hasB && (
+        {lanes.B && (
           <InvestmentToggleGroup>
-            <InvestmentToggleButton
-              active={activeInvestment === "A"}
-              onClick={() => {
-                setSelectedInvestment("A");
-              }}
-            >
-              Investment A
-            </InvestmentToggleButton>
-            <InvestmentToggleButton
-              active={activeInvestment === "B"}
-              onClick={() => {
-                setSelectedInvestment("B");
-              }}
-            >
-              Investment B
-            </InvestmentToggleButton>
+            {(["A", "B"] as const).map((key) => (
+              <InvestmentToggleButton
+                key={key}
+                active={activeKey === key}
+                onClick={() => setSelectedLane(key)}
+              >
+                Investment {key}
+              </InvestmentToggleButton>
+            ))}
           </InvestmentToggleGroup>
         )}
       </SectionTitleRow>
 
-      {/* Portfolio total value override */}
       <PortfolioValueRow>
         <PortfolioLabel>Total Portfolio Value</PortfolioLabel>
         <PortfolioValueValue aria-live="polite">
-          ${Math.max(0, activePortfolioValue).toLocaleString("en-US")}
+          ${Math.max(0, active.portfolioValue).toLocaleString("en-US")}
         </PortfolioValueValue>
         <PortfolioMeta>
-          · Monthly withdrawal: ${activeMonthlyWithdrawal.toLocaleString()} ·
-          Horizon: {activeYearsForward} yrs
+          · Monthly withdrawal: ${active.monthlyWithdrawal.toLocaleString()} ·
+          Horizon: {active.years} yrs
         </PortfolioMeta>
       </PortfolioValueRow>
 
@@ -458,16 +379,16 @@ export default function PortfolioPanel({
           <HeaderRow>
             <ColLabel>Symbol</ColLabel>
             <ColLabel>Allocation %</ColLabel>
-            <ColLabel style={{ textAlign: "right" }}>Target price</ColLabel>
-            <ColLabel style={{ textAlign: "right" }}>Proj. start</ColLabel>
-            <ColLabel style={{ textAlign: "right" }}>Current Price</ColLabel>
+            <ColLabel align="right">Target price</ColLabel>
+            <ColLabel align="right">Proj. start</ColLabel>
+            <ColLabel align="right">Current Price</ColLabel>
             <ColLabel />
           </HeaderRow>
           {holdings.map((h) => {
             const targetPrice = computeTargetPriceToday(
               h,
-              activePortfolioValue,
-              activeMonthlyWithdrawal,
+              active.portfolioValue,
+              active.monthlyWithdrawal,
             );
             const targetMet =
               targetPrice != null && h.currentPrice != null
@@ -479,16 +400,13 @@ export default function PortfolioPanel({
                 <NumberInput
                   type="text"
                   inputMode="decimal"
-                  value={h.allocationPct || ""}
-                  onChange={(e) =>
-                    updateAllocation(
-                      h.symbol,
-                      Math.min(
-                        100,
-                        parseFloat(e.target.value.replace(/[^0-9.]/g, "")) || 0,
-                      ),
-                    )
-                  }
+                  aria-label={`${h.symbol} allocation percent`}
+                  value={allocDrafts[h.symbol] ?? (h.allocationPct || "")}
+                  onChange={(e) => editAllocation(h.symbol, e.target.value)}
+                  onBlur={() => commitAllocation(h.symbol)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                  }}
                   placeholder="0"
                 />
                 <TargetPriceCell
@@ -507,6 +425,7 @@ export default function PortfolioPanel({
                     : "—"}
                 </PriceDisplay>
                 <IconButton
+                  css={{ padding: "2px" }}
                   onClick={() => removeHolding(h.symbol)}
                   aria-label={`Remove ${h.symbol}`}
                 >
@@ -526,7 +445,8 @@ export default function PortfolioPanel({
       {/* Allocation sum indicator + actions */}
       <Row>
         <ActionButton
-          onClick={() => void handleFetchPrices()}
+          size="sm"
+          onClick={() => void fetchPrices(holdings.map((h) => h.symbol))}
           disabled={loading || holdings.length === 0}
         >
           {loading ? "Fetching…" : "Fetch Current Prices"}
@@ -542,33 +462,24 @@ export default function PortfolioPanel({
       {fetchError && <ErrorText>{fetchError}</ErrorText>}
 
       {/* Withdrawal-based projection chart */}
-      {hasProjection && allocationValid ? (
-        <PortfolioProjectionChart projection={projection} />
-      ) : holdingsWithPrice.length > 0 && !allocationValid ? (
-        <InfoText>
-          Set allocations that sum to 100% to see the projection.
-        </InfoText>
-      ) : holdingsWithPrice.length === 0 && holdings.length > 0 ? (
-        <InfoText>Fetch current prices to generate the projection.</InfoText>
-      ) : null}
+      {holdings.length > 0 &&
+        (showChart ? (
+          <PortfolioProjectionChart projection={projection} />
+        ) : (
+          projectionHint && <InfoText>{projectionHint}</InfoText>
+        ))}
 
       {/* Capital preservation schedule — requires fetched prices */}
       <CapitalPreservationSchedule
-        growthMatrix={activeGrowthMatrix}
+        growthMatrix={active.growthMatrix}
+        initialValue={active.initialValue}
         holdings={holdings}
-        withdrawalStartYear={
-          activeInvestment === "B"
-            ? (withdrawalStartYearB ?? 0)
-            : withdrawalStartYear
-        }
-        monthlyWithdrawal={activeMonthlyWithdrawal}
-        projectedGain={projectedGain}
-        withdrawalStartYearB={
-          activeInvestment === "B" ? withdrawalStartYear : withdrawalStartYearB
-        }
-        growthMatrixB={activeGrowthMatrixB}
-        primaryWithdrawalLabel={activeInvestment === "B" ? "B" : "A"}
-        secondaryWithdrawalLabel={activeInvestment === "B" ? "A" : "B"}
+        withdrawalStartYear={active.withdrawalStartYear}
+        monthlyWithdrawal={active.monthlyWithdrawal}
+        projectedGain={active.projectedGain}
+        withdrawalStartYearB={other?.withdrawalStartYear}
+        primaryWithdrawalLabel={activeKey}
+        secondaryWithdrawalLabel={otherKey}
       />
     </Wrapper>
   );

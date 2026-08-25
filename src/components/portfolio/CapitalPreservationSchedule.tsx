@@ -7,8 +7,13 @@ import { format } from "date-fns";
 import { styled } from "../../../stitches.config";
 import type { LineGraphEntry } from "../../common/types/types";
 import type { PortfolioHolding } from "../../common/types/portfolio-types";
-import { interpolateMonthly } from "../../common/helpers/interpolate-monthly";
 import { interpolateDailyForMonth } from "../../common/helpers/interpolate-daily";
+import {
+  buildScheduleMatrix,
+  withdrawalRowIndex,
+  type ScheduleGranularity,
+} from "../../common/helpers/preservation-schedule";
+import { formatPrice, formatSignedPercent } from "../../common/helpers/format";
 
 /* ==================================================
  * Styled Components
@@ -76,17 +81,15 @@ const StatusChip = styled("div", {
   border: "1px solid transparent",
   variants: {
     status: {
-      safe: {
-        borderColor: "var(--colors-green)",
-        color: "var(--colors-green)",
-      },
-      warn: {
-        borderColor: "var(--colors-orange)",
-        color: "var(--colors-orange)",
-      },
-      danger: { borderColor: "var(--colors-red)", color: "var(--colors-red)" },
+      safe: { borderColor: "$green", color: "$green" },
+      warn: { borderColor: "$orange", color: "$orange" },
+      danger: { borderColor: "$red", color: "$red" },
     },
   },
+});
+
+const ChipDetail = styled("span", {
+  opacity: 0.75,
 });
 
 const TableWrap = styled("div", {
@@ -128,18 +131,46 @@ const Td = styled("td", {
         fontWeight: 600,
       },
     },
-    daily: {
-      true: {
-        backgroundColor: "rgba(98,114,164,0.08)",
-        fontSize: "0.7rem",
-        color: "$comment",
-      },
-    },
     highlightB: {
       true: {
         backgroundColor: "rgba(80,250,123,0.08)",
         fontWeight: 600,
       },
+    },
+    daily: {
+      true: {
+        backgroundColor: "rgba(98,114,164,0.08)",
+        fontSize: "0.7rem",
+      },
+    },
+    tone: {
+      neutral: { color: "$foreground" },
+      safe: { color: "$green" },
+      warn: { color: "$yellow" },
+      high: { color: "$orange" },
+      danger: { color: "$red" },
+    },
+  },
+});
+
+const RowNote = styled("span", {
+  marginLeft: 6,
+  fontSize: "0.65rem",
+  variants: {
+    tone: {
+      primary: { color: "$purple" },
+      secondary: { color: "$green" },
+    },
+  },
+});
+
+const Pct = styled("span", {
+  opacity: 0.65,
+  marginLeft: 4,
+  fontSize: "0.68rem",
+  variants: {
+    daily: {
+      true: { opacity: 0.6, marginLeft: 3, fontSize: "0.65rem" },
     },
   },
 });
@@ -157,17 +188,14 @@ const ExpandBtn = styled("button", {
  * Helpers
  * ================================================== */
 
-const usd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 2,
-});
+type GrowthTone = "safe" | "warn" | "high" | "danger";
 
-function growthColor(pct: number): string {
-  if (pct <= 0) return "var(--colors-green)";
-  if (pct <= 50) return "var(--colors-yellow)";
-  if (pct <= 100) return "var(--colors-orange)";
-  return "var(--colors-red)";
+/** Colour band for the growth still required to reach a target price. */
+function growthTone(pct: number): GrowthTone {
+  if (pct <= 0) return "safe";
+  if (pct <= 50) return "warn";
+  if (pct <= 100) return "high";
+  return "danger";
 }
 
 type StatusLevel = "safe" | "warn" | "danger";
@@ -184,16 +212,25 @@ function statusIcon(level: StatusLevel): string {
   return "[X]";
 }
 
+interface CellVariants {
+  daily?: boolean;
+  highlight?: boolean;
+  highlightB?: boolean;
+}
+
 /* ==================================================
  * Props
  * ================================================== */
 
 interface CapitalPreservationScheduleProps {
   /**
-   * Year-by-year growth matrix from InvestmentCalculator.
-   * Entry[0] is the starting (current) portfolio value.
+   * Year-by-year growth matrix from InvestmentCalculator.getGrowthMatrix().
+   * Entry[i] is the balance i+1 years from today — there is no year-0 entry,
+   * so the schedule prepends one from `initialValue`.
    */
   growthMatrix: LineGraphEntry[];
+  /** The lane's balance today (the calculator's starting amount) */
+  initialValue: number;
   /** Holdings — those with currentPrice are included in the schedule */
   holdings: PortfolioHolding[];
   /**
@@ -207,8 +244,6 @@ interface CapitalPreservationScheduleProps {
   monthlyWithdrawal: number;
   /** Optional secondary withdrawal start year — highlighted in green */
   withdrawalStartYearB?: number;
-  /** Optional secondary growth matrix — used to extend the timeline */
-  growthMatrixB?: LineGraphEntry[];
   /** Label for the primary withdrawal row (default: "A") */
   primaryWithdrawalLabel?: string;
   /** Label for the secondary withdrawal row (default: "B") */
@@ -225,7 +260,7 @@ interface CapitalPreservationScheduleProps {
  * Shows the required share price per holding at each future date such that
  * the holding grows proportionally with the portfolio projection.
  *
- * Formula:  requiredPrice(t) = currentPrice × (projectedValue[t] / projectedValue[0])
+ * Formula:  requiredPrice(t) = currentPrice × (projectedValue[t] / initialValue)
  *
  * Features:
  * - Yearly / monthly granularity toggle
@@ -235,6 +270,7 @@ interface CapitalPreservationScheduleProps {
  */
 export default function CapitalPreservationSchedule({
   growthMatrix,
+  initialValue,
   holdings,
   withdrawalStartYear,
   projectedGain,
@@ -243,9 +279,7 @@ export default function CapitalPreservationSchedule({
   primaryWithdrawalLabel = "A",
   secondaryWithdrawalLabel = "B",
 }: CapitalPreservationScheduleProps) {
-  const [granularity, setGranularity] = useState<"yearly" | "monthly">(
-    "yearly",
-  );
+  const [granularity, setGranularity] = useState<ScheduleGranularity>("yearly");
   // Set of month-row indices that are expanded to show daily breakdown
   const [expandedMonths, setExpandedMonths] = useState<Set<number>>(new Set());
 
@@ -261,56 +295,57 @@ export default function CapitalPreservationSchedule({
     (h) => h.currentPrice != null && h.currentPrice > 0,
   );
 
-  if (growthMatrix.length === 0 || pricedHoldings.length === 0) return null;
+  if (
+    growthMatrix.length === 0 ||
+    pricedHoldings.length === 0 ||
+    !(initialValue > 0)
+  ) {
+    return null;
+  }
 
-  // The active investment's matrix defines the timeline; never extend past it
-  const baseMatrix = growthMatrix;
-
-  const initialValue = baseMatrix[0]?.y;
-  if (!initialValue) return null;
-
-  const matrix =
-    granularity === "monthly" ? interpolateMonthly(baseMatrix) : baseMatrix;
-
-  // Find the row closest to the withdrawal start date (A).
-  // Rounded so fractional start years (e.g. 10.5) map to a real row.
-  const withdrawalRowIdx = Math.min(
-    Math.round(withdrawalStartYear * (granularity === "monthly" ? 12 : 1)),
-    matrix.length - 1,
+  const matrix = buildScheduleMatrix(growthMatrix, initialValue, granularity);
+  const withdrawalRowIdx = withdrawalRowIndex(
+    withdrawalStartYear,
+    granularity,
+    matrix.length,
   );
+  const withdrawalRowIdxB = withdrawalRowIndex(
+    withdrawalStartYearB,
+    granularity,
+    matrix.length,
+  );
+  // Withdrawals that start at year 0 are measured against today's row
+  const withdrawalEntry = matrix[Math.max(withdrawalRowIdx, 0)];
 
-  // Find the row for Investment B withdrawal start (optional)
-  const withdrawalRowIdxB =
-    withdrawalStartYearB != null && withdrawalStartYearB > 0
-      ? Math.min(
-          Math.round(
-            withdrawalStartYearB * (granularity === "monthly" ? 12 : 1),
-          ),
-          matrix.length - 1,
-        )
-      : -1;
-
-  const withdrawalEntry = matrix[withdrawalRowIdx];
-
-  // Status banner: compare current prices to what's needed at withdrawal start
+  // Status banner: how far each price is from what withdrawal start requires
   const statusItems = pricedHoldings.map((h) => {
     const requiredAtWithdrawal =
-      h.currentPrice! * (withdrawalEntry?.y / initialValue);
-    // "safe" if the stock is already on a path to meet the required price.
-    // Since we don't have live market data beyond what was fetched, we compare
-    // today's price vs what it will need to be at withdrawal time — the delta
-    // tells the user how much growth is still needed.
+      h.currentPrice! * (withdrawalEntry.y / initialValue);
     const pctNeeded =
       ((requiredAtWithdrawal - h.currentPrice!) / h.currentPrice!) * 100;
-    const level = statusLevel(pctNeeded);
-    return { h, requiredAtWithdrawal, pctNeeded, level };
+    return {
+      h,
+      requiredAtWithdrawal,
+      pctNeeded,
+      level: statusLevel(pctNeeded),
+    };
   });
 
-  // "Safe today" = at current price, is today's portfolio value on track?
-  // Useful summary: can monthly withdrawals be funded purely from growth?
-  const portfolioGrowthPerMonth = initialValue * (projectedGain / 100 / 12);
+  // Can monthly withdrawals be funded purely from growth on today's balance?
   const withdrawalSafe =
-    monthlyWithdrawal > 0 ? portfolioGrowthPerMonth >= monthlyWithdrawal : true;
+    initialValue * (projectedGain / 100 / 12) >= monthlyWithdrawal;
+
+  const holdingCells = (factor: number, cell: CellVariants) =>
+    pricedHoldings.map((h) => {
+      // required / currentPrice == factor, so the growth still needed is factor - 1
+      const pct = (factor - 1) * 100;
+      return (
+        <Td key={h.symbol} {...cell} tone={growthTone(pct)}>
+          {formatPrice(h.currentPrice! * factor)}
+          <Pct daily={cell.daily}>{formatSignedPercent(pct)}</Pct>
+        </Td>
+      );
+    });
 
   return (
     <Container>
@@ -335,30 +370,25 @@ export default function CapitalPreservationSchedule({
         </ToggleGroup>
       </Header>
 
-      {/* Status banner — one chip per priced holding */}
-      {withdrawalEntry && (
-        <StatusBanner>
-          {monthlyWithdrawal > 0 && (
-            <StatusChip status={withdrawalSafe ? "safe" : "warn"}>
-              {withdrawalSafe ? "[OK]" : "[!]"} Monthly withdrawal ($
-              {monthlyWithdrawal.toLocaleString()}) is{" "}
-              {withdrawalSafe
-                ? "covered by growth"
-                : "exceeding monthly growth"}
-            </StatusChip>
-          )}
-          {statusItems.map(({ h, requiredAtWithdrawal, pctNeeded, level }) => (
-            <StatusChip key={h.symbol} status={level}>
-              {statusIcon(level)} {h.symbol}: needs{" "}
-              {usd.format(requiredAtWithdrawal)} at withdrawal{" "}
-              <span style={{ opacity: 0.75 }}>
-                ({pctNeeded >= 0 ? "+" : ""}
-                {pctNeeded.toFixed(1)}% from ${h.currentPrice!.toFixed(2)})
-              </span>
-            </StatusChip>
-          ))}
-        </StatusBanner>
-      )}
+      <StatusBanner>
+        {monthlyWithdrawal > 0 && (
+          <StatusChip status={withdrawalSafe ? "safe" : "warn"}>
+            {withdrawalSafe ? "[OK]" : "[!]"} Monthly withdrawal ($
+            {monthlyWithdrawal.toLocaleString()}) is{" "}
+            {withdrawalSafe ? "covered by growth" : "exceeding monthly growth"}
+          </StatusChip>
+        )}
+        {statusItems.map(({ h, requiredAtWithdrawal, pctNeeded, level }) => (
+          <StatusChip key={h.symbol} status={level}>
+            {statusIcon(level)} {h.symbol}: needs{" "}
+            {formatPrice(requiredAtWithdrawal)} at withdrawal{" "}
+            <ChipDetail>
+              ({formatSignedPercent(pctNeeded)} from{" "}
+              {formatPrice(h.currentPrice!)})
+            </ChipDetail>
+          </StatusChip>
+        ))}
+      </StatusBanner>
 
       <TableWrap>
         <Table>
@@ -373,21 +403,17 @@ export default function CapitalPreservationSchedule({
           </thead>
           <tbody>
             {matrix.map((entry, idx) => {
-              const growthFactor = entry.y / initialValue;
-              const label =
-                granularity === "monthly"
-                  ? format(entry.x, "MMM yyyy")
-                  : format(entry.x, "yyyy");
-              const isWithdrawalRow =
-                idx === withdrawalRowIdx && withdrawalStartYear > 0;
+              const isWithdrawalRow = idx === withdrawalRowIdx;
               const isWithdrawalRowB =
                 idx === withdrawalRowIdxB &&
                 withdrawalRowIdxB !== withdrawalRowIdx;
+              const rowCell: CellVariants = {
+                highlight: isWithdrawalRow,
+                highlightB: isWithdrawalRowB,
+              };
+              const nextEntry = matrix[idx + 1];
               const isExpanded =
                 granularity === "monthly" && expandedMonths.has(idx);
-              const nextEntry = matrix[idx + 1];
-
-              // Compute daily rows when expanded
               const dailyRows =
                 isExpanded && nextEntry
                   ? interpolateDailyForMonth(entry, nextEntry)
@@ -396,10 +422,7 @@ export default function CapitalPreservationSchedule({
               return (
                 <Fragment key={idx}>
                   <tr>
-                    <Td
-                      highlight={isWithdrawalRow}
-                      highlightB={isWithdrawalRowB}
-                    >
+                    <Td {...rowCell}>
                       {granularity === "monthly" && nextEntry && (
                         <ExpandBtn
                           title={isExpanded ? "Collapse days" : "Expand days"}
@@ -408,104 +431,38 @@ export default function CapitalPreservationSchedule({
                           {isExpanded ? "▼" : "▶"}
                         </ExpandBtn>
                       )}
-                      {label}
+                      {format(
+                        entry.x,
+                        granularity === "monthly" ? "MMM yyyy" : "yyyy",
+                      )}
                       {isWithdrawalRow && (
-                        <span
-                          style={{
-                            marginLeft: 6,
-                            fontSize: "0.65rem",
-                            color: "var(--colors-purple)",
-                          }}
-                        >
+                        <RowNote tone="primary">
                           ← {primaryWithdrawalLabel} withdrawal start
-                        </span>
+                        </RowNote>
                       )}
                       {isWithdrawalRowB && (
-                        <span
-                          style={{
-                            marginLeft: 6,
-                            fontSize: "0.65rem",
-                            color: "var(--colors-green)",
-                          }}
-                        >
+                        <RowNote tone="secondary">
                           ← {secondaryWithdrawalLabel} withdrawal start
-                        </span>
+                        </RowNote>
                       )}
                     </Td>
-                    <Td
-                      highlight={isWithdrawalRow}
-                      highlightB={isWithdrawalRowB}
-                      style={{ color: "var(--colors-foreground)" }}
-                    >
-                      {usd.format(entry.y)}
+                    <Td {...rowCell} tone="neutral">
+                      {formatPrice(entry.y)}
                     </Td>
-                    {pricedHoldings.map((h) => {
-                      const required = h.currentPrice! * growthFactor;
-                      const pct =
-                        ((required - h.currentPrice!) / h.currentPrice!) * 100;
-
-                      return (
-                        <Td
-                          key={h.symbol}
-                          highlight={isWithdrawalRow}
-                          highlightB={isWithdrawalRowB}
-                          style={{ color: growthColor(pct) }}
-                        >
-                          {usd.format(required)}
-                          <span
-                            style={{
-                              opacity: 0.65,
-                              marginLeft: 4,
-                              fontSize: "0.68rem",
-                            }}
-                          >
-                            {pct >= 0 ? "+" : ""}
-                            {pct.toFixed(1)}%
-                          </span>
-                        </Td>
-                      );
-                    })}
+                    {holdingCells(entry.y / initialValue, rowCell)}
                   </tr>
 
-                  {/* Daily drill-down rows */}
-                  {dailyRows.map((dayEntry, dIdx) => {
-                    const dayFactor = dayEntry.y / initialValue;
-                    return (
-                      <tr key={`${idx}-d${dIdx}`}>
-                        <Td daily>
-                          &nbsp;&nbsp;&nbsp;{format(dayEntry.x, "EEE, MMM d")}
-                        </Td>
-                        <Td daily style={{ color: "var(--colors-foreground)" }}>
-                          {usd.format(dayEntry.y)}
-                        </Td>
-                        {pricedHoldings.map((h) => {
-                          const required = h.currentPrice! * dayFactor;
-                          const pct =
-                            ((required - h.currentPrice!) / h.currentPrice!) *
-                            100;
-                          return (
-                            <Td
-                              key={h.symbol}
-                              daily
-                              style={{ color: growthColor(pct) }}
-                            >
-                              {usd.format(required)}
-                              <span
-                                style={{
-                                  opacity: 0.6,
-                                  marginLeft: 3,
-                                  fontSize: "0.65rem",
-                                }}
-                              >
-                                {pct >= 0 ? "+" : ""}
-                                {pct.toFixed(1)}%
-                              </span>
-                            </Td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
+                  {dailyRows.map((dayEntry, dIdx) => (
+                    <tr key={`${idx}-d${dIdx}`}>
+                      <Td daily>
+                        &nbsp;&nbsp;&nbsp;{format(dayEntry.x, "EEE, MMM d")}
+                      </Td>
+                      <Td daily tone="neutral">
+                        {formatPrice(dayEntry.y)}
+                      </Td>
+                      {holdingCells(dayEntry.y / initialValue, { daily: true })}
+                    </tr>
+                  ))}
                 </Fragment>
               );
             })}

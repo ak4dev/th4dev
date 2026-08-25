@@ -2,12 +2,11 @@
  * State Import/Export Popover Component
  * ================================================== */
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { format } from "date-fns";
 import * as Icons from "@radix-ui/react-icons";
 import * as Dialog from "@radix-ui/react-dialog";
-import { styled, keyframes } from "../../../stitches.config";
-import { compactModernInputStyles } from "../../common/constants/input-styles";
+import { styled } from "../../../stitches.config";
 import {
   FILE_EXPORT_PREFIX,
   FILE_EXPORT_EXTENSION,
@@ -20,6 +19,17 @@ import {
 } from "../../common/helpers/crypto-manager";
 import type { EncryptedEnvelope } from "../../common/helpers/crypto-manager";
 import type { TH4State } from "../../common/types/types";
+import {
+  DialogOverlay,
+  DialogContent,
+  DialogTitle,
+  DialogLabel,
+  DialogInput,
+  DialogCloseButton,
+  ActionButton,
+  SecondaryButton,
+  ErrorText,
+} from "../ui/primitives";
 
 /* ==================================================
  * Styled Components
@@ -41,50 +51,22 @@ const SidebarButton = styled("button", {
   },
 });
 
+const EncryptToggleButton = styled(SidebarButton, {
+  color: "$comment",
+  transition: "background-color 0.2s ease, color 0.2s ease",
+  "&:hover": { color: "$foreground" },
+  variants: {
+    enabled: {
+      true: { color: "$green" },
+    },
+  },
+});
+
 const FileInput = styled("input", {
   display: "none",
 });
 
-const overlayShow = keyframes({
-  from: { opacity: 0 },
-  to: { opacity: 1 },
-});
-
-const contentShow = keyframes({
-  from: { opacity: 0, transform: "translate(-50%, -52%) scale(0.96)" },
-  to: { opacity: 1, transform: "translate(-50%, -50%) scale(1)" },
-});
-
-const Overlay = styled(Dialog.Overlay, {
-  position: "fixed",
-  inset: 0,
-  backgroundColor: "rgba(0,0,0,0.6)",
-  animation: `${String(overlayShow)} 150ms ease`,
-  zIndex: 100,
-});
-
-const Content = styled(Dialog.Content, {
-  position: "fixed",
-  top: "50%",
-  left: "50%",
-  transform: "translate(-50%, -50%)",
-  width: "min(380px, 90vw)",
-  backgroundColor: "$background",
-  border: "1px solid $currentLine",
-  borderRadius: 8,
-  padding: "1.5rem",
-  animation: `${String(contentShow)} 150ms ease`,
-  zIndex: 101,
-  "&:focus": { outline: "none" },
-});
-
-const Title = styled(Dialog.Title, {
-  margin: 0,
-  marginBottom: "0.5rem",
-  fontSize: "1rem",
-  fontWeight: 600,
-  color: "$foreground",
-});
+const Title = styled(DialogTitle, { marginBottom: "0.5rem" });
 
 const Description = styled(Dialog.Description, {
   margin: "0 0 1rem",
@@ -92,90 +74,12 @@ const Description = styled(Dialog.Description, {
   color: "$comment",
 });
 
-const Label = styled("label", {
-  display: "block",
-  fontSize: "0.75rem",
-  color: "$comment",
-  marginBottom: "0.25rem",
-  userSelect: "none",
-});
-
-const Input = styled("input", {
-  ...compactModernInputStyles,
-  borderRadius: 7,
-  padding: "0.5rem 0.7rem",
-  marginBottom: "0.85rem",
-});
-
-const ErrorText = styled("p", {
-  color: "$red",
-  fontSize: "0.75rem",
-  margin: "-0.5rem 0 0.85rem",
-});
+const Input = styled(DialogInput, { marginBottom: "0.85rem" });
 
 const ButtonRow = styled("div", {
   display: "flex",
   justifyContent: "flex-end",
   gap: "0.5rem",
-});
-
-const ActionButton = styled("button", {
-  all: "unset",
-  cursor: "pointer",
-  backgroundColor: "$purple",
-  color: "$background",
-  padding: "0.5rem 1rem",
-  borderRadius: 5,
-  fontSize: "0.875rem",
-  fontWeight: 600,
-  whiteSpace: "nowrap",
-  "&:hover": { opacity: 0.85 },
-  "&:disabled": { opacity: 0.4, cursor: "not-allowed" },
-});
-
-const SecondaryButton = styled("button", {
-  all: "unset",
-  cursor: "pointer",
-  backgroundColor: "$currentLine",
-  color: "$foreground",
-  padding: "0.5rem 0.75rem",
-  borderRadius: 5,
-  fontSize: "0.875rem",
-  whiteSpace: "nowrap",
-  "&:hover": { opacity: 0.85 },
-});
-
-const CloseButton = styled(Dialog.Close, {
-  all: "unset",
-  position: "absolute",
-  top: "0.75rem",
-  right: "0.75rem",
-  cursor: "pointer",
-  color: "$comment",
-  display: "flex",
-  "&:hover": { color: "$foreground" },
-});
-
-const EncryptToggleButton = styled("button", {
-  all: "unset",
-  color: "$comment",
-  padding: "0.75rem",
-  marginBottom: "0.5rem",
-  cursor: "pointer",
-  borderRadius: 5,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  transition: "background-color 0.2s ease, color 0.2s ease",
-  "&:hover": {
-    backgroundColor: "$purple",
-    color: "$foreground",
-  },
-  variants: {
-    enabled: {
-      true: { color: "$green" },
-    },
-  },
 });
 
 /* ==================================================
@@ -211,8 +115,13 @@ export default function StateIOButtons({ getState, setState }: Props) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** The request whose result may still be applied; cleared when the dialog closes */
+  const activeRef = useRef<PendingAction | null>(null);
+
+  const isExport = pending?.kind === "encrypt-export";
 
   const closeDialog = () => {
+    activeRef.current = null;
     setPending(null);
     setPassword("");
     setConfirmPassword("");
@@ -288,56 +197,67 @@ export default function StateIOButtons({ getState, setState }: Props) {
     reader.readAsText(file);
   };
 
-  const submitEncryptExport = async (data: TH4State) => {
-    if (password.length === 0) {
-      setError("Enter a password.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError("Passwords don't match.");
-      return;
-    }
-    setBusy(true);
+  /** Encrypts the state; resolves to the download step */
+  const encryptExport = async (data: TH4State) => {
+    let envelope: EncryptedEnvelope;
     try {
-      const envelope = await encryptToEnvelope(JSON.stringify(data), password);
-      downloadJson(envelope);
-      closeDialog();
+      envelope = await encryptToEnvelope(JSON.stringify(data), password);
     } catch {
-      setError("Encryption failed. Please try again.");
-      setBusy(false);
+      throw new Error("Encryption failed. Please try again.");
     }
+    return () => downloadJson(envelope);
   };
 
-  const submitDecryptImport = async (envelope: EncryptedEnvelope) => {
-    if (password.length === 0) {
-      setError("Enter the password.");
-      return;
+  /** Decrypts and validates the envelope; resolves to the import step */
+  const decryptImport = async (envelope: EncryptedEnvelope) => {
+    const parsed: unknown = JSON.parse(
+      await decryptFromEnvelope(envelope, password),
+    );
+    if (!isValidTH4State(parsed)) {
+      throw new Error("Decrypted file does not match the expected format.");
     }
+    return () => setState(parsed);
+  };
+
+  /**
+   * Runs `work` for `req` with the busy flag set. The resulting apply step
+   * (download / import) only runs if the dialog was not cancelled meanwhile.
+   */
+  const runBusy = async (
+    req: PendingAction,
+    work: () => Promise<() => void>,
+  ) => {
+    activeRef.current = req;
     setBusy(true);
     try {
-      const json = await decryptFromEnvelope(envelope, password);
-      const parsed: unknown = JSON.parse(json);
-      if (!isValidTH4State(parsed)) {
-        setError("Decrypted file does not match the expected format.");
-        setBusy(false);
-        return;
-      }
-      setState(parsed);
+      const apply = await work();
+      if (activeRef.current !== req) return;
+      apply();
       closeDialog();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Decryption failed.");
+      if (activeRef.current !== req) return;
+      setError(err instanceof Error ? err.message : "Something went wrong.");
       setBusy(false);
     }
   };
 
   const handleSubmit = () => {
-    if (!pending) return;
-    setError(null);
-    if (pending.kind === "encrypt-export") {
-      void submitEncryptExport(pending.data);
-    } else {
-      void submitDecryptImport(pending.envelope);
+    if (!pending || busy) return;
+    if (password.length === 0) {
+      setError(isExport ? "Enter a password." : "Enter the password.");
+      return;
     }
+    if (isExport && password !== confirmPassword) {
+      setError("Passwords don't match.");
+      return;
+    }
+    setError(null);
+    void runBusy(
+      pending,
+      pending.kind === "encrypt-export"
+        ? () => encryptExport(pending.data)
+        : () => decryptImport(pending.envelope),
+    );
   };
 
   return (
@@ -383,75 +303,67 @@ export default function StateIOButtons({ getState, setState }: Props) {
         }}
       >
         <Dialog.Portal>
-          <Overlay />
-          <Content
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
+          <DialogOverlay />
+          <DialogContent size="sm">
+            <DialogCloseButton aria-label="Close">
+              <Icons.Cross2Icon />
+            </DialogCloseButton>
+
+            {/* A real form lets the browser route Enter: submit from the inputs, activate on the buttons */}
+            <form
+              onSubmit={(e) => {
                 e.preventDefault();
                 handleSubmit();
-              }
-            }}
-          >
-            <CloseButton aria-label="Close">
-              <Icons.Cross2Icon />
-            </CloseButton>
+              }}
+            >
+              <Title>{isExport ? "Encrypt export" : "Encrypted file"}</Title>
+              <Description>
+                {isExport
+                  ? "Choose a password to encrypt this file. You'll need it to import the file again — it isn't stored anywhere."
+                  : "This file is password-protected. Enter the password to import it."}
+              </Description>
+              <DialogLabel htmlFor="th4-password">Password</DialogLabel>
+              <Input
+                id="th4-password"
+                type="password"
+                autoFocus
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              {isExport && (
+                <>
+                  <DialogLabel htmlFor="th4-password-confirm">
+                    Confirm password
+                  </DialogLabel>
+                  <Input
+                    id="th4-password-confirm"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                  />
+                </>
+              )}
 
-            {pending?.kind === "encrypt-export" ? (
-              <>
-                <Title>Encrypt export</Title>
-                <Description>
-                  Choose a password to encrypt this file. You'll need it to
-                  import the file again — it isn't stored anywhere.
-                </Description>
-                <Label htmlFor="th4-export-password">Password</Label>
-                <Input
-                  id="th4-export-password"
-                  type="password"
-                  autoFocus
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <Label htmlFor="th4-export-password-confirm">
-                  Confirm password
-                </Label>
-                <Input
-                  id="th4-export-password-confirm"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                />
-              </>
-            ) : (
-              <>
-                <Title>Encrypted file</Title>
-                <Description>
-                  This file is password-protected. Enter the password to
-                  import it.
-                </Description>
-                <Label htmlFor="th4-import-password">Password</Label>
-                <Input
-                  id="th4-import-password"
-                  type="password"
-                  autoFocus
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </>
-            )}
+              {error && (
+                <ErrorText css={{ margin: "-0.5rem 0 0.85rem" }}>
+                  {error}
+                </ErrorText>
+              )}
 
-            {error && <ErrorText>{error}</ErrorText>}
-
-            <ButtonRow>
-              <SecondaryButton onClick={closeDialog}>Cancel</SecondaryButton>
-              <ActionButton onClick={handleSubmit} disabled={busy}>
-                {busy
-                  ? "Working…"
-                  : pending?.kind === "encrypt-export"
-                    ? "Encrypt & Download"
-                    : "Decrypt"}
-              </ActionButton>
-            </ButtonRow>
-          </Content>
+              <ButtonRow>
+                <SecondaryButton type="button" onClick={closeDialog}>
+                  Cancel
+                </SecondaryButton>
+                <ActionButton type="submit" disabled={busy}>
+                  {busy
+                    ? "Working…"
+                    : isExport
+                      ? "Encrypt & Download"
+                      : "Decrypt"}
+                </ActionButton>
+              </ButtonRow>
+            </form>
+          </DialogContent>
         </Dialog.Portal>
       </Dialog.Root>
     </div>

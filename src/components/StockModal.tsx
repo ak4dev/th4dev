@@ -2,82 +2,30 @@
  * Stock Data Modal
  * ================================================== */
 
-import { useState } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Icons from "@radix-ui/react-icons";
-import { styled, keyframes } from "../../stitches.config";
+import { styled } from "../../stitches.config";
 import { compactModernInputStyles } from "../common/constants/input-styles";
-import {
-  extractQuoteSymbol,
-  extractStockPrice,
-  fetchStockData,
-  normalizeStockSymbol,
-} from "../common/helpers/stock-client";
+import { normalizeStockSymbol } from "../common/helpers/stock-client";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
-
-/* ==================================================
- * Animations
- * ================================================== */
-
-const overlayShow = keyframes({
-  from: { opacity: 0 },
-  to: { opacity: 1 },
-});
-
-const contentShow = keyframes({
-  from: { opacity: 0, transform: "translate(-50%, -52%) scale(0.96)" },
-  to: { opacity: 1, transform: "translate(-50%, -50%) scale(1)" },
-});
+import { useFetchPrices } from "./portfolio/useFetchPrices";
+import {
+  DialogOverlay,
+  DialogContent,
+  DialogTitle,
+  DialogLabel,
+  DialogInput,
+  DialogCloseButton,
+  ActionButton,
+  SecondaryButton,
+  IconButton,
+  ErrorText,
+} from "./ui/primitives";
 
 /* ==================================================
  * Styled Components
  * ================================================== */
-
-const Overlay = styled(Dialog.Overlay, {
-  position: "fixed",
-  inset: 0,
-  backgroundColor: "rgba(0,0,0,0.6)",
-  animation: `${String(overlayShow)} 150ms ease`,
-  zIndex: 100,
-});
-
-const Content = styled(Dialog.Content, {
-  position: "fixed",
-  top: "50%",
-  left: "50%",
-  transform: "translate(-50%, -50%)",
-  width: "min(560px, 90vw)",
-  backgroundColor: "$background",
-  border: "1px solid $currentLine",
-  borderRadius: 8,
-  padding: "1.5rem",
-  animation: `${String(contentShow)} 150ms ease`,
-  zIndex: 101,
-  "&:focus": { outline: "none" },
-});
-
-const Title = styled(Dialog.Title, {
-  margin: 0,
-  marginBottom: "1.25rem",
-  fontSize: "1rem",
-  fontWeight: 600,
-  color: "$foreground",
-});
-
-const Label = styled("label", {
-  display: "block",
-  fontSize: "0.75rem",
-  color: "$comment",
-  marginBottom: "0.25rem",
-  userSelect: "none",
-});
-
-const Input = styled("input", {
-  ...compactModernInputStyles,
-  borderRadius: 7,
-  padding: "0.5rem 0.7rem",
-  marginBottom: "1rem",
-});
 
 const Row = styled("div", {
   display: "flex",
@@ -105,41 +53,6 @@ const Tag = styled("span", {
   fontWeight: 500,
 });
 
-const IconButton = styled("button", {
-  all: "unset",
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  color: "$comment",
-  "&:hover": { color: "$red" },
-});
-
-const ActionButton = styled("button", {
-  all: "unset",
-  cursor: "pointer",
-  backgroundColor: "$purple",
-  color: "$background",
-  padding: "0.5rem 1rem",
-  borderRadius: 5,
-  fontSize: "0.875rem",
-  fontWeight: 600,
-  whiteSpace: "nowrap",
-  "&:hover": { opacity: 0.85 },
-  "&:disabled": { opacity: 0.4, cursor: "not-allowed" },
-});
-
-const SecondaryButton = styled("button", {
-  all: "unset",
-  cursor: "pointer",
-  backgroundColor: "$currentLine",
-  color: "$foreground",
-  padding: "0.5rem 0.75rem",
-  borderRadius: 5,
-  fontSize: "0.875rem",
-  whiteSpace: "nowrap",
-  "&:hover": { opacity: 0.85 },
-});
-
 const Results = styled("pre", {
   backgroundColor: "$currentLine",
   color: "$foreground",
@@ -151,23 +64,6 @@ const Results = styled("pre", {
   whiteSpace: "pre-wrap",
   wordBreak: "break-all",
   margin: 0,
-});
-
-const ErrorText = styled("p", {
-  color: "$red",
-  fontSize: "0.75rem",
-  margin: "0 0 0.75rem",
-});
-
-const CloseButton = styled(Dialog.Close, {
-  all: "unset",
-  position: "absolute",
-  top: "0.75rem",
-  right: "0.75rem",
-  cursor: "pointer",
-  color: "$comment",
-  display: "flex",
-  "&:hover": { color: "$foreground" },
 });
 
 const StartPriceTable = styled("div", {
@@ -214,7 +110,7 @@ interface StockModalProps {
   setApiUrl: (url: string) => void;
   /** Portfolio holdings — symbols are derived from these */
   holdings: PortfolioHolding[];
-  setHoldings: (holdings: PortfolioHolding[]) => void;
+  setHoldings: Dispatch<SetStateAction<PortfolioHolding[]>>;
 }
 
 export default function StockModal({
@@ -227,94 +123,77 @@ export default function StockModal({
 }: StockModalProps) {
   const [addInput, setAddInput] = useState("");
   const [results, setResults] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { fetchPrices, loading, error } = useFetchPrices(apiUrl, setHoldings);
 
   const symbols = holdings.map((h) => h.symbol);
 
   const addSymbols = () => {
-    const incoming = addInput
-      .split(",")
-      .map((s) => s.trim().toUpperCase())
-      .filter(
-        (s, i, arr) => s && !symbols.includes(s) && arr.indexOf(s) === i,
-      );
+    const incoming = [
+      ...new Set(
+        addInput
+          .split(",")
+          .map((s) => normalizeStockSymbol(s))
+          .filter(Boolean),
+      ),
+    ];
     if (incoming.length) {
-      setHoldings([
-        ...holdings,
-        ...incoming.map((s) => ({ symbol: s, allocationPct: 0 })),
-      ]);
+      setHoldings((prev) => {
+        const known = new Set(prev.map((h) => h.symbol));
+        const fresh = incoming.filter((s) => !known.has(s));
+        return fresh.length
+          ? [...prev, ...fresh.map((symbol) => ({ symbol, allocationPct: 0 }))]
+          : prev;
+      });
     }
     setAddInput("");
   };
 
   const removeSymbol = (symbol: string) =>
-    setHoldings(holdings.filter((h) => h.symbol !== symbol));
+    setHoldings((prev) => prev.filter((h) => h.symbol !== symbol));
+
+  // Editing a start price resets the capital-preservation baseline to today
+  const setStartPrice = (symbol: string, raw: string) => {
+    const price = parseFloat(raw);
+    const cleared = Number.isNaN(price);
+    setHoldings((prev) =>
+      prev.map((h) =>
+        h.symbol === symbol
+          ? {
+              ...h,
+              startPrice: cleared ? undefined : price,
+              projectionStartDate: cleared
+                ? undefined
+                : new Date().toISOString(),
+            }
+          : h,
+      ),
+    );
+  };
 
   const handleFetch = async () => {
-    if (!symbols.length) return;
-    setLoading(true);
-    setError(null);
     setResults(null);
-    try {
-      const data = await fetchStockData(apiUrl, symbols);
-      const resultBySymbol = new Map(
-        data.map((result) => {
-          const responseSymbol =
-            result.data != null ? extractQuoteSymbol(result.data) : undefined;
-          return [
-            normalizeStockSymbol(responseSymbol || result.symbol),
-            result,
-          ] as const;
-        }),
-      );
-
-      setHoldings(
-        holdings.map((holding) => {
-          const result = resultBySymbol.get(
-            normalizeStockSymbol(holding.symbol),
-          );
-          if (!result || result.error || !result.data) return holding;
-
-          const price = extractStockPrice(result.data);
-          return price !== undefined
-            ? {
-                ...holding,
-                currentPrice: price,
-                startPrice: holding.startPrice ?? price,
-                projectionStartDate:
-                  holding.projectionStartDate ?? new Date().toISOString(),
-              }
-            : holding;
-        }),
-      );
-
-      setResults(JSON.stringify(data, null, 2));
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
+    const data = await fetchPrices(symbols);
+    if (data.length) setResults(JSON.stringify(data, null, 2));
   };
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Overlay />
-        <Content>
-          <CloseButton aria-label="Close">
+        <DialogOverlay />
+        <DialogContent>
+          <DialogCloseButton aria-label="Close">
             <Icons.Cross2Icon />
-          </CloseButton>
+          </DialogCloseButton>
 
-          <Title>Stock Data Fetcher</Title>
+          <DialogTitle>Stock Data Fetcher</DialogTitle>
 
-          <Label htmlFor="stock-api-url">
+          <DialogLabel htmlFor="stock-api-url">
             API URL{" "}
             <span style={{ opacity: 0.6 }}>
               (use {"{symbol}"} as placeholder)
             </span>
-          </Label>
-          <Input
+          </DialogLabel>
+          <DialogInput
             id="stock-api-url"
             value={apiUrl}
             onChange={(e) => setApiUrl(e.target.value)}
@@ -325,7 +204,7 @@ export default function StockModal({
             key for live data
           </Hint>
 
-          <Label>Symbols</Label>
+          <DialogLabel>Symbols</DialogLabel>
           {symbols.length > 0 && (
             <TagList>
               {symbols.map((sym) => (
@@ -342,11 +221,12 @@ export default function StockModal({
             </TagList>
           )}
           <Row>
-            <Input
+            <DialogInput
               css={{ marginBottom: 0, flex: 1 }}
               value={addInput}
               onChange={(e) => setAddInput(e.target.value)}
               placeholder="AAPL, MSFT, GOOG…"
+              aria-label="Symbols to add"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -363,12 +243,14 @@ export default function StockModal({
             </ActionButton>
           </Row>
 
-          {error && <ErrorText>{error}</ErrorText>}
+          {error && (
+            <ErrorText css={{ margin: "0 0 0.75rem" }}>{error}</ErrorText>
+          )}
 
           {/* Editable projection start prices */}
           {holdings.length > 0 && (
             <>
-              <Label>Projection Start Prices</Label>
+              <DialogLabel>Projection Start Prices</DialogLabel>
               <Hint>
                 Autofilled on first fetch and locked. Edit here to reset the
                 capital-preservation baseline to today.
@@ -381,23 +263,9 @@ export default function StockModal({
                       type="number"
                       step="0.01"
                       min="0"
+                      aria-label={`${h.symbol} projection start price`}
                       value={h.startPrice ?? ""}
-                      onChange={(e) => {
-                        const price = parseFloat(e.target.value);
-                        setHoldings(
-                          holdings.map((holding) =>
-                            holding.symbol === h.symbol
-                              ? {
-                                  ...holding,
-                                  startPrice: isNaN(price) ? undefined : price,
-                                  projectionStartDate: isNaN(price)
-                                    ? undefined
-                                    : new Date().toISOString(),
-                                }
-                              : holding,
-                          ),
-                        );
-                      }}
+                      onChange={(e) => setStartPrice(h.symbol, e.target.value)}
                       placeholder="—"
                     />
                   </StartPriceRow>
@@ -407,7 +275,7 @@ export default function StockModal({
           )}
 
           {results && <Results>{results}</Results>}
-        </Content>
+        </DialogContent>
       </Dialog.Portal>
     </Dialog.Root>
   );

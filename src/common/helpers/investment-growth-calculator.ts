@@ -2,21 +2,44 @@
  * Investment Growth Calculator
  * ================================================== */
 
-import { addMonths, addYears } from "date-fns";
-import type { InvestmentCalculatorProps, LineGraphEntry } from "../types/types";
+import { addMonths } from "date-fns";
+import type {
+  DynamicWithdrawal,
+  InvestmentCalculatorProps,
+  LineGraphEntry,
+} from "../types/types";
 import {
   MONTHS_PER_YEAR,
   PERCENTAGE_DIVISOR,
   MAX_PROJECTED_GAIN,
   MAX_YEARS_OF_GROWTH,
 } from "../constants/app-constants";
+import { formatCurrency } from "./format";
+
+/** Converts a (possibly fractional) year offset into whole months, e.g. 10.5 -> 126 */
+export function toMonths(years: number): number {
+  return Math.round(years * MONTHS_PER_YEAR);
+}
+
+/**
+ * Monthly amount for one dynamic-withdrawal year: ratePct% of the balance,
+ * spread over 12 months and clamped to the guardrails (the floor wins when it
+ * exceeds the ceiling).
+ */
+export function dynamicMonthlyWithdrawal(
+  balance: number,
+  { ratePct, floor, ceiling }: DynamicWithdrawal,
+): number {
+  const monthly = (balance * ratePct) / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
+  return Math.min(Math.max(monthly, floor), Math.max(ceiling, floor));
+}
 
 /**
  * Investment Growth Calculator
  *
  * Handles complex investment growth calculations including:
  * - Monthly compound growth
- * - Regular contributions and withdrawals
+ * - Regular contributions and fixed or percentage-of-balance withdrawals
  * - Fractional (partial) years for horizon, contribution stop, and withdrawal start
  * - Inflation adjustments
  * - Investment rollovers
@@ -24,22 +47,24 @@ import {
  *
  * All year-valued inputs (yearsOfGrowth, yearContributionsStop,
  * yearWithdrawalsBegin, yearOfRollover) accept fractional values, which are
- * resolved to whole months (e.g. 10.5 years → 126 months from today).
+ * resolved to whole months from today (e.g. 10.5 years -> 126 months).
+ * Monte Carlo (monte-carlo.ts) applies the same cash flows in the same order.
  */
 export class InvestmentCalculator {
   private readonly props: InvestmentCalculatorProps;
   private readonly today: Date = new Date();
   private readonly growthMatrix: LineGraphEntry[] = [];
-  private cumulativeFees: number = 0;
+  private readonly withdrawalSchedule: number[] = [];
+  private cumulativeFees = 0;
   /** Absolute months elapsed since today while simulating */
-  private monthsElapsed: number = 0;
+  private monthsElapsed = 0;
+  /** Monthly amount in force for the current dynamic-withdrawal year */
+  private dynamicMonthly = 0;
+  private nominal = 0;
+  private inflationAdjusted = 0;
 
-  /**
-   * Creates an instance of InvestmentCalculator
-   * @param investmentCalculatorProps - Configuration for investment calculations
-   */
-  constructor(investmentCalculatorProps: InvestmentCalculatorProps) {
-    this.props = investmentCalculatorProps;
+  constructor(props: InvestmentCalculatorProps) {
+    this.props = props;
   }
 
   /* ==================================================
@@ -59,87 +84,55 @@ export class InvestmentCalculator {
       return { formatted: "", numeric: 0 };
     }
 
-    // Reset growth data for this calculation run
     this.growthMatrix.length = 0;
+    this.withdrawalSchedule.length = 0;
     this.cumulativeFees = 0;
     this.monthsElapsed = 0;
+    this.dynamicMonthly = 0;
+    this.nominal = parseInt(this.props.currentAmount || "0") || 0;
+    this.inflationAdjusted = this.nominal;
+    // A rollover due at month 0 lands before the first month is simulated
+    this.applyRolloverIfDue();
 
-    // Initialize calculation variables
-    let nominalAmount = this.getInitialAmount();
-    let inflationAdjustedAmount = nominalAmount;
-    const monthlyGrowthRate = this.getMonthlyGrowthRate();
+    const monthlyGrowthRate =
+      this.props.projectedGain / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
+    const totalMonths = toMonths(this.props.yearsOfGrowth);
 
-    const fullYears = Math.floor(this.props.yearsOfGrowth);
-    const extraMonths =
-      Math.round(this.props.yearsOfGrowth * MONTHS_PER_YEAR) -
-      fullYears * MONTHS_PER_YEAR;
-
-    // Calculate growth year by year (whole years), rolling from today —
-    // year 0 covers months 0-11 from today, year 1 covers months 12-23, etc.
-    for (let year = 0; year < fullYears; year++) {
-      const result = this.calculateYearGrowth(
-        nominalAmount,
-        inflationAdjustedAmount,
-        monthlyGrowthRate,
-        MONTHS_PER_YEAR,
-      );
-
-      nominalAmount = result.nominal;
-      inflationAdjustedAmount = result.inflationAdjusted;
-
-      // Store data point for charting
-      this.addGrowthDataPoint(
-        addYears(this.today, year + 1),
-        nominalAmount,
-        inflationAdjustedAmount,
-        showInflation,
-      );
+    // Year-long chunks rolling from today (months 0-11, 12-23, ...); a
+    // trailing partial year is simply a shorter final chunk
+    for (let start = 0; start < totalMonths; start += MONTHS_PER_YEAR) {
+      const months = Math.min(MONTHS_PER_YEAR, totalMonths - start);
+      this.simulateChunk(months, monthlyGrowthRate);
+      this.growthMatrix.push({
+        x: addMonths(this.today, start + months),
+        y: Math.floor(showInflation ? this.inflationAdjusted : this.nominal),
+        alternateY: Math.floor(
+          showInflation ? this.nominal : this.inflationAdjusted,
+        ),
+      });
     }
 
-    // Process the final partial year, if any (e.g. the ".5" in 10.5 years)
-    if (extraMonths > 0) {
-      const result = this.calculateYearGrowth(
-        nominalAmount,
-        inflationAdjustedAmount,
-        monthlyGrowthRate,
-        extraMonths,
-      );
-
-      nominalAmount = result.nominal;
-      inflationAdjustedAmount = result.inflationAdjusted;
-
-      this.addGrowthDataPoint(
-        addMonths(addYears(this.today, fullYears), extraMonths),
-        nominalAmount,
-        inflationAdjustedAmount,
-        showInflation,
-      );
-    }
-
-    const finalAmount = showInflation ? inflationAdjustedAmount : nominalAmount;
-    const numeric = Math.floor(finalAmount);
-    return { formatted: this.formatCurrency(numeric), numeric };
-  }
-
-  /**
-   * Returns inflation-adjusted amount for a given value
-   * @param amount - The amount to adjust for inflation
-   * @returns The inflation-adjusted amount
-   */
-  public getInflationAdjusted(amount: number): number {
-    const depreciation = this.calculateDepreciation(
-      amount,
-      this.props.depreciationRate,
+    const numeric = Math.floor(
+      showInflation ? this.inflationAdjusted : this.nominal,
     );
-    return Math.floor(amount - depreciation);
+    return { formatted: formatCurrency(numeric), numeric };
   }
 
   /**
-   * Returns the growth matrix data for charting
-   * @returns Array of line graph entries containing date and value data
+   * Returns the growth matrix data for charting: entry k is the balance at
+   * the end of simulated year k+1 (there is no "today" row), plus one final
+   * entry for a trailing partial year.
    */
   public getGrowthMatrix(): LineGraphEntry[] {
     return this.growthMatrix;
+  }
+
+  /**
+   * Returns the withdrawal actually applied in each simulated month (0 where
+   * none was taken). Only meaningful after calculateGrowth() has been called.
+   */
+  public getWithdrawalSchedule(): number[] {
+    return this.withdrawalSchedule;
   }
 
   /**
@@ -148,30 +141,6 @@ export class InvestmentCalculator {
    */
   public getCumulativeFees(): number {
     return Math.floor(this.cumulativeFees);
-  }
-
-  /**
-   * Returns the investment identifier
-   * @returns The unique identifier for this investment
-   */
-  public getInvestmentId(): string {
-    return this.props.investmentId;
-  }
-
-  /**
-   * Calculates percentage change between two amounts
-   * @param originalAmount - The original amount
-   * @param newAmount - The new amount
-   * @returns Percentage change as an integer
-   */
-  public getPercentageChange(
-    originalAmount: number,
-    newAmount: number,
-  ): number {
-    if (originalAmount === 0) return 0;
-    return Math.floor(
-      ((newAmount - originalAmount) / originalAmount) * PERCENTAGE_DIVISOR,
-    );
   }
 
   /* ==================================================
@@ -183,244 +152,124 @@ export class InvestmentCalculator {
    * @returns True if inputs are valid, false otherwise
    */
   private isValidInput(): boolean {
-    if (!InvestmentCalculator.isValidNumericString(this.props.currentAmount)) {
-      return false;
-    }
-    const amount = Number(this.props.currentAmount);
+    const { currentAmount, projectedGain, yearsOfGrowth } = this.props;
+    if (!currentAmount) return false;
     return (
-      amount >= 0 &&
-      this.props.projectedGain >= 0 &&
-      this.props.projectedGain <= MAX_PROJECTED_GAIN &&
-      this.props.yearsOfGrowth >= 0 &&
-      this.props.yearsOfGrowth <= MAX_YEARS_OF_GROWTH
+      Number(currentAmount) >= 0 &&
+      projectedGain >= 0 &&
+      projectedGain <= MAX_PROJECTED_GAIN &&
+      yearsOfGrowth >= 0 &&
+      yearsOfGrowth <= MAX_YEARS_OF_GROWTH
     );
   }
 
   /**
-   * Checks whether a value is a non-empty string that parses to a finite number
-   * @param value - The value to check
-   * @returns True if the value represents a valid numeric string
-   */
-  private static isValidNumericString(value: string | undefined): boolean {
-    return value !== undefined && value !== "" && !isNaN(Number(value));
-  }
-
-  /**
-   * Gets the initial investment amount as a number
-   * @returns The initial investment amount
-   */
-  private getInitialAmount(): number {
-    return parseInt(this.props.currentAmount || "0") || 0;
-  }
-
-  /**
-   * Calculates monthly growth rate from annual percentage
-   * @returns Monthly growth rate as a decimal
-   */
-  private getMonthlyGrowthRate(): number {
-    return this.props.projectedGain / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
-  }
-
-  /**
-   * Converts a (possibly fractional) year offset into whole months
-   * @param years - Year offset (e.g. 10.5)
-   * @returns Whole-month equivalent (e.g. 126)
-   */
-  private static toMonths(years: number): number {
-    return Math.round(years * MONTHS_PER_YEAR);
-  }
-
-  /**
-   * Calculates growth for a single year (or partial final year) including all
-   * monthly operations
-   * @param startingNominal - Starting nominal amount
-   * @param startingInflationAdjusted - Starting inflation-adjusted amount
+   * Simulates `months` consecutive months, then applies the chunk's
+   * (pro-rated) inflation step and any rollover due at its end.
+   * @param months - Months in this chunk (12 for full years)
    * @param monthlyGrowthRate - Monthly growth rate as decimal
-   * @param monthsToProcess - Months to process in this year (12 for full years)
-   * @returns Object containing nominal and inflation-adjusted amounts
    */
-  private calculateYearGrowth(
-    startingNominal: number,
-    startingInflationAdjusted: number,
-    monthlyGrowthRate: number,
-    monthsToProcess: number,
-  ): { nominal: number; inflationAdjusted: number } {
-    let nominal = startingNominal;
-    let inflationAdjusted = startingInflationAdjusted;
+  private simulateChunk(months: number, monthlyGrowthRate: number): void {
+    for (let month = 0; month < months; month++) {
+      const withdrawal = this.currentWithdrawal();
+      this.withdrawalSchedule.push(withdrawal);
+      this.nominal -= withdrawal;
+      this.inflationAdjusted -= withdrawal;
 
-    // Process each month in this chunk (rolling from today, not calendar-aligned)
-    for (let month = 0; month < monthsToProcess; month++) {
-      // Apply withdrawals first
-      if (this.shouldApplyWithdrawal()) {
-        nominal -= this.props.monthlyWithdrawal;
-        inflationAdjusted -= this.props.monthlyWithdrawal;
-      }
+      this.nominal += this.nominal * monthlyGrowthRate;
+      this.inflationAdjusted += this.inflationAdjusted * monthlyGrowthRate;
 
-      // Apply monthly compound growth
-      nominal += nominal * monthlyGrowthRate;
-      inflationAdjusted += inflationAdjusted * monthlyGrowthRate;
-
-      // Deduct monthly fee (expense ratio) — computed per track so the
-      // inflation-adjusted balance is not overcharged with the nominal fee
+      // Fees are charged per track so the inflation-adjusted balance is not
+      // overcharged with the nominal fee
       if (this.props.annualFee) {
         const monthlyFeeRate =
           this.props.annualFee / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
-        const fee = nominal * monthlyFeeRate;
-        nominal -= fee;
-        inflationAdjusted -= inflationAdjusted * monthlyFeeRate;
+        const fee = this.nominal * monthlyFeeRate;
+        this.nominal -= fee;
+        this.inflationAdjusted -= this.inflationAdjusted * monthlyFeeRate;
         this.cumulativeFees += fee;
       }
 
-      // Apply contributions with immediate growth
+      // Contributions earn growth in the month they are made
       if (this.shouldApplyContribution()) {
-        const contribution = this.props.monthlyContribution;
-        const contributionGrowth = contribution * monthlyGrowthRate;
-
-        nominal += contribution + contributionGrowth;
-        inflationAdjusted += contribution + contributionGrowth;
+        const contribution =
+          this.props.monthlyContribution * (1 + monthlyGrowthRate);
+        this.nominal += contribution;
+        this.inflationAdjusted += contribution;
       }
 
       this.monthsElapsed++;
-
-      // Handle one-time rollover when the rollover month is reached
-      if (this.shouldApplyRollover()) {
-        const rolloverAmount = this.props.investmentToRoll || 0;
-        nominal += rolloverAmount;
-        inflationAdjusted += rolloverAmount;
-      }
+      // A rollover due at the chunk end lands after the inflation step below
+      if (month < months - 1) this.applyRolloverIfDue();
     }
 
-    // Apply inflation adjustment, pro-rated for partial years
     if (this.props.depreciationRate) {
-      const yearFraction = monthsToProcess / MONTHS_PER_YEAR;
-      const retention =
-        yearFraction === 1
-          ? 1 - this.props.depreciationRate / PERCENTAGE_DIVISOR
-          : Math.pow(
-              1 - this.props.depreciationRate / PERCENTAGE_DIVISOR,
-              yearFraction,
-            );
-      inflationAdjusted *= retention;
+      this.inflationAdjusted *= Math.pow(
+        1 - this.props.depreciationRate / PERCENTAGE_DIVISOR,
+        months / MONTHS_PER_YEAR,
+      );
     }
-
-    return { nominal, inflationAdjusted };
-  }
-
-  /**
-   * Adds a data point to the growth matrix for charting
-   * @param date - The date of the data point
-   * @param nominal - Nominal amount
-   * @param inflationAdjusted - Inflation-adjusted amount
-   * @param showInflation - Whether inflation view is active
-   */
-  private addGrowthDataPoint(
-    date: Date,
-    nominal: number,
-    inflationAdjusted: number,
-    showInflation: boolean,
-  ): void {
-    this.growthMatrix.push({
-      x: date,
-      y: Math.floor(showInflation ? inflationAdjusted : nominal),
-      alternateY: Math.floor(showInflation ? nominal : inflationAdjusted),
-    });
+    this.applyRolloverIfDue();
   }
 
   /* ==================================================
-   * Private Condition Checking Methods
+   * Private Cash-Flow Methods
    * ================================================== */
 
   /**
-   * Determines if withdrawals should be applied for the current simulated month.
-   * Withdrawals begin at the anniversary of today plus yearWithdrawalsBegin
-   * years (fractional years resolve to whole months).
-   * @returns True if withdrawals should be applied
+   * Withdrawal for the month about to be simulated. Withdrawals begin
+   * yearWithdrawalsBegin years from today and only apply in advanced mode.
+   * A dynamic policy replaces the fixed amount: it is re-evaluated from the
+   * nominal balance at the first withdrawal month and every 12 months after.
    */
-  private shouldApplyWithdrawal(): boolean {
-    // Withdrawals only apply in advanced mode with a withdrawal amount set
-    if (!this.props.advanced || !this.props.monthlyWithdrawal) {
-      return false;
+  private currentWithdrawal(): number {
+    const { advanced, dynamicWithdrawal, monthlyWithdrawal } = this.props;
+    const sinceStart =
+      this.monthsElapsed - toMonths(this.props.yearWithdrawalsBegin);
+    if (!advanced || sinceStart < 0) return 0;
+    if (!dynamicWithdrawal) return monthlyWithdrawal;
+    if (sinceStart % MONTHS_PER_YEAR === 0) {
+      this.dynamicMonthly = dynamicMonthlyWithdrawal(
+        this.nominal,
+        dynamicWithdrawal,
+      );
     }
-
-    // Must have a valid withdrawal start year
-    if (
-      this.props.yearWithdrawalsBegin === undefined ||
-      this.props.yearWithdrawalsBegin === null
-    ) {
-      return false;
-    }
-
-    return (
-      this.monthsElapsed >=
-      InvestmentCalculator.toMonths(this.props.yearWithdrawalsBegin)
-    );
+    return this.dynamicMonthly;
   }
 
   /**
-   * Determines if contributions should be applied for the current simulated month.
-   * Contributions stop once yearContributionsStop years (fractional allowed)
-   * have elapsed since today.
-   * @returns True if contributions should be applied
+   * Contributions stop yearContributionsStop years from today; outside
+   * advanced mode, or with a falsy stop year, they never stop.
    */
   private shouldApplyContribution(): boolean {
-    // If not in advanced mode or no contribution stop year set, always contribute
-    if (!this.props.advanced || !this.props.yearContributionsStop) {
-      return true;
-    }
-
+    const { advanced, yearContributionsStop } = this.props;
     return (
-      this.monthsElapsed <
-      InvestmentCalculator.toMonths(this.props.yearContributionsStop)
+      !advanced ||
+      !yearContributionsStop ||
+      this.monthsElapsed < toMonths(yearContributionsStop)
     );
   }
 
   /**
-   * Determines if the one-time rollover should be applied after the month that
-   * was just processed. The rollover lands `yearOfRollover` years (fractional
-   * years resolve to whole months) from today, matching shouldApplyWithdrawal
-   * and shouldApplyContribution's rolling-month semantics.
-   * @returns True if rollover should be applied now
+   * Adds the rolled-over balance once exactly yearOfRollover years from today
+   * have been simulated. Each track receives its own figure so an
+   * inflation-adjusted amount is not deflated again here.
    */
-  private shouldApplyRollover(): boolean {
+  private applyRolloverIfDue(): void {
+    const { rollOver, investmentToRoll, yearOfRollover } = this.props;
     if (
-      !this.props.rollOver ||
-      !this.props.investmentToRoll ||
-      this.props.yearOfRollover === null ||
-      this.props.yearOfRollover === undefined
+      !rollOver ||
+      !investmentToRoll ||
+      yearOfRollover === undefined ||
+      this.monthsElapsed !== toMonths(yearOfRollover)
     ) {
-      return false;
+      return;
     }
-
-    const rolloverMonth = InvestmentCalculator.toMonths(
-      this.props.yearOfRollover,
-    );
-
-    return this.monthsElapsed === rolloverMonth;
-  }
-
-  /* ==================================================
-   * Private Utility Methods
-   * ================================================== */
-
-  /**
-   * Calculates depreciation amount based on percentage and principal
-   * @param amount - The principal amount
-   * @param depreciationRate - The annual depreciation rate as a percentage
-   * @returns The depreciation amount
-   */
-  private calculateDepreciation(
-    amount: number,
-    depreciationRate: number,
-  ): number {
-    return amount * (depreciationRate / PERCENTAGE_DIVISOR);
-  }
-
-  /**
-   * Formats a number as currency string
-   * @param amount - The amount to format
-   * @returns Formatted currency string (e.g., "$1,234")
-   */
-  private formatCurrency(amount: number): string {
-    return `$${amount.toLocaleString()}`;
+    const roll =
+      typeof investmentToRoll === "number"
+        ? { nominal: investmentToRoll, inflationAdjusted: investmentToRoll }
+        : investmentToRoll;
+    this.nominal += roll.nominal;
+    this.inflationAdjusted += roll.inflationAdjusted;
   }
 }

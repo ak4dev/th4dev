@@ -2,13 +2,16 @@
  * State Manager
  *
  * Centralised module for TH4State validation, normalisation,
- * and default values.  Used by both file import and scenario
- * load paths to guarantee every state field is present and
- * correctly typed.
+ * and default values.  Used by file import, localStorage
+ * hydration and scenario load to guarantee every state field
+ * is present, correctly typed and within its valid range.
  * ================================================== */
 
-import type { TH4State } from "../types/types";
+import type { TH4State, TogglesState } from "../types/types";
 import type { BudgetItem } from "./budget-manager";
+import type { ScenarioSnapshot } from "./scenario-manager";
+import type { PortfolioHolding } from "../types/portfolio-types";
+import { themeClasses } from "../../../stitches.config";
 import {
   DEFAULT_THEME,
   DEFAULT_INITIAL_AMOUNT,
@@ -20,14 +23,21 @@ import {
   DEFAULT_INFLATION_RATE,
   DEFAULT_TARGET_VALUE,
   DEFAULT_VOLATILITY,
+  DEFAULT_WITHDRAWAL_RATE,
+  DEFAULT_WITHDRAWAL_FLOOR,
+  DEFAULT_WITHDRAWAL_CEILING,
+  SLIDER_LIMITS,
 } from "../constants/app-constants";
 
 /* ---------- Default state ---------- */
 
+/** A TH4State with every optional field filled in — what normalizeState produces */
+export type NormalizedState = Required<TH4State>;
+
 const DEFAULT_STOCK_API_URL =
   "https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey=demo";
 
-export const DEFAULT_TOGGLES: TH4State["toggles"] = {
+export const DEFAULT_TOGGLES: TogglesState = {
   advanced: false,
   rollover: false,
   showInflation: false,
@@ -37,29 +47,29 @@ export const DEFAULT_TOGGLES: TH4State["toggles"] = {
   fire: false,
   scenarios: false,
   budget: false,
+  dynamicWithdrawal: false,
   monteCarloMode: "combined",
 };
 
+/** Same default for the A and B lanes of a slider */
+const lanes = (key: string, value: number): Record<string, number> => ({
+  [`${key}A`]: value,
+  [`${key}B`]: value,
+});
+
 export const DEFAULT_SLIDERS: Record<string, number> = {
-  investmentA: DEFAULT_INITIAL_AMOUNT,
-  investmentB: DEFAULT_INITIAL_AMOUNT,
-  projectedGainA: DEFAULT_PROJECTED_GAIN,
-  projectedGainB: DEFAULT_PROJECTED_GAIN,
-  yearsOfGrowthA: DEFAULT_YEARS_OF_GROWTH,
-  yearsOfGrowthB: DEFAULT_YEARS_OF_GROWTH,
-  monthlyContributionA: DEFAULT_MONTHLY_CONTRIBUTION,
-  monthlyContributionB: DEFAULT_MONTHLY_CONTRIBUTION,
-  monthlyWithdrawalA: DEFAULT_MONTHLY_WITHDRAWAL,
-  monthlyWithdrawalB: DEFAULT_MONTHLY_WITHDRAWAL,
-  withdrawalStartYearA: DEFAULT_WITHDRAWAL_START_YEAR,
-  withdrawalStartYearB: DEFAULT_WITHDRAWAL_START_YEAR,
+  ...lanes("projectedGain", DEFAULT_PROJECTED_GAIN),
+  ...lanes("yearsOfGrowth", DEFAULT_YEARS_OF_GROWTH),
+  ...lanes("monthlyContribution", DEFAULT_MONTHLY_CONTRIBUTION),
+  ...lanes("monthlyWithdrawal", DEFAULT_MONTHLY_WITHDRAWAL),
+  ...lanes("withdrawalStartYear", DEFAULT_WITHDRAWAL_START_YEAR),
+  ...lanes("withdrawalRate", DEFAULT_WITHDRAWAL_RATE),
+  ...lanes("withdrawalFloor", DEFAULT_WITHDRAWAL_FLOOR),
+  ...lanes("withdrawalCeiling", DEFAULT_WITHDRAWAL_CEILING),
+  ...lanes("targetValue", DEFAULT_TARGET_VALUE),
+  ...lanes("annualFee", 0),
+  ...lanes("volatility", DEFAULT_VOLATILITY),
   yearlyInflation: DEFAULT_INFLATION_RATE,
-  targetValueA: DEFAULT_TARGET_VALUE,
-  targetValueB: DEFAULT_TARGET_VALUE,
-  annualFeeA: 0,
-  annualFeeB: 0,
-  volatilityA: DEFAULT_VOLATILITY,
-  volatilityB: DEFAULT_VOLATILITY,
   fireAnnualExpenses: 40000,
   fireSWR: 4,
   fireCurrentAge: 30,
@@ -71,7 +81,7 @@ export const DEFAULT_INPUTS: Record<string, string> = {
   currentAmountB: String(DEFAULT_INITIAL_AMOUNT),
 };
 
-export const DEFAULT_STATE: TH4State = {
+export const DEFAULT_STATE: NormalizedState = {
   theme: DEFAULT_THEME,
   sliders: DEFAULT_SLIDERS,
   inputs: DEFAULT_INPUTS,
@@ -87,127 +97,101 @@ export const DEFAULT_STATE: TH4State = {
 
 /* ---------- Validation ---------- */
 
+/** Toggles every export has carried since the first release; the rest are back-filled by normalizeState */
+const REQUIRED_TOGGLES: ReadonlySet<string> = new Set([
+  "advanced",
+  "rollover",
+  "showInflation",
+  "portfolio",
+]);
+
+const isFiniteNumber = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v);
+const isString = (v: unknown): v is string => typeof v === "string";
+const isDefined = (v: unknown): v is NonNullable<unknown> => v !== undefined;
+
 function isValidBudgetItem(item: unknown): item is BudgetItem {
   if (typeof item !== "object" || item === null) return false;
   const o = item as Record<string, unknown>;
   return (
-    typeof o["id"] === "string" &&
-    typeof o["name"] === "string" &&
+    isString(o["id"]) &&
+    isString(o["name"]) &&
     typeof o["amount"] === "number" &&
-    typeof o["category"] === "string"
+    isString(o["category"])
   );
-}
-
-/**
- * Keeps only entries whose value is a finite number.  Protects the math
- * pipeline from imported files with strings/NaN/Infinity in slider slots.
- */
-function sanitizeNumericMap(
-  raw: Record<string, number> | undefined,
-): Record<string, number> {
-  const result: Record<string, number> = {};
-  if (!raw) return result;
-  for (const [key, val] of Object.entries(raw)) {
-    if (typeof val === "number" && Number.isFinite(val)) result[key] = val;
-  }
-  return result;
-}
-
-/** Keeps only entries whose value is a string. */
-function sanitizeStringMap(
-  raw: Record<string, string> | undefined,
-): Record<string, string> {
-  const result: Record<string, string> = {};
-  if (!raw) return result;
-  for (const [key, val] of Object.entries(raw)) {
-    if (typeof val === "string") result[key] = val;
-  }
-  return result;
 }
 
 /**
  * Validates a single portfolio holding from an imported file, dropping
  * malformed entries instead of letting them crash the UI later.
  */
-function isValidHolding(
-  value: unknown,
-): value is import("../types/portfolio-types").PortfolioHolding {
+function isValidHolding(value: unknown): value is PortfolioHolding {
   if (typeof value !== "object" || value === null) return false;
   const h = value as Record<string, unknown>;
-  if (typeof h["symbol"] !== "string" || h["symbol"].trim() === "")
-    return false;
-  if (
-    typeof h["allocationPct"] !== "number" ||
-    !Number.isFinite(h["allocationPct"])
-  )
-    return false;
   const optionalNumber = (key: string) =>
-    h[key] === undefined ||
-    (typeof h[key] === "number" && Number.isFinite(h[key]));
-  if (!optionalNumber("currentPrice")) return false;
-  if (!optionalNumber("startPrice")) return false;
-  if (
-    h["projectionStartDate"] !== undefined &&
-    typeof h["projectionStartDate"] !== "string"
-  )
-    return false;
-  return true;
+    h[key] === undefined || isFiniteNumber(h[key]);
+  return (
+    isString(h["symbol"]) &&
+    h["symbol"].trim() !== "" &&
+    isFiniteNumber(h["allocationPct"]) &&
+    optionalNumber("currentPrice") &&
+    optionalNumber("startPrice") &&
+    (h["projectionStartDate"] === undefined ||
+      isString(h["projectionStartDate"]))
+  );
+}
+
+/** A scenario snapshot is only usable when its nested state passes the same guard as an import. */
+function isValidScenario(value: unknown): value is ScenarioSnapshot {
+  if (typeof value !== "object" || value === null) return false;
+  const s = value as Record<string, unknown>;
+  return (
+    isString(s["id"]) &&
+    isString(s["name"]) &&
+    isString(s["createdAt"]) &&
+    isValidTH4State(s["state"])
+  );
 }
 
 /**
  * Runtime type guard that verifies an unknown value has the minimum
  * required shape of a TH4State.  Allows optional fields for backward
- * compatibility — missing fields are filled by normalizeState().
+ * compatibility — missing fields are filled by normalizeState(), and
+ * malformed rows in the array fields are dropped there too.
  */
 export function isValidTH4State(value: unknown): value is TH4State {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
 
-  if (typeof v["theme"] !== "string") return false;
+  if (!isString(v["theme"])) return false;
   if (typeof v["sliders"] !== "object" || v["sliders"] === null) return false;
   if (typeof v["inputs"] !== "object" || v["inputs"] === null) return false;
   if (typeof v["toggles"] !== "object" || v["toggles"] === null) return false;
 
   const t = v["toggles"] as Record<string, unknown>;
-  const boolOrUndefined = (key: string) =>
-    t[key] === undefined || typeof t[key] === "boolean";
+  for (const key of Object.keys(DEFAULT_TOGGLES)) {
+    const val = t[key];
+    if (val === undefined) {
+      if (REQUIRED_TOGGLES.has(key)) return false;
+      continue;
+    }
+    const ok =
+      key === "monteCarloMode"
+        ? val === "combined" || val === "individual"
+        : typeof val === "boolean";
+    if (!ok) return false;
+  }
 
-  if (typeof t["advanced"] !== "boolean") return false;
-  if (typeof t["rollover"] !== "boolean") return false;
-  if (typeof t["showInflation"] !== "boolean") return false;
-  if (typeof t["portfolio"] !== "boolean") return false;
-  if (!boolOrUndefined("fees")) return false;
-  if (!boolOrUndefined("monteCarlo")) return false;
-  if (!boolOrUndefined("fire")) return false;
-  if (!boolOrUndefined("scenarios")) return false;
-  if (!boolOrUndefined("budget")) return false;
-  if (
-    t["monteCarloMode"] !== undefined &&
-    t["monteCarloMode"] !== "combined" &&
-    t["monteCarloMode"] !== "individual"
-  )
+  if (v["budgetItems"] !== undefined && !Array.isArray(v["budgetItems"]))
     return false;
-
-  if (
-    v["budgetItems"] !== undefined &&
-    !(
-      Array.isArray(v["budgetItems"]) &&
-      v["budgetItems"].every(isValidBudgetItem)
-    )
-  )
-    return false;
-
   if (v["scenarios"] !== undefined && !Array.isArray(v["scenarios"]))
     return false;
-  if (v["activePage"] !== undefined && typeof v["activePage"] !== "string")
-    return false;
+  if (v["activePage"] !== undefined && !isString(v["activePage"])) return false;
 
-  // Validate stock field if present
   if (v["stock"] !== undefined) {
     if (typeof v["stock"] !== "object" || v["stock"] === null) return false;
     const s = v["stock"] as Record<string, unknown>;
-    if (s["apiUrl"] !== undefined && typeof s["apiUrl"] !== "string")
-      return false;
+    if (s["apiUrl"] !== undefined && !isString(s["apiUrl"])) return false;
     if (s["holdings"] !== undefined && !Array.isArray(s["holdings"]))
       return false;
   }
@@ -217,52 +201,81 @@ export function isValidTH4State(value: unknown): value is TH4State {
 
 /* ---------- Normalisation ---------- */
 
+/** Copies the entries of `raw` whose value satisfies `keep`; tolerates a missing map. */
+function pickWhere<T>(
+  raw: object | undefined,
+  keep: (v: unknown) => v is T,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(raw ?? {}).filter(([, v]) => keep(v)),
+  ) as Record<string, T>;
+}
+
+/**
+ * Clamps every slider into its SLIDER_LIMITS range so the math pipeline
+ * stays bounded, and lifts a withdrawal ceiling that sits below its floor
+ * (the engines treat the floor as authoritative).
+ */
+function clampSliders(sliders: Record<string, number>): Record<string, number> {
+  const result = Object.fromEntries(
+    Object.entries(sliders).map(([key, value]) => {
+      const limit = SLIDER_LIMITS[key];
+      return [
+        key,
+        limit ? Math.min(limit.max, Math.max(limit.min, value)) : value,
+      ];
+    }),
+  );
+  for (const lane of ["A", "B"]) {
+    result[`withdrawalCeiling${lane}`] = Math.max(
+      result[`withdrawalCeiling${lane}`],
+      result[`withdrawalFloor${lane}`],
+    );
+  }
+  return result;
+}
+
 /**
  * Fills any missing or undefined fields in a raw TH4State with their
- * defaults, producing a fully populated state object safe for direct
- * assignment to React state setters.
+ * defaults, drops malformed rows and out-of-range values, and returns a
+ * fully populated state object safe for direct assignment to React state
+ * setters.
  *
  * This is the single source of backward-compatibility handling — old
  * exports that predate new fields (e.g. monteCarloMode, budget toggle)
  * are seamlessly filled in.
  */
-export function normalizeState(raw: TH4State): TH4State {
-  const toggles: TH4State["toggles"] = {
-    ...DEFAULT_TOGGLES,
-    ...stripUndefined(raw.toggles),
-  };
-
-  const stock = raw.stock ?? DEFAULT_STATE.stock!;
+export function normalizeState(raw: TH4State): NormalizedState {
+  const stock = raw.stock ?? DEFAULT_STATE.stock;
   // Handle legacy format with symbols array
   const legacySymbols = (stock as unknown as { symbols?: string[] }).symbols;
   const holdings = stock.holdings
     ? stock.holdings.filter(isValidHolding).map((h) => ({ ...h }))
     : legacySymbols
       ? legacySymbols
-          .filter((s): s is string => typeof s === "string" && s.trim() !== "")
-          .map((s: string) => ({ symbol: s, allocationPct: 0 }))
+          .filter((s): s is string => isString(s) && s.trim() !== "")
+          .map((s) => ({ symbol: s, allocationPct: 0 }))
       : [];
 
   return {
-    theme: raw.theme || DEFAULT_STATE.theme,
-    sliders: { ...DEFAULT_SLIDERS, ...sanitizeNumericMap(raw.sliders) },
-    inputs: { ...DEFAULT_INPUTS, ...sanitizeStringMap(raw.inputs) },
-    toggles,
+    theme: Object.hasOwn(themeClasses, raw.theme) ? raw.theme : DEFAULT_THEME,
+    sliders: clampSliders({
+      ...DEFAULT_SLIDERS,
+      ...pickWhere(raw.sliders, isFiniteNumber),
+    }),
+    inputs: { ...DEFAULT_INPUTS, ...pickWhere(raw.inputs, isString) },
+    toggles: {
+      ...DEFAULT_TOGGLES,
+      ...(pickWhere(raw.toggles, isDefined) as Partial<TogglesState>),
+    },
     stock: {
-      apiUrl: stock.apiUrl || DEFAULT_STATE.stock!.apiUrl,
+      apiUrl: stock.apiUrl || DEFAULT_STATE.stock.apiUrl,
       holdings,
     },
     budgetItems: (raw.budgetItems ?? []).filter(isValidBudgetItem),
-    scenarios: raw.scenarios ?? [],
+    scenarios: (raw.scenarios ?? [])
+      .filter(isValidScenario)
+      .map((s) => ({ ...s, state: normalizeState(s.state) })),
     activePage: raw.activePage ?? DEFAULT_STATE.activePage,
   };
-}
-
-/** Removes keys whose value is undefined so they don't overwrite defaults in a spread. */
-function stripUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
-  const result: Record<string, unknown> = {};
-  for (const [key, val] of Object.entries(obj)) {
-    if (val !== undefined) result[key] = val;
-  }
-  return result as Partial<T>;
 }

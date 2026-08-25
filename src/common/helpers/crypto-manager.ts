@@ -26,7 +26,9 @@ export interface EncryptedEnvelope {
 }
 
 /** Runtime type guard distinguishing an encrypted export from a plain TH4State file. */
-export function isEncryptedEnvelope(value: unknown): value is EncryptedEnvelope {
+export function isEncryptedEnvelope(
+  value: unknown,
+): value is EncryptedEnvelope {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return (

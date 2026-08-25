@@ -8,7 +8,7 @@ import * as route53 from "aws-cdk-lib/aws-route53";
 import * as targets from "aws-cdk-lib/aws-route53-targets";
 import { Construct } from "constructs";
 import * as path from "path";
-import type { DeploymentTarget } from "./config";
+import { STACK_REGION, type DeploymentTarget } from "./config";
 
 /**
  * Props for a single th4dev static site deployment.
@@ -22,7 +22,8 @@ export interface StaticSiteStackProps extends cdk.StackProps {
  *
  * Resources created:
  *  - S3 bucket (private, OAC-secured)
- *  - ACM certificate (DNS-validated in us-east-1 for CloudFront)
+ *  - ACM certificate (DNS-validated; the stack must live in us-east-1
+ *    because CloudFront only accepts certificates from that region)
  *  - CloudFront distribution with custom domain + HTTPS
  *  - Route 53 A + AAAA alias records pointing at CloudFront
  *  - S3 deployment of the built frontend assets
@@ -32,13 +33,13 @@ export class StaticSiteStack extends cdk.Stack {
   public readonly bucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props: StaticSiteStackProps) {
-    super(scope, id, {
-      ...props,
-      // CloudFront requires ACM certs in us-east-1; cross-region references
-      // are handled automatically by CDK when using DnsValidatedCertificate
-      // or by deploying the whole stack to us-east-1.
-      crossRegionReferences: true,
-    });
+    super(scope, id, props);
+
+    if (!cdk.Token.isUnresolved(this.region) && this.region !== STACK_REGION) {
+      throw new Error(
+        `${id}: StaticSiteStack must be deployed to ${STACK_REGION} because CloudFront only accepts ACM certificates from that region (got "${this.region}")`,
+      );
+    }
 
     const { target } = props;
 
@@ -63,7 +64,7 @@ export class StaticSiteStack extends cdk.Stack {
       },
     );
 
-    // ── ACM Certificate (must be in us-east-1 for CloudFront) ──────────
+    // ── ACM Certificate ────────────────────────────────────────────────
 
     const certificate = new acm.Certificate(this, "SiteCertificate", {
       domainName: target.domainName,
@@ -148,14 +149,41 @@ export class StaticSiteStack extends cdk.Stack {
 
     // ── Deploy Site Assets ─────────────────────────────────────────────
 
-    const distPath = path.resolve(__dirname, "..", "..", "dist");
+    // Two passes so a returning visitor never loads a cached index.html
+    // that points at chunks a later deploy removed: Vite's hashed files
+    // under assets/ are immutable and never pruned, while index.html (and
+    // any other unhashed file) must be revalidated on every request.
+    const site = s3deploy.Source.asset(
+      path.resolve(__dirname, "..", "..", "dist"),
+    );
 
-    new s3deploy.BucketDeployment(this, "DeploySite", {
-      sources: [s3deploy.Source.asset(distPath)],
+    const deployAssets = new s3deploy.BucketDeployment(this, "DeployAssets", {
+      sources: [site],
       destinationBucket: this.bucket,
+      exclude: ["*"],
+      include: ["assets/*"],
+      prune: false,
+      cacheControl: [
+        s3deploy.CacheControl.setPublic(),
+        s3deploy.CacheControl.maxAge(cdk.Duration.days(365)),
+        s3deploy.CacheControl.immutable(),
+      ],
+    });
+
+    const deployIndex = new s3deploy.BucketDeployment(this, "DeployIndex", {
+      sources: [site],
+      destinationBucket: this.bucket,
+      exclude: ["assets/*"],
+      prune: false,
+      cacheControl: [
+        s3deploy.CacheControl.noCache(),
+        s3deploy.CacheControl.mustRevalidate(),
+      ],
       distribution: this.distribution,
       distributionPaths: ["/*"],
     });
+    // Never publish a new index.html before the chunks it references exist
+    deployIndex.node.addDependency(deployAssets);
 
     // ── Outputs ────────────────────────────────────────────────────────
 

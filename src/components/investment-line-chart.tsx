@@ -2,6 +2,7 @@
  * Investment Line Chart Component
  * ================================================== */
 
+import { Fragment } from "react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -14,9 +15,14 @@ import {
   Legend,
   ReferenceLine,
 } from "recharts";
-import { format } from "date-fns";
 import type { LineGraphEntry } from "../common/types/types";
 import type { PercentileBand } from "../common/helpers/monte-carlo";
+import {
+  buildChartRows,
+  MC_SERIES_KEYS,
+  type ChartRow,
+  type McSeriesKey,
+} from "../common/helpers/growth-rows";
 import { styled } from "../../stitches.config";
 import { CHART_HEIGHT } from "../common/constants/app-constants";
 
@@ -49,6 +55,19 @@ const ChartTitle = styled("h4", {
 const CHART_PADDING_MULTIPLIER = 1.05;
 const COMPACT_MAX_FRACTION_DIGITS = 1;
 
+/** Colour and legend labels for each Monte Carlo series */
+const MC_SERIES: Record<
+  McSeriesKey,
+  { color: string; label: string; bandPrefix: string }
+> = {
+  mc: { color: "var(--colors-purple)", label: "Median (MC)", bandPrefix: "" },
+  mcB: {
+    color: "var(--colors-green)",
+    label: "Median B (MC)",
+    bandPrefix: "B ",
+  },
+};
+
 /* ==================================================
  * Number Formatting
  * ================================================== */
@@ -59,74 +78,43 @@ const numberFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: COMPACT_MAX_FRACTION_DIGITS,
 });
 
-/* ==================================================
- * Data Preparation
- * ================================================== */
-
-/**
- * Prepares chart data from investment growth matrices.
- *
- * Rollover amounts are already included in investment B's growth matrix by
- * the calculator, so no adjustment happens here. When a matrix has two points
- * in the same calendar year (a whole-year point plus a partial-year final
- * point), the later point wins so the chart ends on the true final balance.
- *
- * @param matrixA - Growth matrix for investment A
- * @param matrixB - Growth matrix for investment B (optional)
- * @param advanced - Whether advanced mode is enabled
- * @returns Array of chart data points
- */
-function prepareChartData(
-  matrixA: LineGraphEntry[],
-  matrixB?: LineGraphEntry[],
-  advanced?: boolean,
-) {
-  const byYearA = new Map<number, LineGraphEntry>();
-  matrixA.forEach((e) => byYearA.set(parseInt(format(e.x, "yyyy")), e));
-  const byYearB = new Map<number, LineGraphEntry>();
-  matrixB?.forEach((e) => byYearB.set(parseInt(format(e.x, "yyyy")), e));
-
-  const sortedYears = Array.from(
-    new Set([...byYearA.keys(), ...byYearB.keys()]),
-  ).sort((a, b) => a - b);
-
-  return sortedYears.map((year) => {
-    const entryA = byYearA.get(year);
-    const entryB = byYearB.get(year);
-
-    return {
-      date: `${year}`,
-      investmentA: entryA ? entryA.y : null,
-      investmentB: advanced ? (entryB?.y ?? null) : null,
-    };
-  });
-}
+const compact = (value: number) => `$${numberFormatter.format(value)}`;
 
 /* ==================================================
- * Color Helpers
+ * Helpers
  * ================================================== */
 
 /**
  * Determines line color based on investment performance
  * @param matrix - Growth matrix for the investment
  * @param defaultColor - Default color to use for positive performance
+ * @param initialAmount - Starting balance; falls back to the first matrix entry
  * @returns CSS color value
  */
 function getPerformanceColor(
   matrix: LineGraphEntry[] | undefined,
   defaultColor: string,
+  initialAmount?: number,
 ): string {
   if (!matrix || matrix.length === 0) return defaultColor;
 
-  const start = matrix[0].y;
+  const start = initialAmount ?? matrix[0].y;
   const end = matrix[matrix.length - 1].y;
-  const red = "var(--colors-red)";
-  const orange = "var(--colors-orange)";
 
-  if (end < 0) return red;
-  if (end < start) return orange;
+  if (end < 0) return "var(--colors-red)";
+  if (end < start) return "var(--colors-orange)";
 
   return defaultColor;
+}
+
+/** Largest value plotted in a row, for Y-axis scaling */
+function rowMax(row: ChartRow): number {
+  return Math.max(
+    row.investmentA ?? 0,
+    row.investmentB ?? 0,
+    row.mc?.outer[1] ?? 0,
+    row.mcB?.outer[1] ?? 0,
+  );
 }
 
 /* ==================================================
@@ -151,6 +139,10 @@ interface InvestmentLineChartProps {
   mcBandsA?: PercentileBand[];
   /** Monte Carlo percentile bands for Investment B */
   mcBandsB?: PercentileBand[];
+  /** Starting balance of Investment A: anchors the line at today and the performance colour */
+  initialAmountA?: number;
+  /** Starting balance of Investment B */
+  initialAmountB?: number;
 }
 
 /**
@@ -165,71 +157,20 @@ export function InvestmentLineChart({
   targetValueB,
   mcBandsA,
   mcBandsB,
+  initialAmountA,
+  initialAmountB,
 }: InvestmentLineChartProps) {
-  const data = prepareChartData(growthMatrixA, growthMatrixB, advanced);
-
-  // Build year-keyed maps from MC bands so we can align by band.year
-  const hasMCA = mcBandsA && mcBandsA.length > 0;
-  const hasMCB = mcBandsB && mcBandsB.length > 0;
-  const bandAByYear = hasMCA
-    ? new Map(mcBandsA.map((b) => [b.year, b]))
-    : new Map<
-        number,
-        typeof mcBandsA extends (infer U)[] | undefined ? U : never
-      >();
-  const bandBByYear = hasMCB
-    ? new Map(mcBandsB.map((b) => [b.year, b]))
-    : new Map<
-        number,
-        typeof mcBandsB extends (infer U)[] | undefined ? U : never
-      >();
-
-  // Determine how many chart points we need — may exceed deterministic data
-  // if individual-mode MC bands are offset beyond the growth matrices
-  const maxMCYear = Math.max(
-    hasMCA ? mcBandsA[mcBandsA.length - 1].year : 0,
-    hasMCB ? mcBandsB[mcBandsB.length - 1].year : 0,
-  );
-  const baseStartYear = parseInt(data[0]?.date ?? "0");
-  const totalPoints = Math.max(data.length, maxMCYear + 1);
-
-  // Extend chart data with null-valued points for years beyond deterministic range
-  const extendedData = Array.from(
-    { length: totalPoints },
-    (_, i) =>
-      data[i] ?? {
-        date: `${baseStartYear + i}`,
-        investmentA: null,
-        investmentB: null,
-      },
-  );
-
-  // Merge MC bands by year field
-  const mergedData = extendedData.map((d, i) => {
-    const bandA = bandAByYear.get(i);
-    const bandB = bandBByYear.get(i);
-    return {
-      ...d,
-      ...(bandA
-        ? {
-            mcP10: bandA.p10,
-            mcP25: bandA.p25,
-            mcP50: bandA.p50,
-            mcP75: bandA.p75,
-            mcP90: bandA.p90,
-            mcOuter: [bandA.p10, bandA.p90],
-            mcInner: [bandA.p25, bandA.p75],
-          }
-        : {}),
-      ...(bandB
-        ? {
-            mcBP50: bandB.p50,
-            mcBOuter: [bandB.p10, bandB.p90],
-            mcBInner: [bandB.p25, bandB.p75],
-          }
-        : {}),
-    };
+  const rows = buildChartRows({
+    matrixA: growthMatrixA,
+    matrixB: growthMatrixB,
+    advanced,
+    initialA: initialAmountA,
+    initialB: initialAmountB,
+    bands: { mc: mcBandsA, mcB: mcBandsB },
   });
+  const activeSeries = MC_SERIES_KEYS.filter((key) =>
+    rows.some((row) => row[key] !== undefined),
+  );
 
   // CSS color variables
   const fg = "var(--colors-foreground)";
@@ -237,25 +178,42 @@ export function InvestmentLineChart({
   const green = "var(--colors-green)";
 
   // Determine line colors based on performance
-  const investmentAColor = getPerformanceColor(growthMatrixA, cyan);
-  const investmentBColor = getPerformanceColor(growthMatrixB, green);
+  const investmentAColor = getPerformanceColor(
+    growthMatrixA,
+    cyan,
+    initialAmountA,
+  );
+  const investmentBColor = getPerformanceColor(
+    growthMatrixB,
+    green,
+    initialAmountB,
+  );
+
+  const targets = [
+    {
+      tag: "A",
+      value: targetValueA,
+      color: investmentAColor,
+      position: "insideTopRight",
+    },
+    {
+      tag: "B",
+      value: advanced ? targetValueB : undefined,
+      color: investmentBColor,
+      position: "insideBottomRight",
+    },
+  ] as const;
 
   // Calculate max value for Y-axis scaling (with 5% padding)
-  const allValues = [
-    ...mergedData.map((d) => d.investmentA ?? 0),
-    ...(advanced ? mergedData.map((d) => d.investmentB ?? 0) : []),
-    ...(targetValueA ? [targetValueA] : []),
-    ...(targetValueB && advanced ? [targetValueB] : []),
-    ...(hasMCA ? mcBandsA.map((b) => b.p90) : []),
-    ...(hasMCB ? mcBandsB.map((b) => b.p90) : []),
-  ];
-  const maxValue = Math.max(...allValues) * CHART_PADDING_MULTIPLIER;
+  const maxValue =
+    Math.max(...rows.map(rowMax), ...targets.map((t) => t.value ?? 0)) *
+    CHART_PADDING_MULTIPLIER;
 
   return (
     <ChartContainer>
       <ChartTitle>Investment Growth Projection</ChartTitle>
       <ResponsiveContainer width="100%" height="92%">
-        <ComposedChart data={mergedData}>
+        <ComposedChart data={rows}>
           <CartesianGrid strokeDasharray="3 3" stroke="#55555533" />
           <XAxis
             dataKey="date"
@@ -264,9 +222,7 @@ export function InvestmentLineChart({
           />
           <YAxis
             domain={[0, maxValue]}
-            tickFormatter={(value: number) =>
-              `$${numberFormatter.format(value)}`
-            }
+            tickFormatter={compact}
             tick={{ fontSize: 12, fill: fg }}
             label={{
               value: "Value",
@@ -279,10 +235,9 @@ export function InvestmentLineChart({
             formatter={(
               value: number | string | (string | number)[] | undefined,
             ) => {
-              if (typeof value === "number")
-                return `$${numberFormatter.format(value)}`;
+              if (typeof value === "number") return compact(value);
               if (Array.isArray(value) && value.length === 2)
-                return `$${numberFormatter.format(Number(value[0]))} - $${numberFormatter.format(Number(value[1]))}`;
+                return `${compact(Number(value[0]))} - ${compact(Number(value[1]))}`;
               return "";
             }}
             labelFormatter={(label) => `Year: ${label}`}
@@ -304,106 +259,62 @@ export function InvestmentLineChart({
           />
 
           {/* Target reference lines */}
-          {targetValueA != null && targetValueA > 0 && (
-            <ReferenceLine
-              y={targetValueA}
-              stroke={investmentAColor}
-              strokeDasharray="6 3"
-              strokeOpacity={0.7}
-              label={{
-                value: `Target A: $${numberFormatter.format(targetValueA)}`,
-                fill: investmentAColor,
-                fontSize: 11,
-                position: "insideTopRight",
-              }}
-            />
-          )}
-          {advanced && targetValueB != null && targetValueB > 0 && (
-            <ReferenceLine
-              y={targetValueB}
-              stroke={investmentBColor}
-              strokeDasharray="6 3"
-              strokeOpacity={0.7}
-              label={{
-                value: `Target B: $${numberFormatter.format(targetValueB)}`,
-                fill: investmentBColor,
-                fontSize: 11,
-                position: "insideBottomRight",
-              }}
-            />
+          {targets.map(({ tag, value, color, position }) =>
+            value != null && value > 0 ? (
+              <ReferenceLine
+                key={tag}
+                y={value}
+                stroke={color}
+                strokeDasharray="6 3"
+                strokeOpacity={0.7}
+                label={{
+                  value: `Target ${tag}: ${compact(value)}`,
+                  fill: color,
+                  fontSize: 11,
+                  position,
+                }}
+              />
+            ) : null,
           )}
 
-          {/* Monte Carlo confidence bands A (P10-P90 outer, P25-P75 inner) */}
-          {hasMCA && (
-            <>
-              <Area
-                type="monotone"
-                dataKey="mcOuter"
-                fill="var(--colors-purple)"
-                fillOpacity={0.08}
-                stroke="none"
-                name="P10-P90"
-                legendType="none"
-                isAnimationActive={false}
-              />
-              <Area
-                type="monotone"
-                dataKey="mcInner"
-                fill="var(--colors-purple)"
-                fillOpacity={0.12}
-                stroke="none"
-                name="P25-P75"
-                legendType="none"
-                isAnimationActive={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="mcP50"
-                stroke="var(--colors-purple)"
-                strokeWidth={1.5}
-                strokeDasharray="4 3"
-                dot={false}
-                name="Median (MC)"
-                isAnimationActive={false}
-              />
-            </>
-          )}
-
-          {/* Monte Carlo confidence bands B */}
-          {hasMCB && (
-            <>
-              <Area
-                type="monotone"
-                dataKey="mcBOuter"
-                fill="var(--colors-green)"
-                fillOpacity={0.08}
-                stroke="none"
-                name="B P10-P90"
-                legendType="none"
-                isAnimationActive={false}
-              />
-              <Area
-                type="monotone"
-                dataKey="mcBInner"
-                fill="var(--colors-green)"
-                fillOpacity={0.12}
-                stroke="none"
-                name="B P25-P75"
-                legendType="none"
-                isAnimationActive={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="mcBP50"
-                stroke="var(--colors-green)"
-                strokeWidth={1.5}
-                strokeDasharray="4 3"
-                dot={false}
-                name="Median B (MC)"
-                isAnimationActive={false}
-              />
-            </>
-          )}
+          {/* Monte Carlo confidence bands (P10-P90 outer, P25-P75 inner) */}
+          {activeSeries.map((key) => {
+            const { color, label, bandPrefix } = MC_SERIES[key];
+            return (
+              <Fragment key={key}>
+                <Area
+                  type="monotone"
+                  dataKey={`${key}.outer`}
+                  fill={color}
+                  fillOpacity={0.08}
+                  stroke="none"
+                  name={`${bandPrefix}P10-P90`}
+                  legendType="none"
+                  isAnimationActive={false}
+                />
+                <Area
+                  type="monotone"
+                  dataKey={`${key}.inner`}
+                  fill={color}
+                  fillOpacity={0.12}
+                  stroke="none"
+                  name={`${bandPrefix}P25-P75`}
+                  legendType="none"
+                  isAnimationActive={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey={`${key}.p50`}
+                  stroke={color}
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                  dot={false}
+                  name={label}
+                  isAnimationActive={false}
+                />
+              </Fragment>
+            );
+          })}
 
           {/* Investment A Line */}
           <Line

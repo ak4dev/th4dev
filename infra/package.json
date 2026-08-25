@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc -w",
+    "typecheck": "tsc --noEmit",
     "test": "jest",
     "cdk": "cdk",
     "configure": "ts-node bin/configure.ts",

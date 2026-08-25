@@ -13,6 +13,8 @@ no accounts; state persistence is opt-in via localStorage or JSON export.
 - **Rollover** — roll Investment A's ending balance into B at A's finish year
 - **Target solver** — enter a target ending balance and the app solves for the
   monthly withdrawal that lands on it
+- **Dynamic withdrawal** — withdraw a percentage of the balance each year,
+  clamped between a floor and ceiling, reflected in the Monte Carlo bands
 - **Monte Carlo simulation** — percentile bands (P10–P90) from randomized
   annual returns, in combined, individual, or rollover modes
 - **Portfolio capital preservation** — required share prices per holding to
@@ -31,7 +33,9 @@ npm run build      # prettier + tsc -b + vite build → dist/
 
 ## Deployment (AWS)
 
-The site deploys as a static bundle to S3 behind CloudFront.
+The site deploys as a static bundle to S3 behind CloudFront. Hashed files
+under `assets/` are uploaded with a one-year immutable cache header; everything
+else (`index.html`) is `no-cache`, so a new deploy is picked up immediately.
 
 **Quick sync** (existing buckets/distributions):
 
@@ -48,12 +52,16 @@ artifact.
 Route 53):
 
 ```sh
+npm run build       # from the repo root; CDK deploys ./dist
 cd infra
 npm install
 npm run configure   # writes deploy-config.json (see deploy-config.example.json)
-npm test            # CDK assertion tests
+npm test            # CDK assertion tests (no deploy-config.json needed)
 npm run deploy:all
 ```
+
+Every stack deploys to `us-east-1` (CloudFront only accepts ACM certificates
+from that region); any other `region` in `deploy-config.json` is rejected.
 
 ## Local Subdomain Testing
 
@@ -61,6 +69,7 @@ This project supports subdomain-based routing in development.
 
 - Run the dev server: `npm run dev`
 - Open your mapped host with HTTPS, for example: `https://f.local.dev:5173`
+- Without a subdomain, `?p=<page>` on the root origin (e.g. `?p=f`) is equivalent to the `f.` subdomain and takes priority over the remembered page
 
 Why HTTPS is required:
 

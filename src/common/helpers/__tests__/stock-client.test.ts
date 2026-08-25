@@ -4,7 +4,10 @@ import {
   extractStockPrice,
   extractQuoteSymbol,
   fetchStockData,
+  applyFetchedPrices,
+  describeFetchFailures,
 } from "../stock-client";
+import type { PortfolioHolding } from "../../types/portfolio-types";
 
 // ── normalizeStockSymbol ──────────────────────────────────────────────────────
 
@@ -189,11 +192,35 @@ describe("extractStockPrice – extra edge cases", () => {
     };
     expect(extractStockPrice(data)).toBe(195.25);
   });
+
+  it("falls back to the top-level price when the Global Quote price is not numeric", () => {
+    expect(
+      extractStockPrice({
+        "Global Quote": { "05. price": "N/A" },
+        price: "12.5",
+      }),
+    ).toBe(12.5);
+  });
+
+  it("returns undefined for a rate-limit Information body", () => {
+    expect(
+      extractStockPrice({ Information: "Thank you for using Alpha Vantage" }),
+    ).toBeUndefined();
+  });
 });
 
 describe("extractQuoteSymbol – extra edge cases", () => {
   it("returns undefined for an empty object", () => {
     expect(extractQuoteSymbol({})).toBeUndefined();
+  });
+
+  it("falls back to the top-level symbol when the Global Quote symbol is blank", () => {
+    expect(
+      extractQuoteSymbol({
+        "Global Quote": { "01. symbol": "  " },
+        symbol: "ibm",
+      }),
+    ).toBe("IBM");
   });
 });
 
@@ -209,5 +236,116 @@ describe("fetchStockData – extra edge cases", () => {
     const results = await fetchStockData("https://api/{symbol}", []);
     expect(results).toHaveLength(0);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+// ── applyFetchedPrices ────────────────────────────────────────────────────────
+
+describe("applyFetchedPrices", () => {
+  const now = new Date("2026-01-15T00:00:00.000Z");
+  const holdings: PortfolioHolding[] = [
+    { symbol: "AAPL", allocationPct: 50 },
+    { symbol: "MSFT", allocationPct: 50 },
+  ];
+
+  it("sets currentPrice and locks startPrice/projectionStartDate on the first fetch", () => {
+    const out = applyFetchedPrices(
+      holdings,
+      [
+        {
+          symbol: "AAPL",
+          data: {
+            "Global Quote": { "01. symbol": "AAPL", "05. price": "182.50" },
+          },
+        },
+      ],
+      now,
+    );
+    expect(out[0]).toEqual({
+      symbol: "AAPL",
+      allocationPct: 50,
+      currentPrice: 182.5,
+      startPrice: 182.5,
+      projectionStartDate: "2026-01-15T00:00:00.000Z",
+    });
+    expect(out[1]).toBe(holdings[1]);
+  });
+
+  it("keeps the locked start price and date on later fetches", () => {
+    const locked: PortfolioHolding = {
+      symbol: "AAPL",
+      allocationPct: 100,
+      currentPrice: 100,
+      startPrice: 100,
+      projectionStartDate: "2025-06-01T00:00:00.000Z",
+    };
+    const [out] = applyFetchedPrices(
+      [locked],
+      [{ symbol: "AAPL", data: { price: "150" } }],
+      now,
+    );
+    expect(out).toEqual({ ...locked, currentPrice: 150 });
+  });
+
+  it("matches on the symbol echoed by the API, case-insensitively", () => {
+    const [out] = applyFetchedPrices(
+      [{ symbol: "aapl", allocationPct: 100 }],
+      [{ symbol: "AAPL", data: { symbol: " Aapl ", price: "10" } }],
+      now,
+    );
+    expect(out.currentPrice).toBe(10);
+  });
+
+  it("leaves holdings untouched when the fetch failed or returned no price", () => {
+    const out = applyFetchedPrices(
+      holdings,
+      [
+        { symbol: "AAPL", error: "HTTP 401: Unauthorized" },
+        { symbol: "MSFT", data: { Information: "rate limited" } },
+      ],
+      now,
+    );
+    expect(out).toEqual(holdings);
+    expect(holdings[0].currentPrice).toBeUndefined();
+  });
+
+  it("ignores results for symbols that are not held", () => {
+    const out = applyFetchedPrices(
+      holdings,
+      [{ symbol: "GOOG", data: { price: "10" } }],
+      now,
+    );
+    expect(out).toEqual(holdings);
+  });
+});
+
+// ── describeFetchFailures ─────────────────────────────────────────────────────
+
+describe("describeFetchFailures", () => {
+  it("returns null when every symbol produced a price", () => {
+    expect(
+      describeFetchFailures([
+        { symbol: "AAPL", data: { price: "1" } },
+        { symbol: "MSFT", data: { "Global Quote": { "05. price": "2" } } },
+      ]),
+    ).toBeNull();
+  });
+
+  it("lists HTTP and network errors per symbol", () => {
+    expect(
+      describeFetchFailures([
+        { symbol: "AAPL", error: "HTTP 401: Unauthorized" },
+        { symbol: "MSFT", data: { price: "2" } },
+        { symbol: "GOOG", error: "TypeError: Failed to fetch" },
+      ]),
+    ).toBe("AAPL: HTTP 401: Unauthorized; GOOG: TypeError: Failed to fetch");
+  });
+
+  it("reports a successful response that carries no price", () => {
+    expect(
+      describeFetchFailures([
+        { symbol: "AAPL", data: { Information: "rate limited" } },
+      ]),
+    ).toBe("AAPL: no price in response");
   });
 });

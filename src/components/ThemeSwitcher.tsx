@@ -3,7 +3,7 @@
  * ================================================== */
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { styled, themeObjects } from "../../stitches.config";
+import { styled, themeObjects, type ThemeKey } from "../../stitches.config";
 import * as Icons from "@radix-ui/react-icons";
 import {
   SCROLLABLE_THEME_ITEMS,
@@ -13,6 +13,9 @@ import {
 /* ==================================================
  * Helpers
  * ================================================== */
+
+/** Theme colours shown in each swatch pill, left to right */
+const SWATCH_KEYS = ["background", "purple", "cyan", "green"] as const;
 
 /** Convert camelCase theme key to "Title Case" display name */
 function formatThemeName(key: string): string {
@@ -143,9 +146,7 @@ export function ThemeSelector({
   activeTheme,
   onThemeChange,
 }: ThemeSelectorProps) {
-  const themeKeys = Object.keys(themeObjects) as Array<
-    keyof typeof themeObjects
-  >;
+  const themeKeys = Object.keys(themeObjects) as ThemeKey[];
 
   return (
     <DropdownMenu.Root>
@@ -167,18 +168,12 @@ export function ThemeSelector({
                   active={isActive}
                 >
                   <SwatchPalette>
-                    <SwatchSegment
-                      style={{ backgroundColor: theme.colors.background }}
-                    />
-                    <SwatchSegment
-                      style={{ backgroundColor: theme.colors.purple }}
-                    />
-                    <SwatchSegment
-                      style={{ backgroundColor: theme.colors.cyan }}
-                    />
-                    <SwatchSegment
-                      style={{ backgroundColor: theme.colors.green }}
-                    />
+                    {SWATCH_KEYS.map((c) => (
+                      <SwatchSegment
+                        key={c}
+                        style={{ backgroundColor: theme.colors[c] }}
+                      />
+                    ))}
                   </SwatchPalette>
                   <ThemeName>{formatThemeName(key)}</ThemeName>
                   {isActive && <CheckIcon width={14} height={14} />}

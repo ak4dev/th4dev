@@ -18,72 +18,43 @@ export interface ScenarioSnapshot {
   state: TH4State;
 }
 
-export interface ScenariosStore {
-  scenarios: ScenarioSnapshot[];
-}
-
 /* ---------- Constants ---------- */
 
-const STORAGE_KEY = "th4_scenarios";
-const MAX_SCENARIOS = 20;
-
-/* ---------- Persistence ---------- */
-
-export function loadScenarios(): ScenarioSnapshot[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as ScenariosStore;
-    return Array.isArray(parsed.scenarios) ? parsed.scenarios : [];
-  } catch {
-    return [];
-  }
-}
+export const MAX_SCENARIOS = 20;
 
 /* ---------- CRUD ---------- */
 
 export function saveScenario(
   name: string,
   state: TH4State,
-  existing?: ScenarioSnapshot[],
+  existing: ScenarioSnapshot[],
 ): ScenarioSnapshot[] {
-  const scenarios = existing ?? loadScenarios();
-
-  if (scenarios.length >= MAX_SCENARIOS) {
+  if (existing.length >= MAX_SCENARIOS) {
     throw new Error(`Maximum of ${MAX_SCENARIOS} scenarios reached.`);
   }
 
-  const id = `scenario-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const snapshot: ScenarioSnapshot = {
-    id,
+    id: `scenario-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name,
     createdAt: new Date().toISOString(),
     state: structuredClone(state),
   };
-
-  const updated = [...scenarios, snapshot];
-  return updated;
+  return [...existing, snapshot];
 }
 
 export function deleteScenario(
   id: string,
-  existing?: ScenarioSnapshot[],
+  existing: ScenarioSnapshot[],
 ): ScenarioSnapshot[] {
-  const scenarios = existing ?? loadScenarios();
-  const updated = scenarios.filter((s) => s.id !== id);
-  return updated;
+  return existing.filter((s) => s.id !== id);
 }
 
 export function renameScenario(
   id: string,
   newName: string,
-  existing?: ScenarioSnapshot[],
+  existing: ScenarioSnapshot[],
 ): ScenarioSnapshot[] {
-  const scenarios = existing ?? loadScenarios();
-  const updated = scenarios.map((s) =>
-    s.id === id ? { ...s, name: newName } : s,
-  );
-  return updated;
+  return existing.map((s) => (s.id === id ? { ...s, name: newName } : s));
 }
 
 /**
@@ -102,5 +73,3 @@ export function getSnapshotPreview(snapshot: ScenarioSnapshot): {
     years: s?.yearsOfGrowthA ?? 30,
   };
 }
-
-export { MAX_SCENARIOS };

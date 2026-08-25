@@ -3,30 +3,23 @@ import { solveForWithdrawal } from "../solve-for-withdrawal";
 import { InvestmentCalculator } from "../investment-growth-calculator";
 import type { InvestmentCalculatorProps } from "../../types/types";
 
-const noop = (): void => {};
-
 const makeProps = (
   overrides: Partial<InvestmentCalculatorProps> = {},
 ): InvestmentCalculatorProps => ({
   currentAmount: "10000",
-  setCurrentAmount: noop,
   projectedGain: 10,
-  setProjectedGain: noop,
   yearsOfGrowth: 10,
-  setYearsOfGrowth: noop,
   monthlyContribution: 0,
-  setMonthlyContribution: noop,
   monthlyWithdrawal: 0,
-  setMonthlyWithdrawal: noop,
   yearWithdrawalsBegin: 0,
-  setYearWithdrawalsBegin: noop,
-  setYearContributionsStop: noop,
   maxMonthlyWithdrawal: 10000,
   depreciationRate: 0,
-  investmentId: "test",
   advanced: true,
   ...overrides,
 });
+
+const finalValue = (props: InvestmentCalculatorProps) =>
+  new InvestmentCalculator(props).calculateGrowth(false).numeric;
 
 beforeAll(() => {
   vi.useFakeTimers();
@@ -40,34 +33,28 @@ afterAll(() => {
 describe("solveForWithdrawal", () => {
   it("returns 0 for a negative target", () => {
     expect(solveForWithdrawal(makeProps(), -1000, false)).toBe(0);
+    expect(solveForWithdrawal(makeProps(), -999999, false)).toBe(0);
   });
 
   it("returns 0 when 0-withdrawal result already meets or exceeds target", () => {
     // Target above the no-withdrawal projection is unreachable via withdrawal
-    const noWithdraw = new InvestmentCalculator(
-      makeProps({ monthlyWithdrawal: 0 }),
-    ).calculateGrowth(false).numeric;
+    const noWithdraw = finalValue(makeProps());
+    expect(solveForWithdrawal(makeProps(), noWithdraw + 5000, false)).toBe(0);
+    expect(solveForWithdrawal(makeProps(), noWithdraw + 100000, false)).toBe(0);
+  });
 
-    const result = solveForWithdrawal(makeProps(), noWithdraw + 5000, false);
-    expect(result).toBe(0);
+  it("returns 0 outside advanced mode, where withdrawals are inert", () => {
+    expect(
+      solveForWithdrawal(makeProps({ advanced: false }), 5000, false),
+    ).toBe(0);
   });
 
   it("converges: applying the solved withdrawal produces the target value", () => {
     const base = makeProps();
     // Pick a target between min (heavy withdrawal) and max (no withdrawal)
-    const noWithdrawResult = new InvestmentCalculator(
-      makeProps({ monthlyWithdrawal: 0 }),
-    ).calculateGrowth(false).numeric;
-
-    const target = Math.floor(noWithdrawResult * 0.6); // 60 % of max
-
+    const target = Math.floor(finalValue(base) * 0.6);
     const withdrawal = solveForWithdrawal(base, target, false);
-
-    const calc = new InvestmentCalculator({
-      ...base,
-      monthlyWithdrawal: withdrawal,
-    });
-    const actual = calc.calculateGrowth(false).numeric;
+    const actual = finalValue({ ...base, monthlyWithdrawal: withdrawal });
 
     // The withdrawal is rounded to the nearest dollar, and over a 10-year
     // (120-month) horizon that up-to-$0.50 rounding error compounds monthly
@@ -76,58 +63,48 @@ describe("solveForWithdrawal", () => {
     expect(actual).toBeLessThanOrEqual(target * 1.01);
   });
 
-  it("higher withdrawal → lower final balance (monotonicity)", () => {
-    const low = new InvestmentCalculator(
-      makeProps({ monthlyWithdrawal: 100 }),
-    ).calculateGrowth(false).numeric;
-    const high = new InvestmentCalculator(
-      makeProps({ monthlyWithdrawal: 500 }),
-    ).calculateGrowth(false).numeric;
-    expect(high).toBeLessThan(low);
-  });
-});
-
-// ── edge cases (ceiling multiplier fix & boundary targets) ────────────────────
-
-describe("solveForWithdrawal – edge cases", () => {
-  it("converges with ceiling*2 upper bound (ceiling multiplier fix)", () => {
-    // The fix changed ceiling*10 to ceiling*2. Verify convergence with the
-    // default maxMonthlyWithdrawal over a longer horizon.
+  it("converges over a shorter horizon", () => {
     const base = makeProps({ yearsOfGrowth: 5 });
-    const noWithdrawResult = new InvestmentCalculator({
-      ...base,
-      monthlyWithdrawal: 0,
-    }).calculateGrowth(false).numeric;
-
-    const target = Math.floor(noWithdrawResult * 0.5);
+    const target = Math.floor(finalValue(base) * 0.5);
     const withdrawal = solveForWithdrawal(base, target, false);
-
-    const calc = new InvestmentCalculator({
-      ...base,
-      monthlyWithdrawal: withdrawal,
-    });
-    const actual = calc.calculateGrowth(false).numeric;
+    const actual = finalValue({ ...base, monthlyWithdrawal: withdrawal });
     expect(actual).toBeGreaterThanOrEqual(target * 0.995);
     expect(actual).toBeLessThanOrEqual(target * 1.005);
   });
 
+  it("higher withdrawal → lower final balance (monotonicity)", () => {
+    expect(finalValue(makeProps({ monthlyWithdrawal: 500 }))).toBeLessThan(
+      finalValue(makeProps({ monthlyWithdrawal: 100 })),
+    );
+  });
+
   it("handles targetValue = 0 without error and returns a positive withdrawal", () => {
-    const result = solveForWithdrawal(makeProps(), 0, false);
     // Target of 0 means "drain the portfolio"; the solver should return a
     // positive withdrawal amount (not 0).
-    expect(result).toBeGreaterThan(0);
+    expect(solveForWithdrawal(makeProps(), 0, false)).toBeGreaterThan(0);
   });
 
-  it("returns 0 when targetValue exceeds no-withdrawal portfolio value", () => {
-    const noWithdrawResult = new InvestmentCalculator(
-      makeProps({ monthlyWithdrawal: 0 }),
-    ).calculateGrowth(false).numeric;
+  it("never returns more than maxMonthlyWithdrawal when the target is unreachable", () => {
     expect(
-      solveForWithdrawal(makeProps(), noWithdrawResult + 100000, false),
-    ).toBe(0);
+      solveForWithdrawal(makeProps({ currentAmount: "10000000" }), 0, false),
+    ).toBe(10000);
+    expect(
+      solveForWithdrawal(
+        makeProps({ currentAmount: "2000000", projectedGain: 5 }),
+        0,
+        false,
+      ),
+    ).toBe(10000);
   });
 
-  it("returns 0 for a large negative targetValue", () => {
-    expect(solveForWithdrawal(makeProps(), -999999, false)).toBe(0);
+  it("solves for the fixed amount even when a dynamic policy is present", () => {
+    const base = makeProps();
+    const target = Math.floor(finalValue(base) * 0.6);
+    const withDynamic = makeProps({
+      dynamicWithdrawal: { ratePct: 4, floor: 0, ceiling: 10000 },
+    });
+    expect(solveForWithdrawal(withDynamic, target, false)).toBe(
+      solveForWithdrawal(base, target, false),
+    );
   });
 });

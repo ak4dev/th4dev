@@ -1,233 +1,153 @@
 /* ==================================================
  * State Export/Import Tests
  *
- * Verifies that all tool values (FIRE, budget, fees,
- * Monte Carlo, scenarios) are captured in the
- * TH4State shape and survive round-trip
- * serialisation.
+ * Exercises the real export -> file -> import path:
+ * JSON serialisation, the optional encrypted envelope,
+ * the isValidTH4State guard and normalizeState.  A fully
+ * populated state must come back byte-for-byte equal.
  * ================================================== */
 
 import { describe, it, expect } from "vitest";
-import type { TH4State } from "../../types/types";
-import type { BudgetItem } from "../budget-manager";
-import type { ScenarioSnapshot } from "../scenario-manager";
+import {
+  DEFAULT_SLIDERS,
+  DEFAULT_STATE,
+  DEFAULT_TOGGLES,
+  isValidTH4State,
+  normalizeState,
+} from "../state-manager";
+import {
+  encryptToEnvelope,
+  decryptFromEnvelope,
+  isEncryptedEnvelope,
+} from "../crypto-manager";
+import type { NormalizedState } from "../state-manager";
 
-describe("TH4State round-trip serialisation", () => {
-  const fullState: TH4State = {
-    theme: "dracula",
-    sliders: {
-      investmentA: 50000,
-      investmentB: 25000,
-      projectedGainA: 8,
-      projectedGainB: 12,
-      yearsOfGrowthA: 25,
-      yearsOfGrowthB: 15,
-      monthlyContributionA: 500,
-      monthlyContributionB: 300,
-      monthlyWithdrawalA: 200,
-      monthlyWithdrawalB: 0,
-      withdrawalStartYearA: 10,
-      withdrawalStartYearB: 0,
-      yearlyInflation: 3,
-      targetValueA: 500000,
-      targetValueB: 0,
-      annualFeeA: 0.5,
-      annualFeeB: 0.25,
-      volatilityA: 15,
-      volatilityB: 10,
-      fireAnnualExpenses: 48000,
-      fireSWR: 3.5,
-      fireCurrentAge: 35,
-      fireRetirementAge: 55,
-    },
-    inputs: {
-      currentAmountA: "50000",
-      currentAmountB: "25000",
-    },
-    toggles: {
-      advanced: true,
-      rollover: false,
-      showInflation: true,
-      portfolio: true,
-      fees: true,
-      monteCarlo: true,
-      fire: true,
-      scenarios: true,
-      budget: true,
-      monteCarloMode: "individual",
-    },
-    stock: {
-      apiUrl: "https://example.com/api?symbol={symbol}",
-      holdings: [
-        {
-          symbol: "AAPL",
-          allocationPct: 60,
-          currentPrice: 180,
-          startPrice: 170,
-        },
-        {
-          symbol: "MSFT",
-          allocationPct: 40,
-          currentPrice: 400,
-          startPrice: 380,
-        },
-      ],
-    },
-    budgetItems: [
-      { id: "b1", name: "Rent", amount: 1500, category: "Housing" },
-      { id: "b2", name: "Groceries", amount: 400, category: "Food" },
-      { id: "b3", name: "Untitled", amount: 50, category: "Other" },
+/** Every tool's values populated, all in range, so normalizeState is the identity */
+const fullState: NormalizedState = {
+  theme: "dracula",
+  sliders: {
+    ...DEFAULT_SLIDERS,
+    projectedGainA: 8,
+    projectedGainB: 12,
+    yearsOfGrowthA: 25,
+    yearsOfGrowthB: 15,
+    monthlyContributionA: 500,
+    monthlyContributionB: 300,
+    monthlyWithdrawalA: 200,
+    withdrawalStartYearA: 10,
+    yearlyInflation: 3,
+    targetValueA: 500000,
+    annualFeeA: 0.5,
+    annualFeeB: 0.25,
+    volatilityA: 15,
+    volatilityB: 10,
+    withdrawalRateA: 3.5,
+    withdrawalFloorA: 1500,
+    withdrawalCeilingA: 6000,
+    fireAnnualExpenses: 48000,
+    fireSWR: 3.5,
+    fireCurrentAge: 35,
+    fireRetirementAge: 55,
+  },
+  inputs: { currentAmountA: "50000", currentAmountB: "25000" },
+  toggles: {
+    advanced: true,
+    rollover: false,
+    showInflation: true,
+    portfolio: true,
+    fees: true,
+    monteCarlo: true,
+    fire: true,
+    scenarios: true,
+    budget: true,
+    dynamicWithdrawal: true,
+    monteCarloMode: "individual",
+  },
+  stock: {
+    apiUrl: "https://example.com/api?symbol={symbol}",
+    holdings: [
+      { symbol: "AAPL", allocationPct: 60, currentPrice: 180, startPrice: 170 },
+      { symbol: "MSFT", allocationPct: 40, currentPrice: 400, startPrice: 380 },
     ],
-    scenarios: [
-      {
-        id: "s1",
-        name: "Conservative",
-        createdAt: "2025-01-01T00:00:00.000Z",
-        state: {
-          theme: "dracula",
-          sliders: { projectedGainA: 6 },
-          inputs: { currentAmountA: "30000" },
-          toggles: {
-            advanced: false,
-            rollover: false,
-            showInflation: false,
-            portfolio: false,
-            monteCarloMode: "combined" as const,
-          },
-        } as unknown as TH4State,
+  },
+  budgetItems: [
+    { id: "b1", name: "Rent", amount: 1500, category: "Housing" },
+    { id: "b2", name: "Groceries", amount: 400, category: "Food" },
+  ],
+  scenarios: [
+    {
+      id: "s1",
+      name: "Conservative",
+      createdAt: "2025-01-01T00:00:00.000Z",
+      state: {
+        ...DEFAULT_STATE,
+        sliders: { ...DEFAULT_SLIDERS, projectedGainA: 6 },
+        inputs: { currentAmountA: "30000", currentAmountB: "0" },
+        toggles: { ...DEFAULT_TOGGLES, showInflation: true },
       },
-    ],
-    activePage: "fire",
-  };
+    },
+  ],
+  activePage: "f",
+};
 
-  it("survives JSON round-trip without data loss", () => {
-    const json = JSON.stringify(fullState);
-    const parsed = JSON.parse(json) as TH4State;
+/** Mirrors what a file import sees: parsed JSON of unknown shape */
+const parseFile = (contents: string): unknown => JSON.parse(contents);
 
-    expect(parsed.theme).toBe("dracula");
-    expect(parsed.sliders.annualFeeA).toBe(0.5);
-    expect(parsed.sliders.volatilityA).toBe(15);
-    expect(parsed.sliders.fireAnnualExpenses).toBe(48000);
-    expect(parsed.sliders.fireSWR).toBe(3.5);
-    expect(parsed.sliders.fireCurrentAge).toBe(35);
-    expect(parsed.sliders.fireRetirementAge).toBe(55);
-    expect(parsed.toggles.fees).toBe(true);
-    expect(parsed.toggles.monteCarlo).toBe(true);
-    expect(parsed.toggles.fire).toBe(true);
-    expect(parsed.toggles.scenarios).toBe(true);
-    expect(parsed.toggles.budget).toBe(true);
-    expect(parsed.stock?.holdings).toHaveLength(2);
-    expect(parsed.budgetItems).toHaveLength(3);
-    expect(parsed.scenarios).toHaveLength(1);
-    expect(parsed.activePage).toBe("fire");
+/** Copy of `obj` without the given keys */
+const without = (obj: object, ...keys: string[]): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(obj).filter(([k]) => !keys.includes(k)));
+
+describe("state export/import round trip", () => {
+  it("plain export passes the guard and normalises back to the same state", () => {
+    const parsed = parseFile(JSON.stringify(fullState));
+    expect(isEncryptedEnvelope(parsed)).toBe(false);
+    expect(isValidTH4State(parsed)).toBe(true);
+    if (!isValidTH4State(parsed)) return;
+    expect(normalizeState(parsed)).toEqual(fullState);
   });
 
-  it("captures all FIRE slider values", () => {
-    const json = JSON.stringify(fullState);
-    const parsed = JSON.parse(json) as TH4State;
+  it("encrypted export is unreadable as state and round-trips through the envelope", async () => {
+    const envelope = await encryptToEnvelope(JSON.stringify(fullState), "pw");
+    const parsedEnvelope = parseFile(JSON.stringify(envelope));
+    expect(isValidTH4State(parsedEnvelope)).toBe(false);
+    expect(isEncryptedEnvelope(parsedEnvelope)).toBe(true);
+    if (!isEncryptedEnvelope(parsedEnvelope)) return;
 
-    expect(parsed.sliders.fireAnnualExpenses).toBe(48000);
-    expect(parsed.sliders.fireSWR).toBe(3.5);
-    expect(parsed.sliders.fireCurrentAge).toBe(35);
-    expect(parsed.sliders.fireRetirementAge).toBe(55);
+    const parsed = parseFile(await decryptFromEnvelope(parsedEnvelope, "pw"));
+    expect(isValidTH4State(parsed)).toBe(true);
+    if (!isValidTH4State(parsed)) return;
+    expect(normalizeState(parsed)).toEqual(fullState);
   });
 
-  it("captures fee slider values for both tracks", () => {
-    const json = JSON.stringify(fullState);
-    const parsed = JSON.parse(json) as TH4State;
-
-    expect(parsed.sliders.annualFeeA).toBe(0.5);
-    expect(parsed.sliders.annualFeeB).toBe(0.25);
-  });
-
-  it("captures Monte Carlo volatility and mode", () => {
-    const json = JSON.stringify(fullState);
-    const parsed = JSON.parse(json) as TH4State;
-
-    expect(parsed.sliders.volatilityA).toBe(15);
-    expect(parsed.sliders.volatilityB).toBe(10);
-    expect(parsed.toggles.monteCarloMode).toBe("individual");
-  });
-
-  it("captures budget items with all fields", () => {
-    const json = JSON.stringify(fullState);
-    const parsed = JSON.parse(json) as TH4State;
-
-    expect(parsed.budgetItems).toBeDefined();
-    const items = parsed.budgetItems as BudgetItem[];
-    expect(items).toHaveLength(3);
-    expect(items[0].name).toBe("Rent");
-    expect(items[0].amount).toBe(1500);
-    expect(items[0].category).toBe("Housing");
-    expect(items[2].name).toBe("Untitled");
-  });
-
-  it("handles missing optional fields gracefully (backward compat)", () => {
-    const minimalState: TH4State = {
-      theme: "gruvbox",
-      sliders: { investmentA: 10000 },
-      inputs: { currentAmountA: "10000" },
+  it("an export from an older build imports with the new fields defaulted", () => {
+    const { toggles, sliders } = fullState;
+    const parsed = parseFile(
+      JSON.stringify({
+        ...fullState,
+        toggles: without(toggles, "dynamicWithdrawal", "monteCarloMode"),
+        sliders: without(
+          sliders,
+          "withdrawalRateA",
+          "withdrawalFloorA",
+          "withdrawalCeilingA",
+        ),
+      }),
+    );
+    expect(isValidTH4State(parsed)).toBe(true);
+    if (!isValidTH4State(parsed)) return;
+    expect(normalizeState(parsed)).toEqual({
+      ...fullState,
       toggles: {
-        advanced: false,
-        rollover: false,
-        showInflation: false,
-        portfolio: false,
-        fees: false,
-        monteCarlo: false,
-        fire: false,
-        scenarios: false,
-        budget: false,
+        ...toggles,
+        dynamicWithdrawal: false,
         monteCarloMode: "combined",
       },
-    };
-
-    const json = JSON.stringify(minimalState);
-    const parsed = JSON.parse(json) as TH4State;
-
-    expect(parsed.stock).toBeUndefined();
-    expect(parsed.budgetItems).toBeUndefined();
-    expect(parsed.scenarios).toBeUndefined();
-    expect(parsed.activePage).toBeUndefined();
-    expect(parsed.sliders.annualFeeA).toBeUndefined();
-    expect(parsed.sliders.volatilityA).toBeUndefined();
-    expect(parsed.sliders.fireAnnualExpenses).toBeUndefined();
-  });
-
-  it("all toggle fields survive round-trip", () => {
-    const json = JSON.stringify(fullState);
-    const parsed = JSON.parse(json) as TH4State;
-
-    const toggleKeys: (keyof TH4State["toggles"])[] = [
-      "advanced",
-      "rollover",
-      "showInflation",
-      "portfolio",
-      "fees",
-      "monteCarlo",
-      "fire",
-      "scenarios",
-      "budget",
-    ];
-    for (const key of toggleKeys) {
-      expect(typeof parsed.toggles[key]).toBe("boolean");
-    }
-  });
-
-  it("captures scenarios with nested state", () => {
-    const json = JSON.stringify(fullState);
-    const parsed = JSON.parse(json) as TH4State;
-
-    expect(parsed.scenarios).toBeDefined();
-    const scenarios = parsed.scenarios as ScenarioSnapshot[];
-    expect(scenarios).toHaveLength(1);
-    expect(scenarios[0].name).toBe("Conservative");
-    expect(scenarios[0].state.sliders.projectedGainA).toBe(6);
-    expect(scenarios[0].state.inputs?.currentAmountA).toBe("30000");
-  });
-
-  it("captures activePage", () => {
-    const json = JSON.stringify(fullState);
-    const parsed = JSON.parse(json) as TH4State;
-    expect(parsed.activePage).toBe("fire");
+      sliders: {
+        ...sliders,
+        withdrawalRateA: DEFAULT_SLIDERS.withdrawalRateA,
+        withdrawalFloorA: DEFAULT_SLIDERS.withdrawalFloorA,
+        withdrawalCeilingA: DEFAULT_SLIDERS.withdrawalCeilingA,
+      },
+    });
   });
 });

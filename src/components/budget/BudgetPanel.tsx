@@ -7,7 +7,7 @@
  * optionally feeds annual expenses into FIRE.
  * ================================================== */
 
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import * as Slider from "@radix-ui/react-slider";
 import * as Icons from "@radix-ui/react-icons";
 import { styled, keyframes } from "../../../stitches.config";
@@ -19,11 +19,20 @@ import {
   getMonthlyTotal,
   getAnnualTotal,
   getTotalByCategory,
-  getCategoryPercentages,
   DEFAULT_CATEGORIES,
   MAX_ITEMS,
   type BudgetItem,
+  type BudgetCategory,
 } from "../../common/helpers/budget-manager";
+import { formatCurrency } from "../../common/helpers/format";
+import {
+  PanelContainer,
+  PanelTitle,
+  PanelButton,
+  CountLabel,
+  Separator,
+  EmptyMessage,
+} from "../ui/primitives";
 
 /* ---------- Props ---------- */
 
@@ -32,7 +41,7 @@ interface BudgetPanelProps {
   items: BudgetItem[];
   /** Setter for budget items */
   setItems: (items: BudgetItem[]) => void;
-  /** Callback fired whenever the annual total changes (for FIRE integration) */
+  /** Called with the annual total of a non-empty budget whenever it changes (FIRE integration) */
   onAnnualTotalChange?: (annual: number) => void;
   /** Callback to set monthly withdrawal to budget total */
   onSetMonthlyWithdrawal?: (monthly: number) => void;
@@ -61,31 +70,6 @@ const ConfirmCheck = styled("span", {
 });
 
 /* ---------- Styled Components ---------- */
-
-const Container = styled("div", {
-  backgroundColor: "$currentLine",
-  borderRadius: "12px",
-  padding: "20px",
-  marginTop: "24px",
-  boxShadow: "0 6px 16px rgba(0,0,0,0.2)",
-});
-
-const Title = styled("h4", {
-  margin: 0,
-  marginBottom: "16px",
-  fontSize: "0.95rem",
-  fontWeight: 600,
-  color: "$cyan",
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-});
-
-const CountLabel = styled("span", {
-  fontSize: "0.72rem",
-  color: "$comment",
-  fontWeight: 400,
-});
 
 /* --- Add-item form --- */
 
@@ -125,31 +109,6 @@ const Select = styled("select", {
   minWidth: "100px",
   cursor: "pointer",
   "&:focus": { borderColor: "$cyan" },
-});
-
-const Button = styled("button", {
-  borderRadius: "6px",
-  border: "none",
-  padding: "8px 14px",
-  fontSize: "0.8rem",
-  fontWeight: 600,
-  cursor: "pointer",
-  transition: "opacity 0.15s",
-  "&:hover": { opacity: 0.85 },
-  "&:disabled": { opacity: 0.4, cursor: "not-allowed" },
-  variants: {
-    color: {
-      cyan: { backgroundColor: "$cyan", color: "$background" },
-      green: { backgroundColor: "$green", color: "$background" },
-      red: { backgroundColor: "$red", color: "$background" },
-      muted: { backgroundColor: "$comment", color: "$background" },
-    },
-    size: {
-      sm: { padding: "4px 10px", fontSize: "0.72rem" },
-      md: { padding: "8px 14px", fontSize: "0.8rem" },
-    },
-  },
-  defaultVariants: { color: "cyan", size: "md" },
 });
 
 /* --- Item list --- */
@@ -209,17 +168,10 @@ const DeleteButton = styled("button", {
   padding: "2px 6px",
   borderRadius: "4px",
   transition: "color 0.15s, background-color 0.15s",
-  "&:hover": { color: "$red", backgroundColor: "rgba(255,85,85,0.1)" },
+  "&:hover": { color: "$red", backgroundColor: "$currentLine" },
 });
 
 /* --- Totals & category breakdown --- */
-
-const Separator = styled("hr", {
-  border: "none",
-  borderTop: "1px solid $comment",
-  opacity: 0.2,
-  margin: "14px 0",
-});
 
 const TotalsRow = styled("div", {
   display: "flex",
@@ -279,12 +231,32 @@ const CategoryBarBg = styled("div", {
   overflow: "hidden",
 });
 
+// Theme tokens per category; the theme has fewer hues than categories,
+// so the second member of a shared hue is dimmed to stay distinguishable.
 const CategoryBarFill = styled("div", {
   height: "100%",
   borderRadius: "3px",
-  backgroundColor: "$purple",
   transition: "width 0.3s ease",
+  variants: {
+    category: {
+      Housing: { backgroundColor: "$purple" },
+      Transportation: { backgroundColor: "$cyan" },
+      Food: { backgroundColor: "$green" },
+      Insurance: { backgroundColor: "$orange" },
+      Utilities: { backgroundColor: "$yellow" },
+      Healthcare: { backgroundColor: "$pink" },
+      Savings: { backgroundColor: "$comment" },
+      Entertainment: { backgroundColor: "$red" },
+      Personal: { backgroundColor: "$foreground" },
+      Debt: { backgroundColor: "$red", opacity: 0.55 },
+      Other: { backgroundColor: "$comment", opacity: 0.55 },
+    } satisfies Record<BudgetCategory, object>,
+  },
+  defaultVariants: { category: "Other" },
 });
+
+const isCategory = (cat: string): cat is BudgetCategory =>
+  (DEFAULT_CATEGORIES as readonly string[]).includes(cat);
 
 const CategoryPct = styled("span", {
   fontSize: "0.72rem",
@@ -301,20 +273,25 @@ const CategoryAmt = styled("span", {
   textAlign: "right",
 });
 
-const EmptyMessage = styled("p", {
-  fontSize: "0.82rem",
-  color: "$comment",
-  textAlign: "center",
-  padding: "20px 0",
-  margin: 0,
-});
+/* --- Inline-edit row --- */
 
-/* --- Inline-edit input --- */
+const EditRow = styled("div", {
+  display: "flex",
+  flex: 1,
+  minWidth: 0,
+  gap: "8px",
+});
 
 const InlineInput = styled(Input, {
   padding: "4px 8px",
   fontSize: "0.82rem",
   width: "auto",
+  variants: {
+    field: {
+      name: { flex: "2 1 0" },
+      amount: { flex: "1 1 0", textAlign: "right", maxWidth: "90px" },
+    },
+  },
 });
 
 /* --- Budget item slider (matches original InvestmentSlider theme) --- */
@@ -351,27 +328,8 @@ const BudgetSliderThumb = styled(Slider.Thumb, {
   boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
 });
 
-/* ---------- Helpers ---------- */
-
-function fmt(n: number): string {
-  return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-}
-
-/* ---------- Category color map ---------- */
-
-const CATEGORY_COLORS: Record<string, string> = {
-  Housing: "#bd93f9",
-  Transportation: "#8be9fd",
-  Food: "#50fa7b",
-  Insurance: "#ffb86c",
-  Utilities: "#f1fa8c",
-  Healthcare: "#ff79c6",
-  Savings: "#6272a4",
-  Entertainment: "#ff5555",
-  Personal: "#8be9fd",
-  Debt: "#ff5555",
-  Other: "#6272a4",
-};
+/** Slider range is twice the current amount, with a sensible floor for small items */
+const sliderMax = (amount: number) => Math.max(amount * 2, 500);
 
 /* ---------- Component ---------- */
 
@@ -388,106 +346,110 @@ export default function BudgetPanel({
   const [editName, setEditName] = useState("");
   const [editAmount, setEditAmount] = useState("");
   const [withdrawalSet, setWithdrawalSet] = useState(0);
+  // Range frozen for the item being dragged, so the max does not chase its own value
+  const [drag, setDrag] = useState<{ id: string; max: number } | null>(null);
 
-  const monthlyTotal = useMemo(() => getMonthlyTotal(items), [items]);
-  const annualTotal = useMemo(() => getAnnualTotal(items), [items]);
-  const categoryTotals = useMemo(() => getTotalByCategory(items), [items]);
-  const categoryPcts = useMemo(() => getCategoryPercentages(items), [items]);
-
+  const monthlyTotal = getMonthlyTotal(items);
+  const annualTotal = getAnnualTotal(items);
+  const sortedCategories = [...getTotalByCategory(items).entries()].sort(
+    (a, b) => b[1] - a[1],
+  );
+  const pct = (amt: number) => (monthlyTotal ? (amt / monthlyTotal) * 100 : 0);
   const canAdd = items.length < MAX_ITEMS;
 
-  /* --- Fire integration --- */
-  const prevAnnualRef = useRef(-1);
+  /* --- Fire integration: only a non-empty budget feeds FIRE --- */
+  const prevAnnualRef = useRef<number | null>(null);
   useEffect(() => {
-    if (onAnnualTotalChange && annualTotal !== prevAnnualRef.current) {
-      prevAnnualRef.current = annualTotal;
-      onAnnualTotalChange(annualTotal);
+    if (items.length === 0) {
+      prevAnnualRef.current = null;
+      return;
     }
-  }, [annualTotal, onAnnualTotalChange]);
+    if (!onAnnualTotalChange || prevAnnualRef.current === annualTotal) return;
+    prevAnnualRef.current = annualTotal;
+    onAnnualTotalChange(annualTotal);
+  }, [annualTotal, items.length, onAnnualTotalChange]);
 
   /* --- Handlers --- */
 
-  const handleAdd = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!canAdd) return;
-      const amount = parseFloat(newAmount) || 0;
-      const name = newName.trim() || newCategory;
-      const updated = addBudgetItem(name, amount, newCategory, items);
-      setItems(updated);
-      setNewName("");
-      setNewAmount("");
-    },
-    [canAdd, newName, newAmount, newCategory, items, setItems],
-  );
+  const handleAdd = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newName.trim() || newCategory;
+    setItems(
+      addBudgetItem(name, parseFloat(newAmount) || 0, newCategory, items),
+    );
+    setNewName("");
+    setNewAmount("");
+  };
 
-  const handleDelete = useCallback(
-    (id: string) => {
-      const updated = deleteBudgetItem(id, items);
-      setItems(updated);
-    },
-    [items, setItems],
-  );
+  /** Set by Escape so the unmount blur cancels instead of committing */
+  const cancelledRef = useRef(false);
 
-  const handleStartEdit = useCallback((item: BudgetItem) => {
+  const handleStartEdit = (item: BudgetItem) => {
+    cancelledRef.current = false;
     setEditingId(item.id);
     setEditName(item.name);
     setEditAmount(String(item.amount));
-  }, []);
+  };
 
-  const handleFinishEdit = useCallback(() => {
-    if (editingId && editName.trim()) {
-      const updated = updateBudgetItem(
-        editingId,
-        { name: editName.trim(), amount: parseFloat(editAmount) || 0 },
-        items,
+  const handleFinishEdit = (e?: React.FocusEvent<HTMLElement>) => {
+    // Focus moving between the two inline inputs is not a commit
+    if (e?.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    // Escape already cancelled: the blur browsers fire on unmount must not commit
+    if (cancelledRef.current) {
+      cancelledRef.current = false;
+      setEditingId(null);
+      return;
+    }
+    if (editingId) {
+      const original = items.find((i) => i.id === editingId);
+      const name = editName.trim() || original?.name || "";
+      setItems(
+        updateBudgetItem(
+          editingId,
+          { name, amount: parseFloat(editAmount) || 0 },
+          items,
+        ),
       );
-      setItems(updated);
     }
     setEditingId(null);
-  }, [editingId, editName, editAmount, items, setItems]);
+  };
 
-  const handleSliderChange = useCallback(
-    (id: string, amount: number) => {
-      const updated = updateBudgetItem(id, { amount }, items);
-      setItems(updated);
-    },
-    [items, setItems],
-  );
-
-  /* --- Sorted categories for display --- */
-  const sortedCategories = useMemo(() => {
-    return [...categoryTotals.entries()].sort((a, b) => b[1] - a[1]);
-  }, [categoryTotals]);
+  const handleEditKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleFinishEdit();
+    else if (e.key === "Escape") {
+      cancelledRef.current = true;
+      setEditingId(null);
+    }
+  };
 
   return (
-    <Container>
-      <Title>
+    <PanelContainer>
+      <PanelTitle>
         Monthly Budget{" "}
         <CountLabel>
           ({items.length}/{MAX_ITEMS})
         </CountLabel>
-      </Title>
+      </PanelTitle>
 
       {/* Add-item form */}
       <AddRow onSubmit={handleAdd}>
         <NameInput
+          aria-label="Expense name"
           placeholder="Expense name…"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           maxLength={60}
         />
         <AmountInput
+          aria-label="Monthly amount"
           placeholder="$/mo"
           type="text"
           inputMode="decimal"
           value={newAmount}
-          onChange={(e) => {
-            const cleaned = e.target.value.replace(/[^0-9.]/g, "");
-            setNewAmount(cleaned);
-          }}
+          onChange={(e) => setNewAmount(e.target.value.replace(/[^0-9.]/g, ""))}
         />
         <Select
+          aria-label="Category"
           value={newCategory}
           onChange={(e) => setNewCategory(e.target.value)}
         >
@@ -497,9 +459,9 @@ export default function BudgetPanel({
             </option>
           ))}
         </Select>
-        <Button type="submit" color="cyan" disabled={!canAdd}>
+        <PanelButton type="submit" color="cyan" disabled={!canAdd}>
           Add
-        </Button>
+        </PanelButton>
       </AddRow>
 
       {/* Item list */}
@@ -509,71 +471,72 @@ export default function BudgetPanel({
             No expenses yet. Add your first budget item above.
           </EmptyMessage>
         )}
-        {items.map((item) => {
-          const isEditing = editingId === item.id;
-          return (
-            <ItemRow key={item.id}>
-              {isEditing ? (
-                <>
-                  <InlineInput
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleFinishEdit()}
-                    onBlur={handleFinishEdit}
-                    autoFocus
-                    maxLength={60}
-                    css={{ flex: "2 1 0" }}
+        {items.map((item) => (
+          <ItemRow key={item.id}>
+            {editingId === item.id ? (
+              <EditRow onBlur={handleFinishEdit} onKeyDown={handleEditKey}>
+                <InlineInput
+                  field="name"
+                  aria-label="Expense name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  autoFocus
+                  maxLength={60}
+                />
+                <InlineInput
+                  field="amount"
+                  aria-label="Monthly amount"
+                  type="text"
+                  inputMode="decimal"
+                  value={editAmount}
+                  onChange={(e) =>
+                    setEditAmount(e.target.value.replace(/[^0-9.]/g, ""))
+                  }
+                />
+              </EditRow>
+            ) : (
+              <>
+                <ItemName
+                  onDoubleClick={() => handleStartEdit(item)}
+                  title="Double-click to edit"
+                >
+                  {item.name}
+                </ItemName>
+                <ItemCategory>{item.category}</ItemCategory>
+                <ItemAmount>{formatCurrency(item.amount)}</ItemAmount>
+                <BudgetSliderRoot
+                  value={[item.amount]}
+                  min={0}
+                  max={drag?.id === item.id ? drag.max : sliderMax(item.amount)}
+                  step={1}
+                  onPointerDown={() =>
+                    setDrag({ id: item.id, max: sliderMax(item.amount) })
+                  }
+                  onPointerUp={() => setDrag(null)}
+                  onPointerCancel={() => setDrag(null)}
+                  onBlur={() => setDrag(null)}
+                  onValueChange={([amount]) =>
+                    setItems(updateBudgetItem(item.id, { amount }, items))
+                  }
+                >
+                  <BudgetSliderTrack>
+                    <BudgetSliderRange />
+                  </BudgetSliderTrack>
+                  <BudgetSliderThumb
+                    aria-label={`${item.name} monthly amount`}
                   />
-                  <InlineInput
-                    type="text"
-                    inputMode="decimal"
-                    value={editAmount}
-                    onChange={(e) => {
-                      const cleaned = e.target.value.replace(/[^0-9.]/g, "");
-                      setEditAmount(cleaned);
-                    }}
-                    onKeyDown={(e) => e.key === "Enter" && handleFinishEdit()}
-                    onBlur={handleFinishEdit}
-                    css={{
-                      flex: "1 1 0",
-                      textAlign: "right",
-                      maxWidth: "90px",
-                    }}
-                  />
-                </>
-              ) : (
-                <>
-                  <ItemName
-                    onDoubleClick={() => handleStartEdit(item)}
-                    title="Double-click to edit"
-                  >
-                    {item.name}
-                  </ItemName>
-                  <ItemCategory>{item.category}</ItemCategory>
-                  <ItemAmount>{fmt(item.amount)}</ItemAmount>
-                  <BudgetSliderRoot
-                    value={[item.amount]}
-                    min={0}
-                    max={Math.max(item.amount * 2, 500)}
-                    step={1}
-                    onValueChange={(val) => handleSliderChange(item.id, val[0])}
-                  >
-                    <BudgetSliderTrack>
-                      <BudgetSliderRange />
-                    </BudgetSliderTrack>
-                    <BudgetSliderThumb />
-                  </BudgetSliderRoot>
-                </>
-              )}
-              <DeleteButton
-                onClick={() => handleDelete(item.id)}
-                title="Remove"
-              >
-                ✕
-              </DeleteButton>
-            </ItemRow>
-          );
-        })}
+                </BudgetSliderRoot>
+              </>
+            )}
+            <DeleteButton
+              onClick={() => setItems(deleteBudgetItem(item.id, items))}
+              aria-label={`Remove ${item.name}`}
+              title="Remove"
+            >
+              ✕
+            </DeleteButton>
+          </ItemRow>
+        ))}
       </ItemList>
 
       {items.length > 0 && (
@@ -585,7 +548,7 @@ export default function BudgetPanel({
             <TotalLabel>Monthly</TotalLabel>
             <TotalValue color="green">
               {onSetMonthlyWithdrawal && monthlyTotal > 0 && (
-                <Button
+                <PanelButton
                   size="sm"
                   color="muted"
                   css={{ marginRight: "8px" }}
@@ -601,14 +564,14 @@ export default function BudgetPanel({
                       <Icons.CheckCircledIcon width={14} height={14} />
                     </ConfirmCheck>
                   )}
-                </Button>
+                </PanelButton>
               )}
-              {fmt(monthlyTotal)}
+              {formatCurrency(monthlyTotal)}
             </TotalValue>
           </TotalsRow>
           <TotalsRow css={{ marginTop: "6px" }}>
             <TotalLabel>Annual</TotalLabel>
-            <TotalValue color="cyan">{fmt(annualTotal)}</TotalValue>
+            <TotalValue color="cyan">{formatCurrency(annualTotal)}</TotalValue>
           </TotalsRow>
 
           {/* Category breakdown */}
@@ -621,16 +584,12 @@ export default function BudgetPanel({
                     <CategoryName>{cat}</CategoryName>
                     <CategoryBarBg>
                       <CategoryBarFill
-                        css={{
-                          width: `${categoryPcts.get(cat) || 0}%`,
-                          backgroundColor: CATEGORY_COLORS[cat] || "$purple",
-                        }}
+                        category={isCategory(cat) ? cat : "Other"}
+                        css={{ width: `${pct(amt)}%` }}
                       />
                     </CategoryBarBg>
-                    <CategoryPct>
-                      {(categoryPcts.get(cat) || 0).toFixed(0)}%
-                    </CategoryPct>
-                    <CategoryAmt>{fmt(amt)}</CategoryAmt>
+                    <CategoryPct>{pct(amt).toFixed(0)}%</CategoryPct>
+                    <CategoryAmt>{formatCurrency(amt)}</CategoryAmt>
                   </CategoryRow>
                 ))}
               </CategoryBreakdown>
@@ -638,6 +597,6 @@ export default function BudgetPanel({
           )}
         </>
       )}
-    </Container>
+    </PanelContainer>
   );
 }

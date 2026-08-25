@@ -47,6 +47,19 @@ async function ask(
   });
 }
 
+/** Like ask(), but re-prompts until a non-empty answer (or default) is given. */
+async function askRequired(
+  rl: readline.Interface,
+  question: string,
+  defaultValue?: string,
+): Promise<string> {
+  for (;;) {
+    const answer = await ask(rl, question, defaultValue);
+    if (answer) return answer;
+    console.log("  This field is required.");
+  }
+}
+
 async function askYesNo(
   rl: readline.Interface,
   question: string,
@@ -64,34 +77,33 @@ async function promptTarget(
 ): Promise<DeploymentTarget> {
   console.log("\n--- Deployment Target Configuration ---");
 
-  const id = await ask(
+  const id = await askRequired(
     rl,
     "  Deployment ID (e.g. prod, dev, staging)",
     existing?.id,
   );
-  const domainName = await ask(
+  const domainName = await askRequired(
     rl,
     "  Domain name (e.g. app.example.com)",
     existing?.domainName,
   );
-  const hostedZoneDomain = await ask(
+  const hostedZoneDomain = await askRequired(
     rl,
     "  Route 53 hosted zone domain (e.g. example.com)",
     existing?.hostedZoneDomain,
   );
-  const hostedZoneId = await ask(
+  const hostedZoneId = await askRequired(
     rl,
     "  Route 53 hosted zone ID",
     existing?.hostedZoneId,
   );
-  const bucketName = await ask(
+  const bucketName = await askRequired(
     rl,
     "  S3 bucket name",
     existing?.bucketName || `th4dev-${id}`,
   );
-  const region = await ask(rl, "  AWS region", existing?.region || "us-east-1");
 
-  return { id, domainName, hostedZoneDomain, hostedZoneId, bucketName, region };
+  return { id, domainName, hostedZoneDomain, hostedZoneId, bucketName };
 }
 
 async function main(): Promise<void> {
@@ -110,7 +122,7 @@ async function main(): Promise<void> {
     console.log(`Found ${config.deployments.length} existing deployment(s):`);
     config.deployments.forEach((d, i) => {
       console.log(
-        `  ${i + 1}. [${d.id}] ${d.domainName} → s3://${d.bucketName} (${d.region})`,
+        `  ${i + 1}. [${d.id}] ${d.domainName} → s3://${d.bucketName}`,
       );
     });
 
@@ -140,10 +152,12 @@ async function main(): Promise<void> {
     }
   }
 
-  let addMore = true;
+  // Only force adding a target when none would otherwise be saved
+  let addMore =
+    config.deployments.length === 0 ||
+    (await askYesNo(rl, "\nAdd a new deployment target?", false));
   while (addMore) {
-    const target = await promptTarget(rl);
-    config.deployments.push(target);
+    config.deployments.push(await promptTarget(rl));
     addMore = await askYesNo(rl, "Add another deployment target?", false);
   }
 

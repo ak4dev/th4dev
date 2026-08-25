@@ -1,11 +1,13 @@
 import * as cdk from "aws-cdk-lib";
 import { Template, Match } from "aws-cdk-lib/assertions";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import { StaticSiteStack } from "../lib/static-site-stack";
-import type { DeploymentTarget } from "../lib/config";
+import { loadConfig, type DeploymentTarget } from "../lib/config";
 
 const distPath = path.resolve(__dirname, "..", "..", "dist");
+const env = { account: "123456789012", region: "us-east-1" };
 
 const testTarget: DeploymentTarget = {
   id: "test",
@@ -13,16 +15,21 @@ const testTarget: DeploymentTarget = {
   hostedZoneDomain: "example.com",
   hostedZoneId: "Z0123456789ABCDEF",
   bucketName: "th4dev-test",
-  region: "us-east-1",
 };
 
-function createStack(target: DeploymentTarget = testTarget): Template {
+/**
+ * Builds one stack per override set in a shared app and returns their
+ * templates. All stacks are constructed before the first synth because the
+ * construct tree must not change once Template.fromStack() has run.
+ */
+function synth(...overrides: Partial<DeploymentTarget>[]): Template[] {
   const app = new cdk.App();
-  const stack = new StaticSiteStack(app, "TestStack", {
-    target,
-    env: { account: "123456789012", region: target.region },
-  });
-  return Template.fromStack(stack);
+  return overrides
+    .map((o) => {
+      const target = { ...testTarget, ...o };
+      return new StaticSiteStack(app, `Th4Dev-${target.id}`, { target, env });
+    })
+    .map((stack) => Template.fromStack(stack));
 }
 
 // CDK S3 BucketDeployment requires the asset path to exist.
@@ -45,7 +52,7 @@ describe("StaticSiteStack", () => {
   let template: Template;
 
   beforeAll(() => {
-    template = createStack();
+    [template] = synth({});
   });
 
   test("creates an S3 bucket with block public access", () => {
@@ -73,28 +80,19 @@ describe("StaticSiteStack", () => {
   });
 
   test("CloudFront has SPA error response fallbacks", () => {
-    template.hasResourceProperties("AWS::CloudFront::Distribution", {
-      DistributionConfig: {
-        CustomErrorResponses: Match.arrayWith([
-          Match.objectLike({
-            ErrorCode: 403,
-            ResponseCode: 200,
-            ResponsePagePath: "/index.html",
-          }),
-        ]),
-      },
-    });
-    template.hasResourceProperties("AWS::CloudFront::Distribution", {
-      DistributionConfig: {
-        CustomErrorResponses: Match.arrayWith([
-          Match.objectLike({
-            ErrorCode: 404,
-            ResponseCode: 200,
-            ResponsePagePath: "/index.html",
-          }),
-        ]),
-      },
-    });
+    for (const ErrorCode of [403, 404]) {
+      template.hasResourceProperties("AWS::CloudFront::Distribution", {
+        DistributionConfig: {
+          CustomErrorResponses: Match.arrayWith([
+            Match.objectLike({
+              ErrorCode,
+              ResponseCode: 200,
+              ResponsePagePath: "/index.html",
+            }),
+          ]),
+        },
+      });
+    }
   });
 
   test("attaches a security response headers policy", () => {
@@ -136,6 +134,41 @@ describe("StaticSiteStack", () => {
     });
   });
 
+  test("uploads hashed assets as immutable and never prunes them", () => {
+    template.hasResourceProperties("Custom::CDKBucketDeployment", {
+      Exclude: ["*"],
+      Include: ["assets/*"],
+      Prune: false,
+      SystemMetadata: {
+        "cache-control": "public, max-age=31536000, immutable",
+      },
+      DistributionId: Match.absent(),
+    });
+  });
+
+  test("uploads index.html as no-cache and invalidates CloudFront", () => {
+    template.resourceCountIs("Custom::CDKBucketDeployment", 2);
+    template.hasResourceProperties("Custom::CDKBucketDeployment", {
+      Exclude: ["assets/*"],
+      Prune: false,
+      SystemMetadata: { "cache-control": "no-cache, must-revalidate" },
+      DistributionId: Match.anyValue(),
+      DistributionPaths: ["/*"],
+    });
+  });
+
+  test("publishes index.html only after the hashed assets", () => {
+    const [assetsId] = Object.keys(
+      template.findResources("Custom::CDKBucketDeployment", {
+        Properties: { Include: ["assets/*"] },
+      }),
+    );
+    template.hasResource("Custom::CDKBucketDeployment", {
+      Properties: { Exclude: ["assets/*"] },
+      DependsOn: Match.arrayWith([assetsId]),
+    });
+  });
+
   test("outputs include the site URL", () => {
     template.hasOutput("SiteUrl", {
       Value: "https://app.example.com",
@@ -149,112 +182,114 @@ describe("StaticSiteStack", () => {
   test("outputs include the bucket name", () => {
     template.hasOutput("BucketName", Match.anyValue());
   });
+
+  test("rejects a stack region other than us-east-1", () => {
+    expect(
+      () =>
+        new StaticSiteStack(new cdk.App(), "Th4Dev-eu", {
+          target: testTarget,
+          env: { ...env, region: "eu-west-1" },
+        }),
+    ).toThrow(/must be deployed to us-east-1/);
+  });
 });
 
 describe("StaticSiteStack — multiple targets", () => {
   test("each target produces an independent stack", () => {
-    const app = new cdk.App();
-    const targetA: DeploymentTarget = {
-      ...testTarget,
-      id: "prod",
-      domainName: "prod.example.com",
-      bucketName: "th4dev-prod",
-    };
-    const targetB: DeploymentTarget = {
-      ...testTarget,
-      id: "dev",
-      domainName: "dev.example.com",
-      bucketName: "th4dev-dev",
-    };
+    const [prod, dev] = synth(
+      { id: "prod", domainName: "prod.example.com", bucketName: "th4dev-prod" },
+      { id: "dev", domainName: "dev.example.com", bucketName: "th4dev-dev" },
+    );
 
-    const stackA = new StaticSiteStack(app, "Th4Dev-prod", {
-      target: targetA,
-      env: { account: "123456789012", region: "us-east-1" },
-    });
-    const stackB = new StaticSiteStack(app, "Th4Dev-dev", {
-      target: targetB,
-      env: { account: "123456789012", region: "us-east-1" },
-    });
-
-    const templateA = Template.fromStack(stackA);
-    const templateB = Template.fromStack(stackB);
-
-    templateA.hasResourceProperties("AWS::S3::Bucket", {
+    prod.hasResourceProperties("AWS::S3::Bucket", {
       BucketName: "th4dev-prod",
     });
-    templateB.hasResourceProperties("AWS::S3::Bucket", {
-      BucketName: "th4dev-dev",
-    });
-
-    templateA.hasResourceProperties("AWS::CloudFront::Distribution", {
+    dev.hasResourceProperties("AWS::S3::Bucket", { BucketName: "th4dev-dev" });
+    prod.hasResourceProperties("AWS::CloudFront::Distribution", {
       DistributionConfig: { Aliases: ["prod.example.com"] },
     });
-    templateB.hasResourceProperties("AWS::CloudFront::Distribution", {
+    dev.hasResourceProperties("AWS::CloudFront::Distribution", {
       DistributionConfig: { Aliases: ["dev.example.com"] },
     });
   });
 
   test("stacks can target different Route 53 zones", () => {
-    const app = new cdk.App();
-    const targetA: DeploymentTarget = {
-      id: "site-a",
-      domainName: "app.alpha.com",
-      hostedZoneDomain: "alpha.com",
-      hostedZoneId: "ZAAAA",
-      bucketName: "th4dev-alpha",
-      region: "us-east-1",
-    };
-    const targetB: DeploymentTarget = {
-      id: "site-b",
-      domainName: "app.beta.io",
-      hostedZoneDomain: "beta.io",
-      hostedZoneId: "ZBBBB",
-      bucketName: "th4dev-beta",
-      region: "us-east-1",
-    };
+    const [alpha, beta] = synth(
+      {
+        id: "alpha",
+        domainName: "app.alpha.com",
+        hostedZoneDomain: "alpha.com",
+        hostedZoneId: "ZAAAA",
+        bucketName: "th4dev-alpha",
+      },
+      {
+        id: "beta",
+        domainName: "app.beta.io",
+        hostedZoneDomain: "beta.io",
+        hostedZoneId: "ZBBBB",
+        bucketName: "th4dev-beta",
+      },
+    );
 
-    const stackA = new StaticSiteStack(app, "Th4Dev-alpha", {
-      target: targetA,
-      env: { account: "123456789012", region: "us-east-1" },
-    });
-    const stackB = new StaticSiteStack(app, "Th4Dev-beta", {
-      target: targetB,
-      env: { account: "123456789012", region: "us-east-1" },
-    });
-
-    const templateA = Template.fromStack(stackA);
-    const templateB = Template.fromStack(stackB);
-
-    templateA.hasResourceProperties("AWS::Route53::RecordSet", {
+    alpha.hasResourceProperties("AWS::Route53::RecordSet", {
       Name: "app.alpha.com.",
       Type: "A",
     });
-    templateB.hasResourceProperties("AWS::Route53::RecordSet", {
+    beta.hasResourceProperties("AWS::Route53::RecordSet", {
       Name: "app.beta.io.",
       Type: "A",
     });
   });
 });
 
-describe("config validation", () => {
-  test("loadConfig throws on missing deployments array", () => {
-    const configPath = path.resolve(__dirname, "..", "deploy-config.json");
-    const original = fs.readFileSync(configPath, "utf-8");
-    try {
-      fs.writeFileSync(configPath, JSON.stringify({ wrong: true }));
-      // Clear ALL cached modules so loadConfig re-reads from disk
-      const configJsonPath = require.resolve("../deploy-config.json");
-      const configModulePath = require.resolve("../lib/config");
-      delete require.cache[configJsonPath];
-      delete require.cache[configModulePath];
-      const freshModule = require("../lib/config");
-      expect(() => freshModule.loadConfig()).toThrow("deployments");
-    } finally {
-      fs.writeFileSync(configPath, original);
-      const configJsonPath = require.resolve("../deploy-config.json");
-      const configModulePath = require.resolve("../lib/config");
-      delete require.cache[configJsonPath];
-      delete require.cache[configModulePath];
-    }
+describe("loadConfig", () => {
+  let tmpDir: string;
+
+  beforeAll(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "th4dev-"));
+  });
+  afterAll(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  /** Writes `contents` to a temp config file and returns a loader for it. */
+  function loaderFor(name: string, contents: unknown): () => unknown {
+    const file = path.join(tmpDir, `${name}.json`);
+    fs.writeFileSync(file, JSON.stringify(contents));
+    return () => loadConfig(file);
+  }
+
+  test("accepts the committed example config", () => {
+    const example = path.resolve(__dirname, "..", "deploy-config.example.json");
+    expect(loadConfig(example).deployments).toHaveLength(1);
+  });
+
+  test("throws when the file is missing", () => {
+    expect(() => loadConfig(path.join(tmpDir, "absent.json"))).toThrow(
+      /ENOENT/,
+    );
+  });
+
+  test("throws on missing deployments array", () => {
+    expect(loaderFor("no-array", { wrong: true })).toThrow("deployments");
+  });
+
+  test("throws on a target missing required fields", () => {
+    expect(loaderFor("partial", { deployments: [{ id: "prod" }] })).toThrow(
+      'Deployment "prod" is missing required fields',
+    );
+  });
+
+  test("throws on a region other than us-east-1", () => {
+    expect(
+      loaderFor("region", {
+        deployments: [{ ...testTarget, region: "eu-west-1" }],
+      }),
+    ).toThrow(/us-east-1/);
+    expect(
+      loaderFor("region-ok", {
+        deployments: [{ ...testTarget, region: "us-east-1" }],
+      }),
+    ).not.toThrow();
   });
 });

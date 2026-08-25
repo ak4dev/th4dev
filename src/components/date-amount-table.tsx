@@ -4,7 +4,8 @@
 
 import { styled } from "../../stitches.config";
 import type { InvestmentCalculator } from "../common/helpers/investment-growth-calculator";
-import type { LineGraphEntry } from "../common/types/types";
+import { buildTableRows } from "../common/helpers/growth-rows";
+import { formatCurrency } from "../common/helpers/format";
 import { TABLE_MAX_HEIGHT } from "../common/constants/app-constants";
 
 /* ==================================================
@@ -47,6 +48,10 @@ const Td = styled("td", {
 interface DateAmountTableProps {
   /** Investment calculator instance containing growth data */
   investmentCalc: InvestmentCalculator;
+  /** Whether the calculator ran in inflation view (decides which series is nominal) */
+  showInflation: boolean;
+  /** Starting balance; the growth matrix has no today row, so it must be supplied */
+  initialAmount: number;
 }
 
 /* ==================================================
@@ -59,23 +64,23 @@ interface DateAmountTableProps {
  */
 export default function DateAmountTable({
   investmentCalc,
+  showInflation,
+  initialAmount,
 }: DateAmountTableProps) {
-  const matrix: LineGraphEntry[] = investmentCalc?.getGrowthMatrix() ?? [];
+  const rows = buildTableRows(
+    investmentCalc.getGrowthMatrix(),
+    showInflation,
+    initialAmount,
+  );
 
-  if (!matrix || matrix.length === 0) {
+  if (rows.length === 0) {
     return <div>No data available</div>;
   }
 
-  const initial = matrix[0]?.y ?? 0;
-
-  /**
-   * Determines text color based on value relative to initial amount
-   * @param val - Current value to evaluate
-   * @returns CSS color variable
-   */
+  /** Text colour of a balance relative to the starting amount */
   const getColor = (val: number): string => {
     if (val < 0) return "var(--colors-red)";
-    if (val < initial) return "var(--colors-orange)";
+    if (val < initialAmount) return "var(--colors-orange)";
     return "var(--colors-green)";
   };
 
@@ -91,39 +96,27 @@ export default function DateAmountTable({
           </tr>
         </thead>
         <tbody>
-          {matrix.map((entry, idx) => {
-            if (!entry || entry.y === undefined) return null;
-
-            const year = new Date(entry.x).getFullYear();
-            const nominal = entry.y;
-            const adjusted = entry.alternateY ?? nominal;
-            const pctChange =
-              initial !== 0 ? ((nominal - initial) / initial) * 100 : 0;
-
-            // A partial final year can share a calendar year with the previous
-            // row, so the index is the only safe key.
-            return (
-              <tr key={idx}>
-                <Td>{year}</Td>
-                <Td style={{ color: getColor(nominal) }}>
-                  ${nominal.toLocaleString()}
-                </Td>
-                <Td style={{ color: getColor(adjusted) }}>
-                  ${adjusted.toLocaleString()}
-                </Td>
-                <Td
-                  style={{
-                    color:
-                      pctChange < 0
-                        ? "var(--colors-red)"
-                        : "var(--colors-green)",
-                  }}
-                >
-                  {pctChange.toFixed(1)}%
-                </Td>
-              </tr>
-            );
-          })}
+          {/* A partial final year can share a calendar year with the previous
+              row, so the index is the only safe key. */}
+          {rows.map(({ year, nominal, inflationAdjusted, pctChange }, idx) => (
+            <tr key={idx}>
+              <Td>{year}</Td>
+              <Td style={{ color: getColor(nominal) }}>
+                {formatCurrency(nominal)}
+              </Td>
+              <Td style={{ color: getColor(inflationAdjusted) }}>
+                {formatCurrency(inflationAdjusted)}
+              </Td>
+              <Td
+                style={{
+                  color:
+                    pctChange < 0 ? "var(--colors-red)" : "var(--colors-green)",
+                }}
+              >
+                {pctChange.toFixed(1)}%
+              </Td>
+            </tr>
+          ))}
         </tbody>
       </Table>
     </TableContainer>

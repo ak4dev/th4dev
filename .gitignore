@@ -24,8 +24,11 @@ dist-ssr
 *.sw?
 
 # CDK
-infra/dist
 infra/cdk.out
 infra/deploy-config.json
-*.js.map
-*.d.ts
+
+# Compiled CDK output (tsc/ts-jest emit next to the TypeScript sources)
+infra/**/*.js
+infra/**/*.d.ts
+infra/**/*.tsbuildinfo
+!infra/jest.config.js

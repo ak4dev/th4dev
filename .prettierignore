@@ -1,0 +1,9 @@
+node_modules
+dist
+coverage
+package-lock.json
+infra/cdk.out
+infra/package-lock.json
+# Compiled CDK output (tsc emits .js/.d.ts next to the sources)
+infra/**/*.js
+infra/**/*.d.ts
