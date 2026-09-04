@@ -11,6 +11,47 @@ import * as path from "path";
 import { STACK_REGION, type DeploymentTarget } from "./config";
 
 /**
+ * Content-Security-Policy served with every response.
+ *
+ * The built site loads one external module script and no inline scripts, so
+ * `script-src 'self'` is enough. Two directives are deliberately loose:
+ *
+ *  - `style-src` keeps `'unsafe-inline'`: Radix's scroll lock
+ *    (react-style-singleton) and html2canvas's document clone both write
+ *    inline styles, so dropping it would break every dialog, popover and
+ *    dropdown menu as well as the PDF chart image.
+ *  - `connect-src https:` allows any HTTPS origin because the stock quote
+ *    endpoint is user-configurable and is the app's only network call.
+ *
+ * `img-src` needs `data:`/`blob:` for the html2canvas + jsPDF export, and
+ * `frame-src 'self'` for the hidden about:blank iframe html2canvas clones
+ * the document into.
+ */
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self'",
+  "connect-src https:",
+  "frame-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+
+/** Permissions-Policy served with every response: the app uses no browser
+ * capability that needs a grant. */
+const PERMISSIONS_POLICY = [
+  "camera=()",
+  "microphone=()",
+  "geolocation=()",
+  "payment=()",
+  "usb=()",
+].join(", ");
+
+/**
  * Props for a single th4dev static site deployment.
  */
 export interface StaticSiteStackProps extends cdk.StackProps {
@@ -51,6 +92,10 @@ export class StaticSiteStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       encryption: s3.BucketEncryption.S3_MANAGED,
       autoDeleteObjects: false,
+      // Adds an `aws:SecureTransport: false` Deny to the bucket policy.
+      // Nothing here reaches the bucket over plain HTTP: CloudFront's OAC
+      // origin fetch and the BucketDeployment lambda both speak HTTPS.
+      enforceSSL: true,
     });
 
     // ── Route 53 Hosted Zone Lookup ────────────────────────────────────
@@ -73,13 +118,18 @@ export class StaticSiteStack extends cdk.Stack {
 
     // ── CloudFront Distribution ────────────────────────────────────────
 
-    // Security headers (HSTS, X-Content-Type-Options, X-Frame-Options,
-    // Referrer-Policy) applied to every response
+    // Security headers (Content-Security-Policy, HSTS,
+    // X-Content-Type-Options, X-Frame-Options, Referrer-Policy,
+    // Permissions-Policy) applied to every response
     const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(
       this,
       "SecurityHeadersPolicy",
       {
         securityHeadersBehavior: {
+          contentSecurityPolicy: {
+            contentSecurityPolicy: CONTENT_SECURITY_POLICY,
+            override: true,
+          },
           strictTransportSecurity: {
             accessControlMaxAge: cdk.Duration.days(365),
             includeSubdomains: true,
@@ -95,6 +145,17 @@ export class StaticSiteStack extends cdk.Stack {
               cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
             override: true,
           },
+        },
+        // Permissions-Policy has no first-class CDK property; the app asks
+        // for none of these capabilities, so every one is denied outright.
+        customHeadersBehavior: {
+          customHeaders: [
+            {
+              header: "Permissions-Policy",
+              value: PERMISSIONS_POLICY,
+              override: true,
+            },
+          ],
         },
       },
     );

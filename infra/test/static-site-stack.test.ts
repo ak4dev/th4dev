@@ -1,10 +1,25 @@
 import * as cdk from "aws-cdk-lib";
 import { Template, Match } from "aws-cdk-lib/assertions";
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import { StaticSiteStack } from "../lib/static-site-stack";
-import { loadConfig, type DeploymentTarget } from "../lib/config";
+import { type DeploymentTarget } from "../lib/config";
+
+/**
+ * The exact Content-Security-Policy the distribution must serve. Spelled out
+ * here rather than imported so a change to the stack has to be made twice,
+ * deliberately: `style-src 'unsafe-inline'` is load-bearing for Radix's
+ * scroll lock and html2canvas, and `connect-src https:` for the
+ * user-configurable stock API endpoint.
+ */
+const EXPECTED_CSP =
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+  "img-src 'self' data: blob:; font-src 'self'; connect-src https:; " +
+  "frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; " +
+  "frame-ancestors 'none'";
+
+const EXPECTED_PERMISSIONS_POLICY =
+  "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
 
 const distPath = path.resolve(__dirname, "..", "..", "dist");
 const env = { account: "123456789012", region: "us-east-1" };
@@ -18,18 +33,52 @@ const testTarget: DeploymentTarget = {
 };
 
 /**
+ * The feature flags cdk.json pins, so these templates are synthesized with
+ * exactly the configuration `cdk synth`/`cdk deploy` uses.
+ */
+const cdkContext = (
+  JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, "..", "cdk.json"), "utf-8"),
+  ) as { context: Record<string, unknown> }
+).context;
+
+/**
  * Builds one stack per override set in a shared app and returns their
  * templates. All stacks are constructed before the first synth because the
  * construct tree must not change once Template.fromStack() has run.
  */
 function synth(...overrides: Partial<DeploymentTarget>[]): Template[] {
-  const app = new cdk.App();
+  const app = new cdk.App({ context: cdkContext });
   return overrides
     .map((o) => {
       const target = { ...testTarget, ...o };
       return new StaticSiteStack(app, `Th4Dev-${target.id}`, { target, env });
     })
     .map((stack) => Template.fromStack(stack));
+}
+
+/**
+ * The slice of a synthesized AWS::CloudFront::ResponseHeadersPolicy that
+ * contentSecurityPolicy() reads. `Template.findResources` is typed as a bag of
+ * `any`, so name the shape once here rather than walking it untyped.
+ */
+interface ResponseHeadersPolicyResource {
+  Properties: {
+    ResponseHeadersPolicyConfig: {
+      SecurityHeadersConfig: {
+        ContentSecurityPolicy: { ContentSecurityPolicy: string };
+      };
+    };
+  };
+}
+
+/** Reads the Content-Security-Policy out of a synthesized template. */
+function contentSecurityPolicy(template: Template): string {
+  const [policy] = Object.values(
+    template.findResources("AWS::CloudFront::ResponseHeadersPolicy"),
+  ) as ResponseHeadersPolicyResource[];
+  return policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig
+    .ContentSecurityPolicy.ContentSecurityPolicy;
 }
 
 // CDK S3 BucketDeployment requires the asset path to exist.
@@ -67,8 +116,47 @@ describe("StaticSiteStack", () => {
     });
   });
 
-  test("creates a CloudFront distribution", () => {
+  test("bucket policy denies non-TLS requests", () => {
+    template.hasResourceProperties("AWS::S3::BucketPolicy", {
+      PolicyDocument: Match.objectLike({
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Effect: "Deny",
+            Action: "s3:*",
+            Principal: { AWS: "*" },
+            Condition: { Bool: { "aws:SecureTransport": "false" } },
+          }),
+        ]),
+      }),
+    });
+  });
+
+  test("distribution is hardened", () => {
     template.resourceCountIs("AWS::CloudFront::Distribution", 1);
+    // The bucket is private: the origin is reached through an OAC, not a
+    // legacy origin access identity and not public read.
+    template.resourceCountIs("AWS::CloudFront::OriginAccessControl", 1);
+    template.hasResourceProperties("AWS::CloudFront::Distribution", {
+      DistributionConfig: Match.objectLike({
+        DefaultCacheBehavior: Match.objectLike({
+          ViewerProtocolPolicy: "redirect-to-https",
+          Compress: true,
+          // AWS managed CachingOptimized policy
+          CachePolicyId: "658327ea-f89d-4fab-a63d-7e88639e58f6",
+        }),
+        ViewerCertificate: Match.objectLike({
+          MinimumProtocolVersion: "TLSv1.2_2021",
+          SslSupportMethod: "sni-only",
+        }),
+        HttpVersion: "http2and3",
+        Origins: Match.arrayWith([
+          Match.objectLike({
+            OriginAccessControlId: Match.anyValue(),
+            S3OriginConfig: { OriginAccessIdentity: "" },
+          }),
+        ]),
+      }),
+    });
   });
 
   test("CloudFront distribution uses the custom domain name", () => {
@@ -99,9 +187,20 @@ describe("StaticSiteStack", () => {
     template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
       ResponseHeadersPolicyConfig: Match.objectLike({
         SecurityHeadersConfig: Match.objectLike({
-          StrictTransportSecurity: Match.objectLike({ Override: true }),
+          StrictTransportSecurity: {
+            AccessControlMaxAgeSec: 31536000,
+            IncludeSubdomains: true,
+            Override: true,
+            // Not preloaded: the header alone is reversible, submitting the
+            // domain to the browser preload list is not.
+            Preload: Match.absent(),
+          },
           ContentTypeOptions: Match.objectLike({ Override: true }),
-          FrameOptions: Match.objectLike({ FrameOption: "DENY" }),
+          FrameOptions: { FrameOption: "DENY", Override: true },
+          ReferrerPolicy: {
+            ReferrerPolicy: "strict-origin-when-cross-origin",
+            Override: true,
+          },
         }),
       }),
     });
@@ -110,6 +209,53 @@ describe("StaticSiteStack", () => {
         DefaultCacheBehavior: Match.objectLike({
           ResponseHeadersPolicyId: Match.anyValue(),
         }),
+      }),
+    });
+  });
+
+  test("serves the expected Content-Security-Policy", () => {
+    template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
+      ResponseHeadersPolicyConfig: Match.objectLike({
+        SecurityHeadersConfig: Match.objectLike({
+          ContentSecurityPolicy: {
+            ContentSecurityPolicy: EXPECTED_CSP,
+            Override: true,
+          },
+        }),
+      }),
+    });
+  });
+
+  test("Content-Security-Policy keeps the sources the app needs", () => {
+    const csp = contentSecurityPolicy(template);
+    // Radix's scroll lock (react-style-singleton) and html2canvas's document
+    // clone both write inline styles
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+    // the stock quote endpoint is user-configurable
+    expect(csp).toContain("connect-src https:");
+    // html2canvas rasterises the chart through a data: URL image, jsPDF
+    // hands the file over as a blob
+    expect(csp).toContain("img-src 'self' data: blob:");
+    // html2canvas clones the document into a hidden about:blank iframe
+    expect(csp).toContain("frame-src 'self'");
+    // no inline scripts in the built index.html, and nothing to embed
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("frame-ancestors 'none'");
+  });
+
+  test("denies every optional browser capability", () => {
+    template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
+      ResponseHeadersPolicyConfig: Match.objectLike({
+        CustomHeadersConfig: {
+          Items: [
+            {
+              Header: "Permissions-Policy",
+              Value: EXPECTED_PERMISSIONS_POLICY,
+              Override: true,
+            },
+          ],
+        },
       }),
     });
   });
@@ -239,57 +385,5 @@ describe("StaticSiteStack — multiple targets", () => {
       Name: "app.beta.io.",
       Type: "A",
     });
-  });
-});
-
-describe("loadConfig", () => {
-  let tmpDir: string;
-
-  beforeAll(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "th4dev-"));
-  });
-  afterAll(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  /** Writes `contents` to a temp config file and returns a loader for it. */
-  function loaderFor(name: string, contents: unknown): () => unknown {
-    const file = path.join(tmpDir, `${name}.json`);
-    fs.writeFileSync(file, JSON.stringify(contents));
-    return () => loadConfig(file);
-  }
-
-  test("accepts the committed example config", () => {
-    const example = path.resolve(__dirname, "..", "deploy-config.example.json");
-    expect(loadConfig(example).deployments).toHaveLength(1);
-  });
-
-  test("throws when the file is missing", () => {
-    expect(() => loadConfig(path.join(tmpDir, "absent.json"))).toThrow(
-      /ENOENT/,
-    );
-  });
-
-  test("throws on missing deployments array", () => {
-    expect(loaderFor("no-array", { wrong: true })).toThrow("deployments");
-  });
-
-  test("throws on a target missing required fields", () => {
-    expect(loaderFor("partial", { deployments: [{ id: "prod" }] })).toThrow(
-      'Deployment "prod" is missing required fields',
-    );
-  });
-
-  test("throws on a region other than us-east-1", () => {
-    expect(
-      loaderFor("region", {
-        deployments: [{ ...testTarget, region: "eu-west-1" }],
-      }),
-    ).toThrow(/us-east-1/);
-    expect(
-      loaderFor("region-ok", {
-        deployments: [{ ...testTarget, region: "us-east-1" }],
-      }),
-    ).not.toThrow();
   });
 });

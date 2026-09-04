@@ -44,6 +44,14 @@ const REQUIRED_FIELDS = [
   "bucketName",
 ] as const;
 
+/**
+ * Lower-cases a domain name and drops the optional trailing root dot, so
+ * "App.Example.Com." and "app.example.com" compare equal.
+ */
+function normalizeDomain(domain: string): string {
+  return domain.toLowerCase().replace(/\.$/, "");
+}
+
 export function loadConfig(
   configPath = path.resolve(__dirname, "..", "deploy-config.json"),
 ): DeployConfig {
@@ -67,6 +75,13 @@ export function loadConfig(
     if (d.region !== undefined && d.region !== STACK_REGION) {
       throw new Error(
         `Deployment "${name}" has region "${d.region}", but CloudFront requires its ACM certificate in ${STACK_REGION}. Remove the region or set it to "${STACK_REGION}".`,
+      );
+    }
+    const fqdn = normalizeDomain(d.domainName);
+    const zone = normalizeDomain(d.hostedZoneDomain);
+    if (fqdn !== zone && !fqdn.endsWith(`.${zone}`)) {
+      throw new Error(
+        `Deployment "${name}" has domainName "${d.domainName}", which is not inside hostedZoneDomain "${d.hostedZoneDomain}". The ACM certificate is DNS-validated in that hosted zone, so a mismatch synthesizes cleanly and then stalls the deploy waiting for a validation record that can never be written.`,
       );
     }
   }
