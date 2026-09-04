@@ -3,21 +3,33 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      nodejs: 22 # Use 22 (LTS) or 20 if you prefer; 24 may be available on newer images
+      nodejs: 22 # Keep in step with .nvmrc and package.json "engines"
 
     commands:
       - echo "Installing dependencies..."
       - npm ci
+      # `npm run lint` below type-lints the CDK sources against
+      # infra/tsconfig.json, and there are no npm workspaces, so infra's own
+      # dependencies have to be installed too.
+      - npm --prefix infra ci
 
   build:
     commands:
+      # Same gate, in the same order, as .github/workflows/ci.yml so CodeBuild
+      # and GitHub Actions can never disagree about whether a commit is good.
+      - echo "Checking..."
+      - npm run lint
+      - npm run typecheck
+      - npm run format:check
+      - npm test
       - echo "Building..."
       - npm run build
 
-# Optional: cache node_modules for much faster rebuilds on subsequent runs
+# Cache npm's content-addressable store, not node_modules: `npm ci` deletes
+# node_modules before every install, so caching it only costs transfer time.
 cache:
   paths:
-    - node_modules/**/*
+    - /root/.npm/**/*
 
 artifacts:
   files:
@@ -25,6 +37,12 @@ artifacts:
   base-directory: dist # Vite's default output folder
   discard-paths: no # keep folder structure inside dist
 
+
+# NOTE: this artifact carries no cache-control metadata. The immutable
+# `assets/` vs. no-cache `index.html` policy lives in exactly one place —
+# the CDK BucketDeployment pair in infra/lib/static-site-stack.ts — which is
+# the supported deployment path (`npm run deploy`). Anything that publishes
+# this artifact directly must reproduce that policy itself.
 
 # Optional: if you want to produce reports (e.g. for tests) later
 # reports:

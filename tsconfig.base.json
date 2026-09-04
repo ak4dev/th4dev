@@ -15,6 +15,15 @@
     "jsx": "react-jsx",
 
     /* Linting */
+    /*
+     * `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are
+     * deliberately off. The slider and input maps are keyed by the SliderKey
+     * and InputKey unions in app-constants.ts, so indexing them is already
+     * total and the unchecked-access sites the audit counted are gone at the
+     * source. Turning the flags on would add churn across UI files that carry
+     * far less test coverage than the helpers, for no correctness gain here.
+     * Recorded as a decision, not an oversight.
+     */
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
