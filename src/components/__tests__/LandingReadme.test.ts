@@ -89,6 +89,31 @@ describe("LandingReadme", () => {
     expect(props.onNavigate).toHaveBeenCalledWith("f");
   });
 
+  it("declares that this is a coding project, not a financial tool", () => {
+    // Not a copy pin: this is the page's only disclosure, and the whole point
+    // of it is that it cannot quietly disappear in a later edit. Match the
+    // four claims rather than the sentences, so the wording stays free to
+    // change. The first is the load-bearing one — a page headed "Investment
+    // Growth Calculator" reads as a financial product until it says otherwise.
+    const page = html(false);
+    expect(page).toMatch(/coding project, not a financial tool/i);
+    expect(page).toMatch(/built by ai/i);
+    expect(page).toMatch(/not investment advice/i);
+    expect(page).toMatch(/licensed/i);
+  });
+
+  it("puts the disclosure before the calculator, not after the page", () => {
+    // It has to be read before the tool is opened. Anchor it to the call to
+    // action rather than to a character offset, so the page can grow.
+    const page = html(false);
+    expect(page.indexOf("not investment advice")).toBeGreaterThan(
+      page.indexOf("Open calculator"),
+    );
+    expect(page.indexOf("not investment advice")).toBeLessThan(
+      page.indexOf("Features"),
+    );
+  });
+
   it("tells the user which way round storage actually is", () => {
     // Not a copy pin: the storage message is a SEPARATE ternary from the one
     // feeding aria-checked, so inverting it would tell someone "No data is

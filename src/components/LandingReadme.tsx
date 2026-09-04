@@ -150,6 +150,27 @@ const StorageBar = styled("div", {
   "& p": { fontSize: "0.78rem", lineHeight: 1.5 },
 });
 
+/**
+ * The disclosure. Deliberately prose in the page's own voice rather than a
+ * boxed legal notice, and placed directly under the call to action so it is
+ * read before the tool is opened rather than scrolled past at the bottom.
+ *
+ * It leads with what this repository IS — a coding project — because that
+ * reframes everything after it. A page headed "Investment Growth Calculator"
+ * otherwise reads as a financial product, and no amount of hedging further
+ * down undoes a first impression.
+ */
+const Notice = styled("p", {
+  margin: 0,
+  padding: "10px 12px",
+  borderRadius: "8px",
+  border: "1px solid $orange",
+  color: "$comment",
+  fontSize: "0.78rem",
+  lineHeight: 1.5,
+  "& strong": { color: "$orange", fontWeight: 600 },
+});
+
 const ToggleSwitch = styled("button", {
   all: "unset",
   cursor: "pointer",
@@ -202,15 +223,20 @@ export default function LandingReadme({
           A client-side investment planning tool: project two investment lanes
           over decades, compare them, and stress-test the plan. Everything runs
           in your browser with no backend and no accounts, and nothing is stored
-          unless you opt in below. Much of this project is AI generated and may
-          contain errors; verify independently before relying on it for
-          decisions.
+          unless you opt in below.
         </Text>
         <div>
           <ActionButton onClick={() => onNavigate("f")}>
             Open calculator
           </ActionButton>
         </div>
+        <Notice>
+          <strong>A coding project, not a financial tool.</strong> Built by AI
+          to exercise the engineering, not reviewed by an adviser. It projects
+          the assumptions you type; it does not predict markets and it is not
+          investment advice. Expect errors, and take real decisions to someone
+          licensed.
+        </Notice>
       </Section>
 
       <Section>
