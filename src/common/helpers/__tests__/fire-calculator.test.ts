@@ -8,6 +8,42 @@ import {
   calculateFire,
   type FireInputs,
 } from "../fire-calculator";
+import { InvestmentCalculator } from "../investment-growth-calculator";
+import type { InvestmentCalculatorProps } from "../../types/types";
+
+/**
+ * Closed form of the yearsToFire loop. Contributions are credited at the START
+ * of the month (annuity-due), so after n months the balance is
+ *   PV(1 + r)^n + C(1 + r)((1 + r)^n - 1) / r
+ * and the (fractional) month at which it first reaches FV is
+ *   n = ln((FV + k) / (PV + k)) / ln(1 + r),  k = C(1 + r) / r
+ * The tests below assert the implementation against this rather than against
+ * re-baselined magic numbers.
+ */
+const monthsToTarget = (
+  pv: number,
+  monthly: number,
+  annualPct: number,
+  fv: number,
+): number => {
+  const r = annualPct / 100 / 12;
+  const k = (monthly * (1 + r)) / r;
+  return Math.log((fv + k) / (pv + k)) / Math.log(1 + r);
+};
+
+/** Same closed form solved for PMT: an annuity-DUE payment. */
+const pmtForTarget = (
+  pv: number,
+  annualPct: number,
+  fv: number,
+  years: number,
+): number => {
+  const r = annualPct / 100 / 12;
+  const n = years * 12;
+  return (
+    (fv - pv * Math.pow(1 + r, n)) / (((Math.pow(1 + r, n) - 1) / r) * (1 + r))
+  );
+};
 
 describe("calculateFireNumber", () => {
   it("$40k expenses at 4% SWR = $1,000,000", () => {
@@ -60,19 +96,24 @@ describe("yearsToFire", () => {
     expect(yearsToFire(2000000, 0, 10, 1000000)).toBe(0);
   });
 
-  it("reasonable scenario returns expected range", () => {
-    // $100k savings, $2k/mo contribution, 10% return, $1M target
-    const years = yearsToFire(100000, 2000, 10, 1000000);
-    expect(years).not.toBeNull();
-    expect(years!).toBeGreaterThan(5);
-    expect(years!).toBeLessThan(30);
+  it("$100k + $2k/mo at 10% to $1M takes exactly 13 years", () => {
+    // Annuity-due closed form: 155.404 months -> month 156 -> ceil(156/12) = 13
+    expect(monthsToTarget(100000, 2000, 10, 1000000)).toBeCloseTo(155.404, 3);
+    expect(yearsToFire(100000, 2000, 10, 1000000)).toBe(13);
   });
 
-  it("$0 savings $500/mo at 10% to $1M takes ~28-30 years", () => {
-    const years = yearsToFire(0, 500, 10, 1000000);
-    expect(years).not.toBeNull();
-    expect(years!).toBeGreaterThanOrEqual(27);
-    expect(years!).toBeLessThanOrEqual(31);
+  it("$0 savings + $500/mo at 10% to $1M takes exactly 29 years", () => {
+    // Annuity-due with PV = 0: n = ln(1 + FV*r / (C(1 + r))) / ln(1 + r)
+    // = 345.092 months -> month 346 -> ceil(346/12) = 29
+    expect(monthsToTarget(0, 500, 10, 1000000)).toBeCloseTo(345.092, 3);
+    expect(yearsToFire(0, 500, 10, 1000000)).toBe(29);
+  });
+
+  it("credits contributions at the start of the month, not the end", () => {
+    // $100/mo at 12% for 12 months: 1280.93 start-of-month (annuity-due) vs
+    // 1268.25 end-of-month. A target between the two separates the conventions.
+    expect(yearsToFire(0, 100, 12, 1280)).toBe(1);
+    expect(yearsToFire(0, 100, 12, 1281)).toBe(2);
   });
 
   it("returns null for unreachable target with no contributions/growth", () => {
@@ -85,10 +126,16 @@ describe("coastFireNumber", () => {
     expect(coastFireNumber(1000000, 10, 0)).toBe(1000000);
   });
 
-  it("35 years of growth significantly reduces required amount", () => {
+  it("35 years at 7% discounts $1M to exactly $86,910", () => {
+    expect(coastFireNumber(1000000, 7, 35)).toBe(86910);
+  });
+
+  it("compounds back up to the FIRE number it was discounted from", () => {
+    // The inverse check, rather than a restatement of the formula: leaving the
+    // coast number alone for 35 years at 7% must land on $1M.
     const coast = coastFireNumber(1000000, 7, 35);
-    expect(coast).toBeGreaterThan(50000);
-    expect(coast).toBeLessThan(200000);
+    const compounded = coast * Math.pow(1 + 0.07 / 12, 420);
+    expect(compounded).toBeCloseTo(1000000, -1);
   });
 
   it("higher return = lower coast number", () => {
@@ -107,11 +154,25 @@ describe("monthlySavingsNeeded", () => {
     expect(monthlySavingsNeeded(0, 10, 1000000, 0)).toBeNull();
   });
 
-  it("returns positive for reasonable scenario", () => {
-    const needed = monthlySavingsNeeded(50000, 8, 1000000, 25);
-    expect(needed).not.toBeNull();
-    expect(needed!).toBeGreaterThan(0);
-    expect(needed!).toBeLessThan(5000);
+  it("$50k at 8% to $1M in 25 years needs exactly $662/mo", () => {
+    // PMT = (FV - PV(1 + r)^n) / (((1 + r)^n - 1)/r * (1 + r)), r = 0.08/12,
+    // n = 300 -> 661.18 -> ceil = 662 (annuity-DUE, contributions grow in month)
+    expect(pmtForTarget(50000, 8, 1000000, 25)).toBeCloseTo(661.18, 2);
+    expect(monthlySavingsNeeded(50000, 8, 1000000, 25)).toBe(662);
+  });
+
+  it("is the exact inverse of yearsToFire at the same rate", () => {
+    // $662/mo lands inside year 25; one dollar less slips into year 26
+    expect(yearsToFire(50000, 662, 8, 1000000)).toBe(25);
+    expect(yearsToFire(50000, 661, 8, 1000000)).toBe(26);
+  });
+
+  it("needs more than pure saving when the real return is negative", () => {
+    const rate = realReturn(2, 5); // -2.857%
+    const pureSavings = Math.ceil((1000000 - 100000) / (35 * 12));
+    const needed = monthlySavingsNeeded(100000, rate, 1000000, 35);
+    expect(needed).toBe(3635);
+    expect(needed!).toBeGreaterThan(pureSavings);
   });
 
   it("handles 0% return correctly", () => {
@@ -267,5 +328,129 @@ describe("calculateFire (combined)", () => {
       expect(real.fireNumber).toBe(nominal.fireNumber);
       expect(real.progressPct).toBe(nominal.progressPct);
     });
+
+    it("a negative real return pushes coast above the FIRE number", () => {
+      // 2% nominal against 5% inflation: realReturn = -2.857%, so growth alone
+      // shrinks the pot and the coast number has to exceed the target
+      const result = calculateFire({
+        ...inputs,
+        annualReturn: 2,
+        inflationRate: 5,
+      });
+      expect(result.coastFireNumber).toBe(2721525);
+      expect(result.coastFireNumber).toBeGreaterThan(result.fireNumber);
+      expect(result.isCoastFire).toBe(false);
+    });
+
+    it("a negative real return can make FIRE unreachable", () => {
+      // $2k/mo at -2.857% asymptotes near $838k, below the $1M target
+      const result = calculateFire({
+        ...inputs,
+        annualReturn: 2,
+        inflationRate: 5,
+      });
+      expect(result.yearsToFire).toBeNull();
+      expect(result.fireAge).toBeNull();
+      expect(result.monthlySavingsNeeded).toBe(3635);
+    });
+  });
+});
+
+/* ==================================================
+ * Cross-engine parity
+ *
+ * FIRE and InvestmentCalculator are fed the same contribution slider, so with
+ * inflation, fees and withdrawals switched off they must agree month for month
+ * (see the timing convention in fire-calculator.ts). This fails loudly if
+ * either engine drifts back to crediting contributions at the end of the month.
+ * ================================================== */
+
+describe("parity with InvestmentCalculator", () => {
+  const engineProps = (
+    overrides: Partial<InvestmentCalculatorProps>,
+  ): InvestmentCalculatorProps => ({
+    initialAmount: 10000,
+    projectedGain: 7,
+    yearsOfGrowth: 10,
+    monthlyContribution: 500,
+    monthlyWithdrawal: 0,
+    withdrawalStartYear: 0,
+    inflationPct: 0,
+    ...overrides,
+  });
+
+  /** Nominal end-of-year balances, index 0 = end of year 1 (no "today" row). */
+  const nominalYearEnds = (
+    overrides: Partial<InvestmentCalculatorProps>,
+  ): number[] => {
+    const calc = new InvestmentCalculator(engineProps(overrides));
+    calc.calculateGrowth();
+    return calc.getGrowthMatrix().map((entry) => entry.nominal);
+  };
+
+  const cases: {
+    label: string;
+    initial: number;
+    monthly: number;
+    gain: number;
+    years: number;
+  }[] = [
+    {
+      label: "$10k + $500/mo at 7%",
+      initial: 10000,
+      monthly: 500,
+      gain: 7,
+      years: 10,
+    },
+    {
+      label: "$0 + $1k/mo at 6%",
+      initial: 0,
+      monthly: 1000,
+      gain: 6,
+      years: 15,
+    },
+    {
+      label: "$100k + $2k/mo at 10%",
+      initial: 100000,
+      monthly: 2000,
+      gain: 10,
+      years: 13,
+    },
+  ];
+
+  cases.forEach(({ label, initial, monthly, gain, years }) => {
+    it(`${label}: yearsToFire hits each engine year-end in that same year`, () => {
+      const yearEnds = nominalYearEnds({
+        initialAmount: initial,
+        projectedGain: gain,
+        yearsOfGrowth: years,
+        monthlyContribution: monthly,
+      });
+      expect(yearEnds).toHaveLength(years);
+      // Targeting the engine's balance at the end of year k must resolve to
+      // exactly k years; an off-by-one-month convention shifts every row.
+      expect(
+        yearEnds.map((target) => yearsToFire(initial, monthly, gain, target)),
+      ).toEqual(yearEnds.map((_, index) => index + 1));
+    });
+  });
+
+  it("monthlySavingsNeeded funds the engine to the target", () => {
+    const needed = monthlySavingsNeeded(50000, 8, 1000000, 25)!;
+    const [finalYear] = nominalYearEnds({
+      initialAmount: 50000,
+      projectedGain: 8,
+      yearsOfGrowth: 25,
+      monthlyContribution: needed,
+    }).slice(-1);
+    expect(finalYear).toBeGreaterThanOrEqual(1000000);
+    // and one dollar per month less would not have got there
+    const [shortYear] = nominalYearEnds({
+      initialAmount: 50000,
+      projectedGain: 8,
+      yearsOfGrowth: 25,
+      monthlyContribution: needed - 1,
+    }).slice(-1);
+    expect(shortYear).toBeLessThan(1000000);
   });
 });

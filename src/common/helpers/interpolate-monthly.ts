@@ -2,7 +2,8 @@
  * Monthly Growth Matrix Interpolation
  * ================================================== */
 
-import { addMonths, differenceInCalendarMonths } from "date-fns";
+import { addMonths } from "date-fns/addMonths";
+import { differenceInCalendarMonths } from "date-fns/differenceInCalendarMonths";
 import type { LineGraphEntry } from "../types/types";
 
 /**
@@ -12,6 +13,9 @@ import type { LineGraphEntry } from "../types/types";
  * snapshots. Linear interpolation between yearly data points is a close-enough
  * approximation for display purposes (true compound growth curves are only very
  * slightly non-linear over a single year interval).
+ *
+ * Both tracks are carried through, each interpolated on its own, so a monthly
+ * row holds the same nominal/real pair the yearly rows do.
  *
  * Segments are interpolated over their actual month span, so a trailing
  * partial year (e.g. the 6-month segment of a 10.5-year horizon) produces the
@@ -34,10 +38,8 @@ export function interpolateMonthly(yearly: LineGraphEntry[]): LineGraphEntry[] {
       const t = m / span;
       result.push({
         x: addMonths(from.x, m),
-        y: Math.floor(from.y + (to.y - from.y) * t),
-        alternateY: Math.floor(
-          from.alternateY + (to.alternateY - from.alternateY) * t,
-        ),
+        nominal: Math.floor(from.nominal + (to.nominal - from.nominal) * t),
+        real: Math.floor(from.real + (to.real - from.real) * t),
       });
     }
   }

@@ -7,6 +7,10 @@
  * consent-gated useEffect in App.tsx.
  * ================================================== */
 
+import {
+  DEFAULT_PROJECTED_GAIN,
+  DEFAULT_YEARS_OF_GROWTH,
+} from "../constants/app-constants";
 import type { TH4State } from "../types/types";
 
 /* ---------- Types ---------- */
@@ -60,6 +64,10 @@ export function renameScenario(
 /**
  * Computes the final Investment A value for a snapshot so it can
  * be previewed in the scenario list without loading the full state.
+ *
+ * A snapshot is boundary data — it may predate a slider, or have been
+ * hand-edited — so each field still has a fallback, but the fallbacks are the
+ * app's own defaults rather than a second copy of them written out here.
  */
 export function getSnapshotPreview(snapshot: ScenarioSnapshot): {
   investmentA: string;
@@ -69,7 +77,7 @@ export function getSnapshotPreview(snapshot: ScenarioSnapshot): {
   const s = snapshot.state.sliders;
   return {
     investmentA: snapshot.state.inputs?.currentAmountA ?? "0",
-    returnPct: s?.projectedGainA ?? 10,
-    years: s?.yearsOfGrowthA ?? 30,
+    returnPct: s?.projectedGainA ?? DEFAULT_PROJECTED_GAIN,
+    years: s?.yearsOfGrowthA ?? DEFAULT_YEARS_OF_GROWTH,
   };
 }

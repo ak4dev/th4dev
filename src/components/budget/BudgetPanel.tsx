@@ -8,7 +8,6 @@
  * ================================================== */
 
 import { useState, useEffect, useRef } from "react";
-import * as Slider from "@radix-ui/react-slider";
 import * as Icons from "@radix-ui/react-icons";
 import { styled, keyframes } from "../../../stitches.config";
 import { compactModernInputStyles } from "../../common/constants/input-styles";
@@ -26,12 +25,22 @@ import {
 } from "../../common/helpers/budget-manager";
 import { formatCurrency } from "../../common/helpers/format";
 import {
+  AMOUNT_FIELD,
+  parseFieldValue,
+  sanitizeNumericText,
+} from "../../common/helpers/numeric-field";
+import {
   PanelContainer,
   PanelTitle,
   PanelButton,
   CountLabel,
   Separator,
   EmptyMessage,
+  IconButton,
+  SliderRoot,
+  SliderTrack,
+  SliderRange,
+  SliderThumb,
 } from "../ui/primitives";
 
 /* ---------- Props ---------- */
@@ -160,15 +169,28 @@ const ItemAmount = styled("span", {
   textAlign: "right",
 });
 
-const DeleteButton = styled("button", {
-  all: "unset",
-  cursor: "pointer",
-  fontSize: "0.75rem",
-  color: "$comment",
+const EditButton = styled(IconButton, {
+  flexShrink: 0,
   padding: "2px 6px",
   borderRadius: "4px",
   transition: "color 0.15s, background-color 0.15s",
-  "&:hover": { color: "$red", backgroundColor: "$currentLine" },
+  // Keyboard focus gets the same treatment as hover; IconButton supplies the
+  // focus ring itself.
+  "&:hover, &:focus-visible": {
+    color: "$cyan",
+    backgroundColor: "$currentLine",
+  },
+});
+
+const DeleteButton = styled(IconButton, {
+  fontSize: "0.75rem",
+  padding: "2px 6px",
+  borderRadius: "4px",
+  transition: "color 0.15s, background-color 0.15s",
+  "&:hover, &:focus-visible": {
+    color: "$red",
+    backgroundColor: "$currentLine",
+  },
 });
 
 /* --- Totals & category breakdown --- */
@@ -294,40 +316,6 @@ const InlineInput = styled(Input, {
   },
 });
 
-/* --- Budget item slider (matches original InvestmentSlider theme) --- */
-
-const BudgetSliderRoot = styled(Slider.Root, {
-  position: "relative",
-  display: "flex",
-  alignItems: "center",
-  flex: 1,
-  minWidth: 0,
-  height: "20px",
-});
-
-const BudgetSliderTrack = styled(Slider.Track, {
-  backgroundColor: "$cyan",
-  position: "relative",
-  flexGrow: 1,
-  height: "4px",
-  borderRadius: "9999px",
-});
-
-const BudgetSliderRange = styled(Slider.Range, {
-  position: "absolute",
-  backgroundColor: "$green",
-  height: "100%",
-  borderRadius: "9999px",
-});
-
-const BudgetSliderThumb = styled(Slider.Thumb, {
-  width: 14,
-  height: 14,
-  borderRadius: "50%",
-  backgroundColor: "$green",
-  boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
-});
-
 /** Slider range is twice the current amount, with a sensible floor for small items */
 const sliderMax = (amount: number) => Math.max(amount * 2, 500);
 
@@ -378,7 +366,12 @@ export default function BudgetPanel({
     e.preventDefault();
     const name = newName.trim() || newCategory;
     setItems(
-      addBudgetItem(name, parseFloat(newAmount) || 0, newCategory, items),
+      addBudgetItem(
+        name,
+        parseFieldValue(newAmount, AMOUNT_FIELD),
+        newCategory,
+        items,
+      ),
     );
     setNewName("");
     setNewAmount("");
@@ -409,7 +402,7 @@ export default function BudgetPanel({
       setItems(
         updateBudgetItem(
           editingId,
-          { name, amount: parseFloat(editAmount) || 0 },
+          { name, amount: parseFieldValue(editAmount, AMOUNT_FIELD) },
           items,
         ),
       );
@@ -449,7 +442,11 @@ export default function BudgetPanel({
           type="text"
           inputMode="decimal"
           value={newAmount}
-          onChange={(e) => setNewAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+          onChange={(e) =>
+            setNewAmount(
+              sanitizeNumericText(e.target.value, AMOUNT_FIELD.decimal),
+            )
+          }
         />
         <Select
           aria-label="Category"
@@ -493,7 +490,9 @@ export default function BudgetPanel({
                   inputMode="decimal"
                   value={editAmount}
                   onChange={(e) =>
-                    setEditAmount(e.target.value.replace(/[^0-9.]/g, ""))
+                    setEditAmount(
+                      sanitizeNumericText(e.target.value, AMOUNT_FIELD.decimal),
+                    )
                   }
                 />
               </EditRow>
@@ -507,7 +506,8 @@ export default function BudgetPanel({
                 </ItemName>
                 <ItemCategory>{item.category}</ItemCategory>
                 <ItemAmount>{formatCurrency(item.amount)}</ItemAmount>
-                <BudgetSliderRoot
+                <SliderRoot
+                  size="sm"
                   value={[item.amount]}
                   min={0}
                   max={drag?.id === item.id ? drag.max : sliderMax(item.amount)}
@@ -522,13 +522,21 @@ export default function BudgetPanel({
                     setItems(updateBudgetItem(item.id, { amount }, items))
                   }
                 >
-                  <BudgetSliderTrack>
-                    <BudgetSliderRange />
-                  </BudgetSliderTrack>
-                  <BudgetSliderThumb
+                  <SliderTrack size="sm">
+                    <SliderRange />
+                  </SliderTrack>
+                  <SliderThumb
+                    size="sm"
                     aria-label={`${item.name} monthly amount`}
                   />
-                </BudgetSliderRoot>
+                </SliderRoot>
+                <EditButton
+                  onClick={() => handleStartEdit(item)}
+                  aria-label={`Edit ${item.name}`}
+                  title="Edit"
+                >
+                  <Icons.Pencil1Icon width={12} height={12} />
+                </EditButton>
               </>
             )}
             <DeleteButton
@@ -588,7 +596,7 @@ export default function BudgetPanel({
                     <CategoryBarBg>
                       <CategoryBarFill
                         category={isCategory(cat) ? cat : "Other"}
-                        css={{ width: `${pct(amt)}%` }}
+                        style={{ width: `${pct(amt)}%` }}
                       />
                     </CategoryBarBg>
                     <CategoryPct>{pct(amt).toFixed(0)}%</CategoryPct>

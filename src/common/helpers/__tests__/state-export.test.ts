@@ -106,6 +106,17 @@ describe("state export/import round trip", () => {
     expect(normalizeState(parsed)).toEqual(fullState);
   });
 
+  it("re-exports the very bytes it imported", () => {
+    // Key order included: the slider map is keyed by a compile-checked
+    // vocabulary now, and a re-ordering of it would show up here as a diff a
+    // user syncing files between machines would see
+    const exported = JSON.stringify(fullState);
+    const parsed = parseFile(exported);
+    expect(isValidTH4State(parsed)).toBe(true);
+    if (!isValidTH4State(parsed)) return;
+    expect(JSON.stringify(normalizeState(parsed))).toBe(exported);
+  });
+
   it("encrypted export is unreadable as state and round-trips through the envelope", async () => {
     const envelope = await encryptToEnvelope(JSON.stringify(fullState), "pw");
     const parsedEnvelope = parseFile(JSON.stringify(envelope));

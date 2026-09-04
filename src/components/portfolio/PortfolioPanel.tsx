@@ -2,31 +2,32 @@
  * Portfolio Panel
  * ================================================== */
 
-import { useState, type Dispatch, type SetStateAction } from "react";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import * as Icons from "@radix-ui/react-icons";
 import { styled } from "../../../stitches.config";
 import { compactModernInputStyles } from "../../common/constants/input-styles";
+import {
+  parseFieldValue,
+  sanitizeNumericText,
+  type NumericFieldPolicy,
+} from "../../common/helpers/numeric-field";
 import { computePortfolioProjection } from "../../common/helpers/portfolio-projection";
+import { validateStockUrlTemplate } from "../../common/helpers/stock-client";
 import type { PortfolioHolding } from "../../common/types/portfolio-types";
-import type { LineGraphEntry } from "../../common/types/types";
+import type { PortfolioLane } from "./portfolio-lane";
 import PortfolioProjectionChart from "./PortfolioProjectionChart";
 import CapitalPreservationSchedule from "./CapitalPreservationSchedule";
 import { useFetchPrices } from "./useFetchPrices";
-import { ActionButton, ErrorText, IconButton } from "../ui/primitives";
+import {
+  ActionButton,
+  ErrorText,
+  IconButton,
+  PanelContainer,
+} from "../ui/primitives";
 
 /* ==================================================
  * Styled Components
  * ================================================== */
-
-const Wrapper = styled("div", {
-  marginTop: "24px",
-  backgroundColor: "$currentLine",
-  borderRadius: "12px",
-  padding: "20px",
-  display: "flex",
-  flexDirection: "column",
-  gap: "16px",
-});
 
 const SectionTitle = styled("h3", {
   margin: 0,
@@ -194,6 +195,17 @@ const SectionTitleRow = styled("div", {
  * ================================================== */
 
 /**
+ * The allocation box reads a share of the portfolio: fractions of a percent
+ * are typed, anything above the whole portfolio is pulled back to it, and a
+ * box the user has emptied allocates nothing to that holding.
+ */
+const ALLOCATION_FIELD = {
+  decimal: true,
+  max: 100,
+  fallback: 0,
+} satisfies NumericFieldPolicy;
+
+/**
  * Computes the minimum required price for a holding at today's date,
  * based on the start price and time elapsed since the projection was initialised.
  *
@@ -226,32 +238,6 @@ function computeTargetPriceToday(
 /* ==================================================
  * Props
  * ================================================== */
-
-/**
- * Inputs the panel needs from one investment lane. The hub builds one for
- * Investment A and, while advanced mode is on, one for Investment B.
- */
-export interface PortfolioLane {
-  /**
-   * Portfolio value today — the calculator's starting amount. Every required
-   * price is derived from it, so the projection chart, the target prices and
-   * the preservation schedule all share one base.
-   */
-  portfolioValue: number;
-  /**
-   * Effective monthly withdrawal in USD. With dynamic withdrawal on this is
-   * a representative amount (the first scheduled withdrawal), not a slider.
-   */
-  monthlyWithdrawal: number;
-  /** Annual projected gain percentage (e.g. 10 for 10%) */
-  projectedGain: number;
-  /** Year offset at which withdrawals begin */
-  withdrawalStartYear: number;
-  /** Number of years to project forward */
-  years: number;
-  /** InvestmentCalculator.getGrowthMatrix() — entry 0 is today + 1 year */
-  growthMatrix: LineGraphEntry[];
-}
 
 type LaneKey = "A" | "B";
 
@@ -290,6 +276,14 @@ export default function PortfolioPanel({
     error: fetchError,
   } = useFetchPrices(stockApiUrl, setHoldings);
 
+  // The same template drives this button and the modal's, so the check lives
+  // in the client and is only surfaced here — a UI-only guard on one form
+  // would leave the other Fetch button firing requests the client rejects.
+  const urlError = useMemo(
+    () => validateStockUrlTemplate(stockApiUrl),
+    [stockApiUrl],
+  );
+
   const updateAllocation = (symbol: string, pct: number) =>
     setHoldings((prev) =>
       prev.map((h) => (h.symbol === symbol ? { ...h, allocationPct: pct } : h)),
@@ -305,19 +299,27 @@ export default function PortfolioPanel({
     dropDraft(symbol);
   };
 
-  // Keep the raw text while typing so "12." and "0.5" survive the controlled re-render
+  // Keep the raw text while typing so "12." and "0.5" survive the controlled
+  // re-render, and write each keystroke through so the "Allocated: x%"
+  // indicator answers while the user is still typing.
   const editAllocation = (symbol: string, raw: string) => {
-    const cleaned = raw.replace(/[^0-9.]/g, "");
+    const cleaned = sanitizeNumericText(raw, ALLOCATION_FIELD.decimal);
     setAllocDrafts((prev) => ({ ...prev, [symbol]: cleaned }));
-    const parsed = parseFloat(cleaned);
-    if (!Number.isNaN(parsed)) updateAllocation(symbol, Math.min(100, parsed));
-    else if (cleaned === "") updateAllocation(symbol, 0);
+    // Mid-word the field's own fallback does not apply: a "." on its way to
+    // ".5" is not yet a number, and zeroing the holding for that keystroke
+    // would reallocate a portfolio the user is in the middle of describing.
+    // Only an emptied box means nothing is allocated.
+    const live = parseFieldValue(cleaned, {
+      ...ALLOCATION_FIELD,
+      fallback: cleaned === "" ? 0 : "revert",
+    });
+    if (live !== "revert") updateAllocation(symbol, live);
   };
 
   const commitAllocation = (symbol: string) => {
     const draft = allocDrafts[symbol];
     if (draft === undefined) return;
-    updateAllocation(symbol, Math.min(100, parseFloat(draft) || 0));
+    updateAllocation(symbol, parseFieldValue(draft, ALLOCATION_FIELD));
     dropDraft(symbol);
   };
 
@@ -346,7 +348,7 @@ export default function PortfolioPanel({
       : null;
 
   return (
-    <Wrapper>
+    <PanelContainer surface="stack">
       <SectionTitleRow>
         <SectionTitle>Portfolio Capital Preservation</SectionTitle>
         {lanes.B && (
@@ -449,7 +451,7 @@ export default function PortfolioPanel({
         <ActionButton
           size="sm"
           onClick={() => void fetchPrices(holdings.map((h) => h.symbol))}
-          disabled={loading || holdings.length === 0}
+          disabled={loading || holdings.length === 0 || urlError !== null}
         >
           {loading ? "Fetching…" : "Fetch Current Prices"}
         </ActionButton>
@@ -461,7 +463,13 @@ export default function PortfolioPanel({
         )}
       </Row>
 
-      {fetchError && <ErrorText>{fetchError}</ErrorText>}
+      {urlError ? (
+        <ErrorText>
+          Stock API URL: {urlError} Edit it in the Stock Fetcher (Ctrl+Shift+S).
+        </ErrorText>
+      ) : (
+        fetchError && <ErrorText>{fetchError}</ErrorText>
+      )}
 
       {/* Withdrawal-based projection chart */}
       {holdings.length > 0 &&
@@ -474,6 +482,8 @@ export default function PortfolioPanel({
       {/* Capital preservation schedule — requires fetched prices */}
       <CapitalPreservationSchedule
         growthMatrix={active.growthMatrix}
+        monthlyMatrix={active.monthlyMatrix}
+        track={active.track}
         initialValue={active.portfolioValue}
         holdings={holdings}
         withdrawalStartYear={active.withdrawalStartYear}
@@ -483,6 +493,6 @@ export default function PortfolioPanel({
         primaryWithdrawalLabel={activeKey}
         secondaryWithdrawalLabel={otherKey}
       />
-    </Wrapper>
+    </PanelContainer>
   );
 }

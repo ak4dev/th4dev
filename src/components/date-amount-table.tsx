@@ -48,8 +48,6 @@ const Td = styled("td", {
 interface DateAmountTableProps {
   /** Investment calculator instance containing growth data */
   investmentCalc: InvestmentCalculator;
-  /** Whether the calculator ran in inflation view (decides which series is nominal) */
-  showInflation: boolean;
   /** Starting balance; the growth matrix has no today row, so it must be supplied */
   initialAmount: number;
 }
@@ -64,14 +62,11 @@ interface DateAmountTableProps {
  */
 export default function DateAmountTable({
   investmentCalc,
-  showInflation,
   initialAmount,
 }: DateAmountTableProps) {
-  const rows = buildTableRows(
-    investmentCalc.getGrowthMatrix(),
-    showInflation,
-    initialAmount,
-  );
+  // Both tracks are printed side by side, so this table never needed to know
+  // which one the Inflated toggle is showing.
+  const rows = buildTableRows(investmentCalc.getGrowthMatrix(), initialAmount);
 
   if (rows.length === 0) {
     return <div>No data available</div>;

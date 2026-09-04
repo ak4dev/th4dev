@@ -8,15 +8,17 @@
 
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
-import type { DynamicWithdrawal } from "../types/types";
-import { formatCurrency } from "./format";
+import { format } from "date-fns/format";
+import type { PdfKeyValue } from "./pdf-report-data";
+
+// The row shape and the pure row builders live in a renderer-free module so
+// that the hub, which needs them on every render, does not drag jspdf and
+// html2canvas into the entry chunk. They are re-exported here so a caller that
+// is already loading the renderer keeps a single import.
+export type { PdfKeyValue } from "./pdf-report-data";
+export { dynamicWithdrawalAssumptions } from "./pdf-report-data";
 
 /* ---------- Types ---------- */
-
-export interface PdfKeyValue {
-  label: string;
-  value: string;
-}
 
 export interface PdfReportData {
   title?: string;
@@ -41,29 +43,6 @@ const HEADER_FONT_SIZE = 18;
 const SECTION_FONT_SIZE = 13;
 const BODY_FONT_SIZE = 10;
 const FOOTNOTE_FONT_SIZE = 8;
-
-/* ---------- Report data helpers ---------- */
-
-/** Assumption rows describing a lane's dynamic withdrawal policy */
-export function dynamicWithdrawalAssumptions(
-  lane: string,
-  policy: DynamicWithdrawal,
-): PdfKeyValue[] {
-  return [
-    {
-      label: `Withdrawal Rate (${lane})`,
-      value: `${policy.ratePct}% of balance`,
-    },
-    {
-      label: `Withdrawal Floor (${lane})`,
-      value: `${formatCurrency(policy.floor)}/mo`,
-    },
-    {
-      label: `Withdrawal Ceiling (${lane})`,
-      value: `${formatCurrency(policy.ceiling)}/mo`,
-    },
-  ];
-}
 
 /* ---------- Layout helpers ---------- */
 
@@ -172,7 +151,10 @@ export async function generatePdfReport(data: PdfReportData): Promise<void> {
     }
   }
 
-  // Save
-  const filename = `investment-report-${new Date().toISOString().slice(0, 10)}.pdf`;
+  // Save. "yyyy-MM-dd" of the LOCAL calendar day: toISOString() would name the
+  // file after the UTC day, which is yesterday's (or tomorrow's) date for a user
+  // far enough east or west. Lowercase "yyyy" is the calendar year; date-fns's
+  // "YYYY" is the ISO week-year and misdates the file around New Year.
+  const filename = `investment-report-${format(new Date(), "yyyy-MM-dd")}.pdf`;
   doc.save(filename);
 }

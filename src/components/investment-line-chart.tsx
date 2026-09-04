@@ -15,7 +15,7 @@ import {
   Legend,
   ReferenceLine,
 } from "recharts";
-import type { LineGraphEntry } from "../common/types/types";
+import type { DisplayTrack, LineGraphEntry } from "../common/types/types";
 import type { PercentileBand } from "../common/helpers/monte-carlo";
 import {
   buildChartRows,
@@ -25,6 +25,10 @@ import {
 } from "../common/helpers/growth-rows";
 import { styled } from "../../stitches.config";
 import { CHART_HEIGHT } from "../common/constants/app-constants";
+import {
+  CHART_TOOLTIP_CONTENT_STYLE,
+  CHART_TOOLTIP_ITEM_STYLE,
+} from "./ui/primitives";
 
 /* ==================================================
  * Styled Components
@@ -54,6 +58,10 @@ const ChartTitle = styled("h4", {
 
 const CHART_PADDING_MULTIPLIER = 1.05;
 const COMPACT_MAX_FRACTION_DIGITS = 1;
+
+/** Grid lines: the theme's comment colour, faint enough to stay behind the data */
+const GRID_STROKE =
+  "color-mix(in srgb, var(--colors-comment) 25%, transparent)";
 
 /** Colour and legend labels for each Monte Carlo series */
 const MC_SERIES: Record<
@@ -87,19 +95,21 @@ const compact = (value: number) => `$${numberFormatter.format(value)}`;
 /**
  * Determines line color based on investment performance
  * @param matrix - Growth matrix for the investment
+ * @param track - The track being plotted, so the colour reads the drawn line
  * @param defaultColor - Default color to use for positive performance
  * @param initialAmount - Starting balance; falls back to the first matrix entry
  * @returns CSS color value
  */
 function getPerformanceColor(
   matrix: LineGraphEntry[] | undefined,
+  track: DisplayTrack,
   defaultColor: string,
   initialAmount?: number,
 ): string {
   if (!matrix || matrix.length === 0) return defaultColor;
 
-  const start = initialAmount ?? matrix[0].y;
-  const end = matrix[matrix.length - 1].y;
+  const start = initialAmount ?? matrix[0][track];
+  const end = matrix[matrix.length - 1][track];
 
   if (end < 0) return "var(--colors-red)";
   if (end < start) return "var(--colors-orange)";
@@ -129,6 +139,11 @@ interface InvestmentLineChartProps {
   growthMatrixA: LineGraphEntry[];
   /** Growth matrix for investment B (optional) */
   growthMatrixB?: LineGraphEntry[];
+  /**
+   * Which of each entry's two tracks to plot. The matrices carry both, so the
+   * Inflated toggle is resolved here, at the view, and not in the engine.
+   */
+  track: DisplayTrack;
   /** Whether advanced mode is enabled */
   advanced?: boolean;
   /** Optional target value for Investment A — rendered as a dashed reference line */
@@ -152,6 +167,7 @@ interface InvestmentLineChartProps {
 export function InvestmentLineChart({
   growthMatrixA,
   growthMatrixB,
+  track,
   advanced = false,
   targetValueA,
   targetValueB,
@@ -163,6 +179,7 @@ export function InvestmentLineChart({
   const rows = buildChartRows({
     matrixA: growthMatrixA,
     matrixB: growthMatrixB,
+    track,
     advanced,
     initialA: initialAmountA,
     initialB: initialAmountB,
@@ -180,11 +197,13 @@ export function InvestmentLineChart({
   // Determine line colors based on performance
   const investmentAColor = getPerformanceColor(
     growthMatrixA,
+    track,
     cyan,
     initialAmountA,
   );
   const investmentBColor = getPerformanceColor(
     growthMatrixB,
+    track,
     green,
     initialAmountB,
   );
@@ -214,7 +233,7 @@ export function InvestmentLineChart({
       <ChartTitle>Investment Growth Projection</ChartTitle>
       <ResponsiveContainer width="100%" height="92%">
         <ComposedChart data={rows}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#55555533" />
+          <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
           <XAxis
             dataKey="date"
             tick={{ fontSize: 12, fill: fg }}
@@ -241,16 +260,8 @@ export function InvestmentLineChart({
               return "";
             }}
             labelFormatter={(label) => `Year: ${label}`}
-            contentStyle={{
-              backgroundColor: "var(--colors-currentLine)",
-              border: "1px solid var(--colors-foreground)",
-              color: "var(--colors-foreground)",
-              borderRadius: 6,
-              fontSize: 12,
-            }}
-            itemStyle={{
-              color: "var(--colors-foreground)",
-            }}
+            contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+            itemStyle={CHART_TOOLTIP_ITEM_STYLE}
           />
           <Legend
             verticalAlign="top"
@@ -324,6 +335,7 @@ export function InvestmentLineChart({
             strokeWidth={3}
             dot={false}
             name="Investment A"
+            isAnimationActive={false}
           />
 
           {/* Investment B Line */}
@@ -335,6 +347,7 @@ export function InvestmentLineChart({
               strokeWidth={3}
               dot={false}
               name="Investment B"
+              isAnimationActive={false}
             />
           )}
         </ComposedChart>

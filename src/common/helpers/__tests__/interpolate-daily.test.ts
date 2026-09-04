@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import { interpolateDailyForMonth } from "../interpolate-daily";
 import type { LineGraphEntry } from "../../types/types";
 
-const entry = (y: number, alternateY: number, date: Date): LineGraphEntry => ({
+const entry = (nominal: number, real: number, date: Date): LineGraphEntry => ({
   x: date,
-  y,
-  alternateY,
+  nominal,
+  real,
 });
 
 describe("interpolateDailyForMonth", () => {
@@ -17,13 +17,13 @@ describe("interpolateDailyForMonth", () => {
     expect(result).toHaveLength(31);
   });
 
-  it("first day value equals the 'from' value exactly", () => {
+  it("first day value equals the 'from' value exactly, on both tracks", () => {
     const result = interpolateDailyForMonth(
       entry(500, 450, new Date("2026-03-01")),
       entry(531, 478, new Date("2026-04-01")),
     );
-    expect(result[0].y).toBe(500);
-    expect(result[0].alternateY).toBe(450);
+    expect(result[0].nominal).toBe(500);
+    expect(result[0].real).toBe(450);
   });
 
   it("last day value is just below the 'to' value (t = (days-1)/days)", () => {
@@ -31,7 +31,7 @@ describe("interpolateDailyForMonth", () => {
     const to = entry(310, 310, new Date("2026-02-01")); // 31 days in Jan
     const result = interpolateDailyForMonth(from, to);
     const expected = Math.floor(310 * (30 / 31)); // t = 30/31
-    expect(result[30].y).toBe(expected);
+    expect(result[30].nominal).toBe(expected);
   });
 
   it("values are monotonically non-decreasing for a positive range", () => {
@@ -40,7 +40,7 @@ describe("interpolateDailyForMonth", () => {
       entry(130, 117, new Date("2026-07-01")),
     );
     for (let i = 1; i < result.length; i++) {
-      expect(result[i].y).toBeGreaterThanOrEqual(result[i - 1].y);
+      expect(result[i].nominal).toBeGreaterThanOrEqual(result[i - 1].nominal);
     }
   });
 
@@ -85,7 +85,7 @@ describe("interpolateDailyForMonth", () => {
     );
     expect(janRows).toHaveLength(28);
     expect(janRows[27].x).toEqual(new Date(2026, 1, 27));
-    expect(janRows[27].y).toBe(270); // 280 × 27/28
+    expect(janRows[27].nominal).toBe(270); // 280 × 27/28
 
     const febRows = interpolateDailyForMonth(
       entry(0, 0, feb28),
@@ -93,6 +93,19 @@ describe("interpolateDailyForMonth", () => {
     );
     expect(febRows).toHaveLength(31);
     expect(febRows[30].x).toEqual(new Date(2026, 2, 30));
+  });
+
+  it("carries both tracks through, each interpolated on its own", () => {
+    // The two tracks move by different amounts over the same 31 days, so a
+    // row that interpolated one and copied the other would be visible here
+    const result = interpolateDailyForMonth(
+      entry(0, 0, new Date(2026, 0, 1)),
+      entry(310, 620, new Date(2026, 1, 1)),
+    );
+    result.forEach((pt, d) => {
+      expect(pt.nominal).toBe(Math.floor(310 * (d / 31)));
+      expect(pt.real).toBe(Math.floor(620 * (d / 31)));
+    });
   });
 
   it("emits a single row when both entries fall on the same day", () => {
@@ -114,7 +127,7 @@ describe("interpolateDailyForMonth – edge cases", () => {
       entry(700, 630, new Date("2026-04-01")),
     );
     for (let i = 1; i < result.length; i++) {
-      expect(result[i].y).toBeLessThanOrEqual(result[i - 1].y);
+      expect(result[i].nominal).toBeLessThanOrEqual(result[i - 1].nominal);
     }
   });
 
@@ -124,8 +137,8 @@ describe("interpolateDailyForMonth – edge cases", () => {
       entry(500, 450, new Date("2026-05-01")),
     );
     result.forEach((pt) => {
-      expect(pt.y).toBe(500);
-      expect(pt.alternateY).toBe(450);
+      expect(pt.nominal).toBe(500);
+      expect(pt.real).toBe(450);
     });
   });
 });

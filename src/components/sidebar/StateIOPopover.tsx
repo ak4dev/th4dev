@@ -3,7 +3,7 @@
  * ================================================== */
 
 import React, { useRef, useState } from "react";
-import { format } from "date-fns";
+import { format } from "date-fns/format";
 import * as Icons from "@radix-ui/react-icons";
 import * as Dialog from "@radix-ui/react-dialog";
 import { styled } from "../../../stitches.config";
@@ -16,6 +16,8 @@ import {
   encryptToEnvelope,
   decryptFromEnvelope,
   isEncryptedEnvelope,
+  isEncryptedFile,
+  unsupportedFileMessage,
 } from "../../common/helpers/crypto-manager";
 import type { EncryptedEnvelope } from "../../common/helpers/crypto-manager";
 import type { TH4State } from "../../common/types/types";
@@ -82,6 +84,40 @@ const ButtonRow = styled("div", {
   gap: "0.5rem",
 });
 
+/**
+ * The one place a plain export is described before it happens. Encryption off
+ * downloads immediately with no dialog, so the warning has to live beside the
+ * button rather than in a step that never runs.
+ */
+const PlainExportNote = styled("p", {
+  margin: "0 0 0.5rem",
+  padding: "0 4px",
+  fontSize: "0.55rem",
+  lineHeight: 1.3,
+  textAlign: "center",
+  color: "$orange",
+});
+
+/* ==================================================
+ * Copy
+ * ================================================== */
+
+/**
+ * A plain export is the whole state verbatim, and the state includes
+ * stock.apiUrl - the URL the user's market-data API key lives in. These files
+ * get handed around when people ask for help, so what is in the file is named
+ * before it is written rather than discovered afterwards.
+ *
+ * Omitting the field instead would silently lose the user's endpoint on
+ * re-import and leave the plain and encrypted exports carrying different
+ * plans, so the fix is the warning, not a quieter file.
+ */
+const PLAIN_EXPORT_WARNING =
+  "Encrypted export: off - the file is plain text and includes the stock API URL, so it carries any API key inside it";
+
+/** The same fact, short enough for the 60px sidebar rail */
+const PLAIN_EXPORT_NOTE = "Plain export includes your API key";
+
 /* ==================================================
  * Types
  * ================================================== */
@@ -98,7 +134,9 @@ interface Props {
 
 type PendingAction =
   | { kind: "encrypt-export"; data: TH4State }
-  | { kind: "decrypt-import"; envelope: EncryptedEnvelope };
+  | { kind: "decrypt-import"; envelope: EncryptedEnvelope }
+  /** A read-only message in the same dialog — the sidebar rail is too narrow to hold one */
+  | { kind: "notice"; message: string };
 
 /* ==================================================
  * Component
@@ -117,16 +155,33 @@ export default function StateIOButtons({ getState, setState }: Props) {
   const [busy, setBusy] = useState(false);
   /** The request whose result may still be applied; cleared when the dialog closes */
   const activeRef = useRef<PendingAction | null>(null);
+  /** The hidden file input the Import button clicks on the user's behalf */
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const isExport = pending?.kind === "encrypt-export";
 
-  const closeDialog = () => {
+  /** Drops any in-flight request and clears the dialog's transient fields */
+  const resetDialogState = () => {
     activeRef.current = null;
-    setPending(null);
     setPassword("");
     setConfirmPassword("");
     setError(null);
     setBusy(false);
+  };
+
+  const closeDialog = () => {
+    resetDialogState();
+    setPending(null);
+  };
+
+  /**
+   * Reports a failure the user cannot act on, in the dialog. alert() blocks
+   * the tab, ignores the theme and cannot be styled or tested; the sidebar
+   * rail it would otherwise sit next to is only 60px wide.
+   */
+  const showNotice = (message: string) => {
+    resetDialogState();
+    setPending({ kind: "notice", message });
   };
 
   const downloadJson = (contents: unknown) => {
@@ -175,6 +230,12 @@ export default function StateIOButtons({ getState, setState }: Props) {
 
     const reader = new FileReader();
 
+    // Without this a read failure (a directory, a revoked permission, an
+    // unreadable device) leaves the user staring at a picker that did nothing.
+    reader.onerror = () => {
+      showNotice("The file could not be read. Please try again.");
+    };
+
     reader.onload = (event) => {
       try {
         const parsed: unknown = JSON.parse(event.target?.result as string);
@@ -182,15 +243,21 @@ export default function StateIOButtons({ getState, setState }: Props) {
           setPending({ kind: "decrypt-import", envelope: parsed });
           return;
         }
+        if (isEncryptedFile(parsed)) {
+          // One of ours, but not a shape this build can decrypt. Saying so
+          // beats asking for a password we could never use.
+          showNotice(unsupportedFileMessage(parsed));
+          return;
+        }
         if (!isValidTH4State(parsed)) {
-          alert(
+          showNotice(
             "Invalid state file: the JSON does not match the expected format.",
           );
           return;
         }
         setState(parsed);
       } catch {
-        alert("Invalid JSON file: the file could not be parsed.");
+        showNotice("Invalid JSON file: the file could not be parsed.");
       }
     };
 
@@ -210,9 +277,14 @@ export default function StateIOButtons({ getState, setState }: Props) {
 
   /** Decrypts and validates the envelope; resolves to the import step */
   const decryptImport = async (envelope: EncryptedEnvelope) => {
-    const parsed: unknown = JSON.parse(
-      await decryptFromEnvelope(envelope, password),
-    );
+    const plaintext = await decryptFromEnvelope(envelope, password);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(plaintext);
+    } catch {
+      // Authenticated, so it was encrypted by something — just not by us.
+      throw new Error("The decrypted file is not valid JSON.");
+    }
     if (!isValidTH4State(parsed)) {
       throw new Error("Decrypted file does not match the expected format.");
     }
@@ -242,7 +314,7 @@ export default function StateIOButtons({ getState, setState }: Props) {
   };
 
   const handleSubmit = () => {
-    if (!pending || busy) return;
+    if (!pending || busy || pending.kind === "notice") return;
     if (password.length === 0) {
       setError(isExport ? "Enter a password." : "Enter the password.");
       return;
@@ -263,12 +335,14 @@ export default function StateIOButtons({ getState, setState }: Props) {
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       <EncryptToggleButton
+        type="button"
         enabled={encryptExports}
         onClick={() => setEncryptExports((v) => !v)}
+        aria-label="Encrypt export"
         title={
           encryptExports
             ? "Encrypted export: on — exported files are password-protected"
-            : "Encrypted export: off — exported files are plain text"
+            : PLAIN_EXPORT_WARNING
         }
         aria-pressed={encryptExports}
       >
@@ -280,21 +354,39 @@ export default function StateIOButtons({ getState, setState }: Props) {
       </EncryptToggleButton>
 
       {/* Export button */}
-      <SidebarButton onClick={handleExport} title="Export JSON">
+      <SidebarButton
+        type="button"
+        onClick={handleExport}
+        title={
+          encryptExports ? "Export JSON (encrypted)" : PLAIN_EXPORT_WARNING
+        }
+        aria-label="Export JSON"
+      >
         <Icons.DownloadIcon width={20} height={20} />
       </SidebarButton>
+      {!encryptExports && (
+        <PlainExportNote>{PLAIN_EXPORT_NOTE}</PlainExportNote>
+      )}
 
-      {/* Import button */}
-      <label>
-        <SidebarButton as="span" title="Import JSON">
-          <Icons.UploadIcon width={20} height={20} />
-        </SidebarButton>
-        <FileInput
-          type="file"
-          accept={`.${FILE_EXPORT_EXTENSION}`}
-          onChange={handleImport}
-        />
-      </label>
+      {/* Import button: a real button, not a <label> wrapping a <span>, so that
+          restoring a saved plan is reachable from the keyboard. The input stays
+          in the DOM but out of the tab order — clicking it is this button's job. */}
+      <SidebarButton
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        title="Import JSON"
+        aria-label="Import JSON"
+      >
+        <Icons.UploadIcon width={20} height={20} />
+      </SidebarButton>
+      <FileInput
+        ref={fileRef}
+        type="file"
+        tabIndex={-1}
+        aria-hidden
+        accept={`.${FILE_EXPORT_EXTENSION}`}
+        onChange={handleImport}
+      />
 
       <Dialog.Root
         open={pending !== null}
@@ -309,60 +401,77 @@ export default function StateIOButtons({ getState, setState }: Props) {
               <Icons.Cross2Icon />
             </DialogCloseButton>
 
-            {/* A real form lets the browser route Enter: submit from the inputs, activate on the buttons */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSubmit();
-              }}
-            >
-              <Title>{isExport ? "Encrypt export" : "Encrypted file"}</Title>
-              <Description>
-                {isExport
-                  ? "Choose a password to encrypt this file. You'll need it to import the file again — it isn't stored anywhere."
-                  : "This file is password-protected. Enter the password to import it."}
-              </Description>
-              <DialogLabel htmlFor="th4-password">Password</DialogLabel>
-              <Input
-                id="th4-password"
-                type="password"
-                autoFocus
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              {isExport && (
-                <>
-                  <DialogLabel htmlFor="th4-password-confirm">
-                    Confirm password
-                  </DialogLabel>
-                  <Input
-                    id="th4-password-confirm"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                  />
-                </>
-              )}
+            {pending?.kind === "notice" ? (
+              <>
+                <Title>Import failed</Title>
+                {/* asChild keeps Radix's aria-describedby on the message itself */}
+                <Dialog.Description asChild>
+                  <ErrorText css={{ margin: "0 0 1rem" }}>
+                    {pending.message}
+                  </ErrorText>
+                </Dialog.Description>
+                <ButtonRow>
+                  <ActionButton type="button" autoFocus onClick={closeDialog}>
+                    Close
+                  </ActionButton>
+                </ButtonRow>
+              </>
+            ) : (
+              /* A real form lets the browser route Enter: submit from the inputs, activate on the buttons */
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSubmit();
+                }}
+              >
+                <Title>{isExport ? "Encrypt export" : "Encrypted file"}</Title>
+                <Description>
+                  {isExport
+                    ? "Choose a password to encrypt this file. You'll need it to import the file again — it isn't stored anywhere."
+                    : "This file is password-protected. Enter the password to import it."}
+                </Description>
+                <DialogLabel htmlFor="th4-password">Password</DialogLabel>
+                <Input
+                  id="th4-password"
+                  type="password"
+                  autoFocus
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                {isExport && (
+                  <>
+                    <DialogLabel htmlFor="th4-password-confirm">
+                      Confirm password
+                    </DialogLabel>
+                    <Input
+                      id="th4-password-confirm"
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                    />
+                  </>
+                )}
 
-              {error && (
-                <ErrorText css={{ margin: "-0.5rem 0 0.85rem" }}>
-                  {error}
-                </ErrorText>
-              )}
+                {error && (
+                  <ErrorText css={{ margin: "-0.5rem 0 0.85rem" }}>
+                    {error}
+                  </ErrorText>
+                )}
 
-              <ButtonRow>
-                <SecondaryButton type="button" onClick={closeDialog}>
-                  Cancel
-                </SecondaryButton>
-                <ActionButton type="submit" disabled={busy}>
-                  {busy
-                    ? "Working…"
-                    : isExport
-                      ? "Encrypt & Download"
-                      : "Decrypt"}
-                </ActionButton>
-              </ButtonRow>
-            </form>
+                <ButtonRow>
+                  <SecondaryButton type="button" onClick={closeDialog}>
+                    Cancel
+                  </SecondaryButton>
+                  <ActionButton type="submit" disabled={busy}>
+                    {busy
+                      ? "Working…"
+                      : isExport
+                        ? "Encrypt & Download"
+                        : "Decrypt"}
+                  </ActionButton>
+                </ButtonRow>
+              </form>
+            )}
           </DialogContent>
         </Dialog.Portal>
       </Dialog.Root>

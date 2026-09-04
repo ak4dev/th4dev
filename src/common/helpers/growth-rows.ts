@@ -6,16 +6,39 @@
  *
  * Index conventions: growthMatrix[k] is the balance at
  * the END of year k+1 (there is no "today" entry), while
- * Monte Carlo band.year k indexes that lane's own path
- * (band 0 = the initial amount, band i = matrix[i-1]).
+ * a Monte Carlo band carries the month it describes.
  * Chart rows are keyed by months from today, so lanes with
- * different fractional horizons never share a row.
+ * different fractional horizons never share a row and a
+ * band never has to borrow a date from another lane.
  * ================================================== */
 
-import { addMonths, differenceInCalendarMonths, format } from "date-fns";
+import { addMonths } from "date-fns/addMonths";
+import { differenceInCalendarMonths } from "date-fns/differenceInCalendarMonths";
+import { format } from "date-fns/format";
 import { MONTHS_PER_YEAR } from "../constants/app-constants";
-import type { LineGraphEntry, RolloverAmounts } from "../types/types";
+import { planAnchor } from "./investment-growth-calculator";
+import type {
+  DisplayTrack,
+  LineGraphEntry,
+  RolloverAmounts,
+} from "../types/types";
 import type { PercentileBand } from "./monte-carlo";
+
+/* ---------- Display track ---------- */
+
+/**
+ * The series the Inflated toggle selects.
+ *
+ * This is the ONE place the toggle is turned into a track name. The engine
+ * computes both tracks and knows nothing about the switch, so a view that
+ * shows a balance says which of the two it is showing rather than inheriting
+ * a slot whose meaning moved with a flag.
+ *
+ * @param showInflation - Whether the Inflated toggle is on
+ * @returns The LineGraphEntry key to read
+ */
+export const displayTrack = (showInflation: boolean): DisplayTrack =>
+  showInflation ? "real" : "nominal";
 
 /* ---------- Chart rows ---------- */
 
@@ -40,13 +63,21 @@ export interface ChartRow extends Partial<Record<McSeriesKey, McRowBands>> {
 export interface ChartRowInputs {
   matrixA: LineGraphEntry[];
   matrixB?: LineGraphEntry[];
+  /** Which of each entry's two tracks is plotted */
+  track: DisplayTrack;
   /** Investment B is only plotted in advanced mode */
   advanced: boolean;
   /** Starting balances; when given, row 0 carries them so the lines start today */
   initialA?: number;
   initialB?: number;
-  /** Monte Carlo bands per series, keyed by index into that series' own path */
+  /** Monte Carlo bands per series; each band carries its own month */
   bands: Partial<Record<McSeriesKey, PercentileBand[]>>;
+  /**
+   * The anchor the matrices were simulated against. Pass the plan's own, so
+   * the rows are dated by the same clock that produced them; the default
+   * reads a fresh one, which is only safe because of the calendar-month
+   * arithmetic below.
+   */
   today?: Date;
 }
 
@@ -58,17 +89,14 @@ export interface ChartRowInputs {
 export function buildChartRows({
   matrixA,
   matrixB,
+  track,
   advanced,
   initialA,
   initialB,
   bands,
-  today = new Date(),
+  today = planAnchor(),
 }: ChartRowInputs): ChartRow[] {
   const matrixBRows = advanced ? (matrixB ?? []) : [];
-  const bandMaps = MC_SERIES_KEYS.map(
-    (key) =>
-      [key, new Map((bands[key] ?? []).map((b) => [b.year, b]))] as const,
-  );
 
   const byMonth = new Map<number, ChartRow>();
   const rowAt = (months: number): ChartRow => {
@@ -86,32 +114,27 @@ export function buildChartRows({
     }
     return row;
   };
-  // Calendar months so a sub-second clock difference between the calculator's
-  // "today" and this one cannot shift an entry into the previous month
+  // Calendar months, not elapsed time: an entry is dated `anchor + n months`,
+  // and this recovers n exactly. A caller that passes the plan's own anchor
+  // has one clock and nothing to defend against; one that lets `today`
+  // default has two, and only the calendar-month reading keeps a pair read
+  // either side of midnight from shifting an entry into the previous month.
   const monthsFromToday = (x: Date) => differenceInCalendarMonths(x, today);
 
   const first = rowAt(0);
   first.investmentA = initialA ?? null;
   first.investmentB = advanced ? (initialB ?? null) : null;
   for (const entry of matrixA)
-    rowAt(monthsFromToday(entry.x)).investmentA = entry.y;
+    rowAt(monthsFromToday(entry.x)).investmentA = entry[track];
   for (const entry of matrixBRows)
-    rowAt(monthsFromToday(entry.x)).investmentB = entry.y;
+    rowAt(monthsFromToday(entry.x)).investmentB = entry[track];
 
-  const seriesMatrix: Record<McSeriesKey, LineGraphEntry[]> = {
-    mc: matrixA,
-    mcB: matrixBRows,
-  };
-  // A band's `year` indexes its own path (a trailing partial year adds a final
-  // index), so resolve it through that lane's own matrix dates
-  const bandMonths = (key: McSeriesKey, year: number) => {
-    const entry = year > 0 ? seriesMatrix[key][year - 1] : undefined;
-    return entry ? monthsFromToday(entry.x) : year * MONTHS_PER_YEAR;
-  };
-
-  for (const [key, byYear] of bandMaps) {
-    for (const [year, band] of byYear) {
-      rowAt(bandMonths(key, year))[key] = {
+  // Bands are dated by the engine, in the same months-from-today units as the
+  // matrices, so a lane with a fractional horizon puts its trailing band on
+  // its own row and leaves the whole-year rows to the lanes that reach them
+  for (const key of MC_SERIES_KEYS) {
+    for (const band of bands[key] ?? []) {
+      rowAt(band.months)[key] = {
         p50: band.p50,
         outer: [band.p10, band.p90],
         inner: [band.p25, band.p75],
@@ -125,22 +148,21 @@ export function buildChartRows({
 /* ---------- Ending balance ---------- */
 
 /**
- * Both tracks of a lane's ending balance, for rolling into another lane. The
- * calculator stores the displayed series in `y` and the other in `alternateY`,
- * and a 0-year lane has no entries at all, so it ends where it started.
+ * Both tracks of a lane's ending balance, for rolling into another lane.
+ *
+ * The last matrix entry already carries both, so the display toggle does not
+ * enter into it. A 0-year lane has no entries at all, and ends where it
+ * started - on both tracks, since no time has passed to deflate.
  */
 export function endingAmounts(
   matrix: LineGraphEntry[],
-  showInflation: boolean,
   initialAmount: number,
 ): RolloverAmounts {
   const last = matrix.at(-1);
   if (!last) {
     return { nominal: initialAmount, inflationAdjusted: initialAmount };
   }
-  return showInflation
-    ? { nominal: last.alternateY, inflationAdjusted: last.y }
-    : { nominal: last.y, inflationAdjusted: last.alternateY };
+  return { nominal: last.nominal, inflationAdjusted: last.real };
 }
 
 /* ---------- Table rows ---------- */
@@ -154,17 +176,15 @@ export interface TableRow {
 }
 
 /**
- * The calculator stores the displayed series in `y` and the other in
- * `alternateY`, so the inflation toggle decides which slot is nominal.
+ * The year-by-year table prints BOTH tracks side by side, so it needs no
+ * display toggle: each entry already names which of its two numbers is which.
  */
 export function buildTableRows(
   matrix: LineGraphEntry[],
-  showInflation: boolean,
   initialAmount: number,
 ): TableRow[] {
   return matrix.map((entry) => {
-    const nominal = showInflation ? entry.alternateY : entry.y;
-    const inflationAdjusted = showInflation ? entry.y : entry.alternateY;
+    const { nominal, real: inflationAdjusted } = entry;
     const pctChange =
       initialAmount === 0
         ? 0

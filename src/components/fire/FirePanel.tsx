@@ -15,6 +15,11 @@ import {
 } from "../../common/constants/app-constants";
 import { calculateFire } from "../../common/helpers/fire-calculator";
 import { formatCurrency } from "../../common/helpers/format";
+import {
+  numericFieldKeyAction,
+  parseFieldValue,
+  sanitizeNumericText,
+} from "../../common/helpers/numeric-field";
 import { PanelContainer, PanelTitle, Separator } from "../ui/primitives";
 
 /* ---------- Props ---------- */
@@ -182,8 +187,7 @@ function NumField({
 
   const commit = () => {
     if (draft === null) return;
-    const n = decimal ? parseFloat(draft) : parseInt(draft, 10);
-    onCommit(Number.isNaN(n) ? fallback : Math.min(max, Math.max(min, n)));
+    onCommit(parseFieldValue(draft, { decimal, min, max, fallback }));
     setDraft(null);
   };
 
@@ -195,11 +199,14 @@ function NumField({
         type="text"
         inputMode={decimal ? "decimal" : "numeric"}
         value={draft ?? String(value)}
-        onChange={(e) =>
-          setDraft(e.target.value.replace(decimal ? /[^0-9.]/g : /[^0-9]/g, ""))
-        }
+        onChange={(e) => setDraft(sanitizeNumericText(e.target.value, decimal))}
         onBlur={commit}
-        onKeyDown={(e) => e.key === "Enter" && commit()}
+        onKeyDown={(e) => {
+          const action = numericFieldKeyAction(e.key);
+          if (action === "commit") commit();
+          // Escape discards the draft, the same as every other number box
+          if (action === "revert") setDraft(null);
+        }}
       />
     </InputCell>
   );

@@ -7,10 +7,8 @@
 
 import { useState } from "react";
 import { styled } from "../../../stitches.config";
-import {
-  generatePdfReport,
-  type PdfKeyValue,
-} from "../../common/helpers/pdf-export";
+import type { PdfKeyValue } from "../../common/helpers/pdf-report-data";
+import { ErrorText } from "../ui/primitives";
 
 /* ---------- Props ---------- */
 
@@ -50,6 +48,30 @@ const Button = styled("button", {
   },
 });
 
+/* ---------- Renderer ---------- */
+
+/**
+ * Fetches the PDF renderer on demand.
+ *
+ * jspdf and html2canvas are ~584 kB that only this button ever needs, so they
+ * are a lazy chunk rather than part of the entry bundle every visitor pays
+ * for. That chunk can fail to arrive - the user is offline, or the hashed
+ * asset 404s - and the message a module loader throws for that names a URL,
+ * which is not something a user can act on. So it is restated as advice and
+ * reported through the same ErrorText as any other export failure.
+ */
+async function loadPdfRenderer() {
+  try {
+    const { generatePdfReport } =
+      await import("../../common/helpers/pdf-export");
+    return generatePdfReport;
+  } catch {
+    throw new Error(
+      "the report tools could not be downloaded. Check your connection, reload the page and try again.",
+    );
+  }
+}
+
 /* ---------- Component ---------- */
 
 export default function PdfExportButton({
@@ -58,10 +80,13 @@ export default function PdfExportButton({
   metrics,
 }: PdfExportButtonProps) {
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleExport = async () => {
     setGenerating(true);
+    setError(null);
     try {
+      const generatePdfReport = await loadPdfRenderer();
       await generatePdfReport({
         title: "TH4 Investment Report",
         generatedAt: new Date().toLocaleString(),
@@ -71,14 +96,25 @@ export default function PdfExportButton({
           ? document.querySelector<HTMLElement>(chartSelector)
           : null,
       });
+    } catch (err) {
+      // Without this the button just slides back to "Export PDF" and the only
+      // trace of the failure is an unhandled rejection in the console.
+      setError(
+        err instanceof Error && err.message
+          ? `PDF export failed: ${err.message}`
+          : "PDF export failed. Please try again.",
+      );
     } finally {
       setGenerating(false);
     }
   };
 
   return (
-    <Button onClick={() => void handleExport()} disabled={generating}>
-      {generating ? "Generating..." : "Export PDF"}
-    </Button>
+    <>
+      <Button onClick={() => void handleExport()} disabled={generating}>
+        {generating ? "Generating..." : "Export PDF"}
+      </Button>
+      {error && <ErrorText css={{ marginTop: "6px" }}>{error}</ErrorText>}
+    </>
   );
 }

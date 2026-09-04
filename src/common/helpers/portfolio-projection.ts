@@ -2,7 +2,7 @@
  * Portfolio Capital Preservation Projection
  * ================================================== */
 
-import { addYears } from "date-fns";
+import { addYears } from "date-fns/addYears";
 import type {
   PortfolioHolding,
   PortfolioProjection,
@@ -14,12 +14,26 @@ import { MONTHS_PER_YEAR } from "../constants/app-constants";
  * Parameters
  * ================================================== */
 
+/**
+ * What this projection needs, in the plan's vocabulary where it shares one.
+ *
+ * `monthlyWithdrawal` IS PlanInputs.monthlyWithdrawal - the same quantity, in
+ * the same units (USD per month, nominal), under the same name, so a reader
+ * moving between this file and the engines does not have to check.
+ *
+ * The other three deliberately keep their own names because they are not plan
+ * fields: `totalPortfolioValue` is the value of the whole holdings basket
+ * rather than one lane's opening balance, `yearsForward` is how far this chart
+ * is drawn rather than a horizon anything is simulated over, and `holdings` has
+ * no counterpart at all. Forcing them into the shared shape would say they are
+ * interchangeable with plan inputs, and they are not.
+ */
 export interface ProjectionParams {
   /** Holdings that have a currentPrice set */
   holdings: PortfolioHolding[];
   /** Total portfolio value in USD today */
   totalPortfolioValue: number;
-  /** Total monthly withdrawal across the whole portfolio in USD */
+  /** Total monthly withdrawal across the whole portfolio in USD (PlanInputs.monthlyWithdrawal) */
   monthlyWithdrawal: number;
   /** Number of years forward to project */
   yearsForward: number;

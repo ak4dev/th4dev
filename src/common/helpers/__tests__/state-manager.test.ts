@@ -5,10 +5,12 @@
  * integrity of the state-manager module.
  * ================================================== */
 
-import { describe, it, expect } from "vitest";
+import { parseAmountInput } from "../format";
+import { describe, it, expect, expectTypeOf } from "vitest";
 import {
   isValidTH4State,
   normalizeState,
+  clampSlider,
   DEFAULT_STATE,
   DEFAULT_TOGGLES,
   DEFAULT_SLIDERS,
@@ -22,8 +24,17 @@ import {
   MAX_YEARS_OF_GROWTH,
   MAX_WITHDRAWAL_RATE,
   MAX_MONTHLY_WITHDRAWAL,
+  MAX_MONTHLY_WITHDRAWAL_LIMIT,
+  MAX_PROJECTED_GAIN,
+  DEFAULT_YEARS_OF_GROWTH,
+  LANE_IDS,
+  SLIDER_KEYS,
+  SLIDER_LIMITS,
+  laneKey,
 } from "../../constants/app-constants";
-import type { TH4State } from "../../types/types";
+import { getMonthlyTotal } from "../budget-manager";
+import type { SliderKey } from "../../constants/app-constants";
+import type { SliderValues, TH4State, TogglesState } from "../../types/types";
 import type { PortfolioHolding } from "../../types/portfolio-types";
 import type { ScenarioSnapshot } from "../scenario-manager";
 
@@ -314,14 +325,14 @@ describe("DEFAULT_SLIDERS completeness", () => {
   });
 
   it("includes dynamic withdrawal defaults for both lanes", () => {
-    for (const lane of ["A", "B"]) {
-      expect(DEFAULT_SLIDERS[`withdrawalRate${lane}`]).toBe(
+    for (const lane of LANE_IDS) {
+      expect(DEFAULT_SLIDERS[laneKey("withdrawalRate", lane)]).toBe(
         DEFAULT_WITHDRAWAL_RATE,
       );
-      expect(DEFAULT_SLIDERS[`withdrawalFloor${lane}`]).toBe(
+      expect(DEFAULT_SLIDERS[laneKey("withdrawalFloor", lane)]).toBe(
         DEFAULT_WITHDRAWAL_FLOOR,
       );
-      expect(DEFAULT_SLIDERS[`withdrawalCeiling${lane}`]).toBe(
+      expect(DEFAULT_SLIDERS[laneKey("withdrawalCeiling", lane)]).toBe(
         DEFAULT_WITHDRAWAL_CEILING,
       );
     }
@@ -330,6 +341,25 @@ describe("DEFAULT_SLIDERS completeness", () => {
   it("carries no keys nothing reads", () => {
     expect(DEFAULT_SLIDERS).not.toHaveProperty("investmentA");
     expect(DEFAULT_SLIDERS).not.toHaveProperty("investmentB");
+  });
+
+  it("keeps a FIRE slider the user set to 0", () => {
+    // 0 is an answer, not a gap: a budget of zero-amount items pushes an
+    // annual total of 0 into fireAnnualExpenses, and it used to be shown and
+    // computed as the $40,000 default
+    const result = normalizeState({
+      ...bareState,
+      sliders: {
+        fireAnnualExpenses: 0,
+        fireSWR: 0,
+        fireCurrentAge: 0,
+        fireRetirementAge: 0,
+      },
+    });
+    expect(result.sliders.fireAnnualExpenses).toBe(0);
+    expect(result.sliders.fireSWR).toBe(0);
+    expect(result.sliders.fireCurrentAge).toBe(0);
+    expect(result.sliders.fireRetirementAge).toBe(0);
   });
 
   it("normalizeState fills missing FIRE/fee/volatility/withdrawal sliders", () => {
@@ -343,6 +373,108 @@ describe("DEFAULT_SLIDERS completeness", () => {
     expect(result.sliders.volatilityA).toBe(12);
     expect(result.sliders.withdrawalRateB).toBe(DEFAULT_WITHDRAWAL_RATE);
     expect(result.sliders.withdrawalCeilingB).toBe(DEFAULT_WITHDRAWAL_CEILING);
+  });
+});
+
+/* ---------- Contribution stop year ---------- */
+
+/** The `value` attribute of the input carrying `name` as its accessible name */
+const inputValue = (html: string, name: string): string | undefined => {
+  const tag = new RegExp(`<input[^>]*aria-label="${name}"[^>]*>`).exec(
+    html,
+  )?.[0];
+  return tag === undefined ? undefined : /value="([^"]*)"/.exec(tag)?.[1];
+};
+
+describe("contribution stop year is deliberately undefaulted", () => {
+  it("is absent from DEFAULT_SLIDERS and stays absent through normalizeState", () => {
+    // The absence IS the feature: unset means "contribute for this lane's
+    // whole horizon". DefaultedSliderKey cannot catch a default being added,
+    // because an object built by spreads is not excess-property-checked, so
+    // this test is the only thing standing between the app and a stop year
+    // frozen at DEFAULT_YEARS_OF_GROWTH.
+    for (const lane of LANE_IDS) {
+      const key = laneKey("contributionStopYear", lane);
+      expect(Object.hasOwn(DEFAULT_SLIDERS, key)).toBe(false);
+      expect(Object.hasOwn(normalizeState(bareState).sliders, key)).toBe(false);
+    }
+  });
+
+  it("lets the hub's stop year follow a Years slider moved past the default", async () => {
+    // The regression this guards: give contributionStopYear a default and a
+    // 40-year plan silently stops contributing at year 30. The hub is
+    // imported lazily so the rest of this file does not pay for the charting
+    // stack it pulls in.
+    const [{ default: Hub }, { renderToStaticMarkup }, { createElement }] =
+      await Promise.all([
+        import("../../../components/InvestmentCalculatorModern"),
+        import("react-dom/server"),
+        import("react"),
+      ]);
+    const years = DEFAULT_YEARS_OF_GROWTH + 10;
+    const state = normalizeState({
+      ...bareState,
+      sliders: { yearsOfGrowthA: years },
+      toggles: { ...DEFAULT_TOGGLES, advanced: true },
+    });
+    const html = renderToStaticMarkup(
+      createElement(Hub, {
+        theme: DEFAULT_THEME,
+        setTheme: () => {},
+        sliders: state.sliders,
+        setSliders: () => {},
+        inputs: state.inputs,
+        setInputs: () => {},
+        toggles: state.toggles,
+        setToggles: () => {},
+        stockApiUrl: "",
+        stockHoldings: [],
+        setStockHoldings: () => {},
+        budgetItems: [],
+        setBudgetItems: () => {},
+        scenarios: [],
+        setScenarios: () => {},
+      } as never),
+    );
+    expect(inputValue(html, "Investment A Contribution Stop Year")).toBe(
+      String(years),
+    );
+  });
+});
+
+/* ---------- Key vocabulary ---------- */
+
+describe("slider key vocabulary", () => {
+  it("admits every real key and rejects a typo", () => {
+    // Erased at runtime: these are checked by `tsc -b`, which is the only
+    // place a mistyped key can be caught before it reads as a silent 0.
+    expectTypeOf<"projectedGainA">().toExtend<SliderKey>();
+    expectTypeOf<"contributionStopYearB">().toExtend<SliderKey>();
+    expectTypeOf<"yearlyInflation">().toExtend<SliderKey>();
+    expectTypeOf<"projectdGainA">().not.toExtend<SliderKey>();
+    expectTypeOf<"projectedGainC">().not.toExtend<SliderKey>();
+    expectTypeOf<"currentAmountA">().not.toExtend<SliderKey>();
+    // SLIDER_LIMITS is the map every stored value is re-read through, so its
+    // keys and the union must be the same set in both directions
+    expectTypeOf<keyof typeof SLIDER_LIMITS>().toEqualTypeOf<SliderKey>();
+    // The one asymmetry the app depends on, stated as a type
+    expectTypeOf<SliderValues["projectedGainA"]>().toEqualTypeOf<number>();
+    expectTypeOf<SliderValues["contributionStopYearA"]>().toEqualTypeOf<
+      number | undefined
+    >();
+    // A runtime assertion so the case is not vacuous when types are stripped
+    expect(SLIDER_KEYS).toContain("projectedGainA");
+  });
+
+  it("keeps the runtime allow-list and SLIDER_LIMITS in step", () => {
+    expect([...SLIDER_KEYS].sort()).toEqual(Object.keys(SLIDER_LIMITS).sort());
+    // Every default names a key the app knows; the reverse does not hold,
+    // which is exactly the contributionStopYear case above
+    expect(
+      Object.keys(DEFAULT_SLIDERS).filter(
+        (key) => !SLIDER_KEYS.includes(key as SliderKey),
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -462,13 +594,41 @@ describe("import sanitisation", () => {
     expect(result.sliders.withdrawalCeilingA).toBe(3000);
     expect(result.sliders.withdrawalFloorB).toBe(500);
     expect(result.sliders.withdrawalCeilingB).toBe(4000);
-    // A floor above the slider maximum is clamped first, so the ceiling never exceeds the range
-    const capped = normalizeState({
+  });
+
+  it("keeps a withdrawal guardrail above the slider span and lifts its ceiling to match", () => {
+    // $50,000/mo is beyond what the slider can show but well within what a
+    // large portfolio spends. It used to come back as $10,000 - a plan the
+    // user never wrote - so the survival of the stored figure is pinned here
+    const saved = normalizeState({
       ...bareState,
       sliders: { withdrawalFloorA: 50000, withdrawalCeilingA: 0 },
     });
-    expect(capped.sliders.withdrawalFloorA).toBe(MAX_MONTHLY_WITHDRAWAL);
-    expect(capped.sliders.withdrawalCeilingA).toBe(MAX_MONTHLY_WITHDRAWAL);
+    expect(50000).toBeGreaterThan(MAX_MONTHLY_WITHDRAWAL);
+    expect(saved.sliders.withdrawalFloorA).toBe(50000);
+    expect(saved.sliders.withdrawalCeilingA).toBe(50000);
+    expect(
+      normalizeState({ ...bareState, sliders: { monthlyWithdrawalA: 50000 } })
+        .sliders.monthlyWithdrawalA,
+    ).toBe(50000);
+  });
+
+  it("still clamps a withdrawal figure past the sanity bound", () => {
+    const absurd = normalizeState({
+      ...bareState,
+      sliders: {
+        withdrawalFloorA: 5_000_000,
+        withdrawalCeilingA: 0,
+        monthlyWithdrawalB: 9e9,
+      },
+    });
+    expect(absurd.sliders.withdrawalFloorA).toBe(MAX_MONTHLY_WITHDRAWAL_LIMIT);
+    expect(absurd.sliders.withdrawalCeilingA).toBe(
+      MAX_MONTHLY_WITHDRAWAL_LIMIT,
+    );
+    expect(absurd.sliders.monthlyWithdrawalB).toBe(
+      MAX_MONTHLY_WITHDRAWAL_LIMIT,
+    );
   });
 
   it("drops non-string input values from imported state", () => {
@@ -495,6 +655,8 @@ describe("import sanitisation", () => {
           { symbol: "MSFT", allocationPct: "50" },
           { notASymbol: true },
           null,
+          // A row whose only defect is its price keeps its position and
+          // loses the price — see "unusable holding prices" below
           { symbol: "GOOG", allocationPct: 50, currentPrice: NaN },
           { symbol: "AMZN", allocationPct: 25, currentPrice: 180.5 },
         ] as unknown as PortfolioHolding[],
@@ -503,8 +665,10 @@ describe("import sanitisation", () => {
     const result = normalizeState(dirty);
     expect(result.stock.holdings.map((h) => h.symbol)).toEqual([
       "AAPL",
+      "GOOG",
       "AMZN",
     ]);
+    expect(result.stock.holdings[1].currentPrice).toBeUndefined();
   });
 
   it("drops malformed budget items from imported state", () => {
@@ -521,6 +685,23 @@ describe("import sanitisation", () => {
     expect(result.budgetItems[0].name).toBe("Rent");
   });
 
+  it("drops non-finite budget amounts and clamps a negative one to zero", () => {
+    const result = normalizeState({
+      ...fullExport,
+      budgetItems: [
+        { id: "a", name: "Rent", amount: 1200, category: "Housing" },
+        { id: "b", name: "Broken", amount: NaN, category: "Food" },
+        { id: "c", name: "Runaway", amount: Infinity, category: "Food" },
+        { id: "d", name: "Refund", amount: -500, category: "Other" },
+      ],
+    });
+    // The named expense line survives; only its sign is corrected
+    expect(result.budgetItems.map((i) => i.name)).toEqual(["Rent", "Refund"]);
+    expect(result.budgetItems[1].amount).toBe(0);
+    // The FIRE number is computed off this total, so it must stay finite
+    expect(getMonthlyTotal(result.budgetItems)).toBe(1200);
+  });
+
   it("supports fractional year slider values", () => {
     const result = normalizeState({
       ...fullExport,
@@ -532,5 +713,267 @@ describe("import sanitisation", () => {
     });
     expect(result.sliders.yearsOfGrowthA).toBe(10.5);
     expect(result.sliders.withdrawalStartYearA).toBe(2.5);
+  });
+});
+
+/* ---------- Legacy shapes ---------- */
+
+describe("legacy shape migration", () => {
+  /** What a build before the { stock } nesting exported and persisted */
+  const legacyState = {
+    theme: "nord",
+    sliders: {},
+    inputs: {},
+    toggles: LEGACY_TOGGLES,
+    stockApiUrl: "https://legacy.example.com/quote?symbol={symbol}",
+    stockHoldings: [
+      { symbol: "AAPL", allocationPct: 100, currentPrice: 10 },
+    ] as PortfolioHolding[],
+  } as unknown as TH4State;
+
+  it("lifts top-level stockApiUrl/stockHoldings into stock", () => {
+    // The guard has always accepted this shape — normalizeState used to
+    // substitute DEFAULT_STATE.stock, so a file import silently dropped the
+    // whole portfolio while localStorage hydration kept it
+    expect(isValidTH4State(legacyState)).toBe(true);
+    const result = normalizeState(legacyState);
+    expect(result.stock.apiUrl).toBe(
+      "https://legacy.example.com/quote?symbol={symbol}",
+    );
+    expect(result.stock.holdings).toEqual([
+      { symbol: "AAPL", allocationPct: 100, currentPrice: 10 },
+    ]);
+  });
+
+  it("ignores the legacy keys once the nested stock is present", () => {
+    const result = normalizeState({
+      ...legacyState,
+      stock: { apiUrl: "https://current.example.com", holdings: [] },
+    } as unknown as TH4State);
+    expect(result.stock.apiUrl).toBe("https://current.example.com");
+    expect(result.stock.holdings).toEqual([]);
+  });
+
+  it("falls back to defaults when a legacy key is malformed", () => {
+    const result = normalizeState({
+      ...legacyState,
+      stockApiUrl: 42,
+      stockHoldings: "AAPL",
+    } as unknown as TH4State);
+    expect(result.stock.apiUrl).toBe(DEFAULT_STATE.stock.apiUrl);
+    expect(result.stock.holdings).toEqual([]);
+  });
+});
+
+/* ---------- Holding repair ---------- */
+
+describe("holding sanitisation", () => {
+  /** Builds a state carrying exactly these holdings */
+  const withHoldings = (holdings: unknown[]): TH4State =>
+    ({
+      ...fullExport,
+      stock: { apiUrl: "https://example.com", holdings },
+    }) as unknown as TH4State;
+
+  it("keeps a holding whose only defect is an unusable price", () => {
+    const result = normalizeState(
+      withHoldings([
+        { symbol: "AAPL", allocationPct: 25, currentPrice: -3, startPrice: 90 },
+        { symbol: "MSFT", allocationPct: 25, currentPrice: NaN, startPrice: 0 },
+      ]),
+    );
+    expect(result.stock.holdings.map((h) => h.symbol)).toEqual([
+      "AAPL",
+      "MSFT",
+    ]);
+    expect(result.stock.holdings[0].currentPrice).toBeUndefined();
+    expect(result.stock.holdings[0].startPrice).toBe(90);
+    expect(result.stock.holdings[1].currentPrice).toBeUndefined();
+    expect(result.stock.holdings[1].startPrice).toBeUndefined();
+  });
+
+  it("blanks an unparseable projectionStartDate and keeps the holding", () => {
+    const result = normalizeState(
+      withHoldings([
+        {
+          symbol: "AAPL",
+          allocationPct: 50,
+          currentPrice: 100,
+          startPrice: 90,
+          projectionStartDate: "not-a-date",
+        },
+        {
+          symbol: "MSFT",
+          allocationPct: 50,
+          projectionStartDate: "2025-01-01T00:00:00.000Z",
+        },
+      ]),
+    );
+    expect(result.stock.holdings).toHaveLength(2);
+    // A NaN elapsed time would render "$NaN" as the required price today
+    expect(result.stock.holdings[0].projectionStartDate).toBeUndefined();
+    expect(result.stock.holdings[0].currentPrice).toBe(100);
+    expect(result.stock.holdings[1].projectionStartDate).toBe(
+      "2025-01-01T00:00:00.000Z",
+    );
+  });
+
+  it("collapses case-variant duplicates into the first occurrence", () => {
+    const result = normalizeState(
+      withHoldings([
+        { symbol: "aapl", allocationPct: 60 },
+        { symbol: "MSFT", allocationPct: 10 },
+        {
+          symbol: " AAPL ",
+          allocationPct: 70,
+          currentPrice: 180,
+          projectionStartDate: "2025-01-01T00:00:00.000Z",
+        },
+      ]),
+    );
+    // One row per symbol, in first-occurrence order, upper-cased
+    expect(result.stock.holdings.map((h) => h.symbol)).toEqual([
+      "AAPL",
+      "MSFT",
+    ]);
+    // Allocations sum, capped at the whole portfolio
+    expect(result.stock.holdings[0].allocationPct).toBe(100);
+    // The duplicate only fills in what the first occurrence lacked
+    expect(result.stock.holdings[0].currentPrice).toBe(180);
+    expect(result.stock.holdings[0].projectionStartDate).toBe(
+      "2025-01-01T00:00:00.000Z",
+    );
+  });
+
+  it("de-duplicates the legacy symbols list too", () => {
+    const result = normalizeState({
+      ...bareState,
+      stock: {
+        apiUrl: "https://example.com",
+        symbols: ["aapl", "AAPL", " goog "],
+      } as unknown as TH4State["stock"],
+    });
+    expect(result.stock.holdings.map((h) => h.symbol)).toEqual([
+      "AAPL",
+      "GOOG",
+    ]);
+  });
+});
+
+/* ---------- Key allow-lists ---------- */
+
+describe("state key allow-lists", () => {
+  it("drops unknown and prototype-named slider keys, keeping contributionStopYear", () => {
+    // JSON.parse makes "__proto__" an own property, exactly as a file import would
+    const sliders = JSON.parse(
+      '{"junkKey":1e300,"__proto__":5,"constructor":7,"toString":9,"contributionStopYearA":12,"projectedGainA":9}',
+    ) as Record<string, number>;
+    const result = normalizeState({ ...bareState, sliders });
+
+    expect(Object.hasOwn(result.sliders, "junkKey")).toBe(false);
+    expect(Object.hasOwn(result.sliders, "__proto__")).toBe(false);
+    expect(Object.hasOwn(result.sliders, "constructor")).toBe(false);
+    expect(Object.hasOwn(result.sliders, "toString")).toBe(false);
+    // A prototype-named key used to resolve against Object.prototype and
+    // write NaN into React state
+    expect(Object.values(result.sliders).every(Number.isFinite)).toBe(true);
+    expect(Object.getPrototypeOf(result.sliders)).toBe(Object.prototype);
+
+    // contributionStopYear lives only in SLIDER_LIMITS — the union that
+    // builds the allow-list is what keeps the user's value
+    expect(result.sliders.contributionStopYearA).toBe(12);
+    expect(result.sliders.projectedGainA).toBe(9);
+  });
+
+  it("drops unknown input and toggle keys", () => {
+    const result = normalizeState({
+      ...bareState,
+      inputs: { currentAmountA: "500", junkInput: "x" },
+      toggles: {
+        ...DEFAULT_TOGGLES,
+        evil: { big: "xxxxxxxxxx" },
+      } as unknown as TogglesState,
+    });
+    expect(result.inputs.currentAmountA).toBe("500");
+    expect(Object.hasOwn(result.inputs, "junkInput")).toBe(false);
+    expect(Object.hasOwn(result.toggles, "evil")).toBe(false);
+    expect(Object.keys(result.toggles).sort()).toEqual(
+      Object.keys(DEFAULT_TOGGLES).sort(),
+    );
+  });
+
+  it("keeps every key the app actually reads on a full round trip", () => {
+    const sliders: SliderValues = {
+      ...DEFAULT_SLIDERS,
+      contributionStopYearB: 8,
+    };
+    const result = normalizeState({ ...bareState, sliders });
+    for (const key of Object.keys(sliders) as SliderKey[])
+      expect(result.sliders[key]).toBe(sliders[key]);
+  });
+});
+
+/* ---------- Value gates ---------- */
+
+describe("clampSlider", () => {
+  it("returns a key with no declared range untouched", () => {
+    // SliderKey no longer admits these, so the casts are the point: they are
+    // how a key from a hand-edited file reaches the runtime guard. Every one
+    // of them must pass through rather than collapse to NaN against a missing
+    // limit — contributionStopYear, by contrast, does have a range.
+    const junk = (key: string) => clampSlider(key as SliderKey, 7);
+    expect(clampSlider("noSuchSlider" as SliderKey, 1e9)).toBe(1e9);
+    expect(clampSlider("noSuchSlider" as SliderKey, -42)).toBe(-42);
+    // A prototype-named key resolves to an Object.prototype member, whose
+    // `.max` is undefined and whose Math.min is NaN
+    expect(junk("constructor")).toBe(7);
+    expect(junk("__proto__")).toBe(7);
+  });
+
+  it("clamps both ends of a key that has one", () => {
+    expect(clampSlider("projectedGainA", 999)).toBe(MAX_PROJECTED_GAIN);
+    expect(clampSlider("projectedGainA", -1)).toBe(0);
+    expect(clampSlider("projectedGainA", 7.5)).toBe(7.5);
+    expect(clampSlider("yearsOfGrowthB", 1e7)).toBe(MAX_YEARS_OF_GROWTH);
+  });
+
+  it("is the rule normalizeState applies, key for key", () => {
+    const dirty = { projectedGainA: 99, monthlyWithdrawalA: 50000 };
+    const result = normalizeState({ ...bareState, sliders: dirty });
+    for (const [key, value] of Object.entries(dirty) as [SliderKey, number][])
+      expect(result.sliders[key]).toBe(clampSlider(key, value));
+  });
+});
+
+describe("parseAmountInput", () => {
+  it("reads a pasted, fully decorated amount as itself", () => {
+    // Stripping the decimal point concatenated the digits either side of it:
+    // a quarter of a million dollars became twenty-five million
+    expect(parseAmountInput("$250,000.00")).toBe(250000);
+    expect(parseAmountInput("$250,000.00")).not.toBe(25000000);
+    expect(parseAmountInput("10000")).toBe(10000);
+    expect(parseAmountInput("1,234")).toBe(1234);
+    expect(parseAmountInput("0")).toBe(0);
+  });
+
+  it("stops at a second decimal point instead of corrupting the number", () => {
+    expect(parseAmountInput("1.2.3")).toBe(1.2);
+    expect(parseAmountInput("250000.75")).toBe(250000.75);
+  });
+
+  it("reports text holding no number as NaN, leaving the fallback to the caller", () => {
+    // Every call site commits `parseAmountInput(text) || 0`, so a blank box
+    // is a $0 plan; the box itself renders empty rather than "$NaN"
+    expect(parseAmountInput("")).toBeNaN();
+    expect(parseAmountInput("abc")).toBeNaN();
+    expect(parseAmountInput("$")).toBeNaN();
+    expect(parseAmountInput("abc") || 0).toBe(0);
+  });
+
+  it("keeps a negative amount negative so the caller can reject it", () => {
+    // Stripping the sign would turn a typed "-500" into a $500 plan, which is
+    // the same class of silent rewrite as the $250,000.00 paste bug.
+    expect(parseAmountInput("-500")).toBe(-500);
+    expect(parseAmountInput("$-1,200.50")).toBe(-1200.5);
   });
 });

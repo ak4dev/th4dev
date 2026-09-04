@@ -12,11 +12,15 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { format } from "date-fns";
+import { format } from "date-fns/format";
 import { styled } from "../../../stitches.config";
 import type { PortfolioProjection } from "../../common/types/portfolio-types";
 import { CHART_HEIGHT } from "../../common/constants/app-constants";
 import { formatPrice } from "../../common/helpers/format";
+import {
+  CHART_TOOLTIP_CONTENT_STYLE,
+  CHART_TOOLTIP_ITEM_STYLE,
+} from "../ui/primitives";
 
 /* ==================================================
  * Styled Components
@@ -42,6 +46,10 @@ const ChartTitle = styled("h4", {
 /* ==================================================
  * Constants
  * ================================================== */
+
+/** Grid lines: the theme's comment colour, faint enough to stay behind the data */
+const GRID_STROKE =
+  "color-mix(in srgb, var(--colors-comment) 25%, transparent)";
 
 /** Recharts line colors cycled for each symbol */
 const LINE_COLORS = [
@@ -92,7 +100,7 @@ export default function PortfolioProjectionChart({
       <ChartTitle>Required Share Price Projection</ChartTitle>
       <ResponsiveContainer width="100%" height="92%">
         <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#55555533" />
+          <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
           <XAxis
             dataKey="date"
             tick={{ fontSize: 12, fill: fg }}
@@ -113,14 +121,8 @@ export default function PortfolioProjectionChart({
               v != null ? formatPrice(v) : ""
             }
             labelFormatter={(label) => `Year: ${label}`}
-            contentStyle={{
-              backgroundColor: "var(--colors-currentLine)",
-              border: "1px solid var(--colors-foreground)",
-              color: "var(--colors-foreground)",
-              borderRadius: 6,
-              fontSize: 12,
-            }}
-            itemStyle={{ color: "var(--colors-foreground)" }}
+            contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+            itemStyle={CHART_TOOLTIP_ITEM_STYLE}
           />
           <Legend
             verticalAlign="top"
@@ -136,6 +138,7 @@ export default function PortfolioProjectionChart({
               strokeWidth={2}
               dot={false}
               name={sym}
+              isAnimationActive={false}
             />
           ))}
         </LineChart>

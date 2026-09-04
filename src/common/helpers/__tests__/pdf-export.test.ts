@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import html2canvas from "html2canvas";
 import {
   generatePdfReport,
-  dynamicWithdrawalAssumptions,
+  dynamicWithdrawalAssumptions as reExportedFromRenderer,
   type PdfReportData,
 } from "../pdf-export";
+import { dynamicWithdrawalAssumptions } from "../pdf-report-data";
 
 const { doc } = vi.hoisted(() => ({
   doc: {
@@ -62,6 +66,18 @@ const fakeCanvas = {
   toDataURL: () => "data:image/png;base64,chart",
 };
 
+/**
+ * Pretends the machine sits in `tz` at `utcInstant`. The worker clock is pinned
+ * to UTC (vitest.config.ts), so a filename assertion only proves the export
+ * names the file after the LOCAL calendar day if the zone is moved off UTC
+ * first — under TZ=UTC the local and UTC dates are identical and the assertion
+ * would pass against a UTC-based implementation too.
+ */
+const atLocalTime = (tz: string, utcInstant: string) => {
+  vi.stubEnv("TZ", tz);
+  vi.setSystemTime(new Date(utcInstant));
+};
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(2026, 0, 15, 12));
@@ -70,13 +86,26 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.clearAllMocks();
 });
 
 describe("generatePdfReport", () => {
-  it("saves the report under a dated filename", async () => {
+  it("saves the report under a locally-dated filename", async () => {
+    // UTC+14: 11:30 on Jan 1 UTC is already 01:30 on Jan 2 where the user is,
+    // so a UTC-derived filename would be stamped with yesterday's date.
+    atLocalTime("Pacific/Kiritimati", "2025-01-01T11:30:00Z");
     await generatePdfReport(report());
-    expect(doc.save).toHaveBeenCalledWith("investment-report-2026-01-15.pdf");
+    expect(doc.save).toHaveBeenCalledWith("investment-report-2025-01-02.pdf");
+  });
+
+  it("dates the filename by the local day west of UTC too", async () => {
+    // UTC-10: 01:30 on Jan 1 UTC is still 15:30 on Dec 31 locally. The calendar
+    // year (2024) also differs from the ISO week-year (2025) here, so a "YYYY"
+    // format token instead of "yyyy" would fail this too.
+    atLocalTime("Pacific/Honolulu", "2025-01-01T01:30:00Z");
+    await generatePdfReport(report());
+    expect(doc.save).toHaveBeenCalledWith("investment-report-2024-12-31.pdf");
   });
 
   it("writes the title, timestamp and every label/value pair", async () => {
@@ -176,6 +205,69 @@ describe("generatePdfReport", () => {
 
     expect(doc.addImage).not.toHaveBeenCalled();
     expect(doc.save).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* ---------- Module graph ---------- */
+
+const HELPERS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/** The first of `base`.ts / `base`.tsx / `base`/index.ts that exists on disk */
+const sourceFile = (base: string): string => {
+  for (const candidate of [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`]) {
+    try {
+      readFileSync(candidate, "utf8");
+      return candidate;
+    } catch {
+      // try the next extension
+    }
+  }
+  throw new Error(`no source file for ${base}`);
+};
+
+/**
+ * Every package `entry` can reach by following relative imports.
+ *
+ * The point of the split is a fact about the module graph, not about one
+ * function's output: nothing the hub imports on every render may lead to the
+ * PDF renderer, or the ~584 kB of jspdf and html2canvas is back in the entry
+ * chunk for every visitor. Only the source text can say that here, because
+ * both packages are mocked in this file.
+ */
+const packagesReachedFrom = (entry: string): Set<string> => {
+  const packages = new Set<string>();
+  const seen = new Set<string>();
+  const visit = (file: string) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    for (const [, specifier] of readFileSync(file, "utf8").matchAll(
+      /^\s*(?:import|export)[^"']*?from "([^"]+)";/gm,
+    )) {
+      if (specifier.startsWith("."))
+        visit(sourceFile(resolve(dirname(file), specifier)));
+      else packages.add(specifier);
+    }
+  };
+  visit(entry);
+  return packages;
+};
+
+describe("pdf-report-data", () => {
+  it("reaches no PDF renderer, while pdf-export does", () => {
+    const renderer = packagesReachedFrom(resolve(HELPERS_DIR, "pdf-export.ts"));
+    const data = packagesReachedFrom(
+      resolve(HELPERS_DIR, "pdf-report-data.ts"),
+    );
+
+    // The positive half proves the scan can see a renderer import at all
+    expect(renderer).toContain("jspdf");
+    expect(renderer).toContain("html2canvas");
+    expect(data).not.toContain("jspdf");
+    expect(data).not.toContain("html2canvas");
+  });
+
+  it("is the single definition, re-exported by the renderer unchanged", () => {
+    expect(reExportedFromRenderer).toBe(dynamicWithdrawalAssumptions);
   });
 });
 

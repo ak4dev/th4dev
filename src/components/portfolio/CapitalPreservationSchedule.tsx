@@ -2,10 +2,10 @@
  * Capital Preservation Schedule
  * ================================================== */
 
-import { useState, Fragment } from "react";
-import { format } from "date-fns";
+import { useState, useMemo, Fragment } from "react";
+import { format } from "date-fns/format";
 import { styled } from "../../../stitches.config";
-import type { LineGraphEntry } from "../../common/types/types";
+import type { DisplayTrack, LineGraphEntry } from "../../common/types/types";
 import type { PortfolioHolding } from "../../common/types/portfolio-types";
 import { interpolateDailyForMonth } from "../../common/helpers/interpolate-daily";
 import {
@@ -13,11 +13,16 @@ import {
   withdrawalRowIndex,
   type ScheduleGranularity,
 } from "../../common/helpers/preservation-schedule";
+import { planAnchor } from "../../common/helpers/investment-growth-calculator";
 import { formatPrice, formatSignedPercent } from "../../common/helpers/format";
 
 /* ==================================================
  * Styled Components
  * ================================================== */
+
+/** Theme token at `pct`% opacity, so row tints follow the active theme */
+const tint = (token: string, pct: number) =>
+  `color-mix(in srgb, var(--colors-${token}) ${pct}%, transparent)`;
 
 const Container = styled("div", {
   marginTop: "16px",
@@ -120,26 +125,26 @@ const Th = styled("th", {
 
 const Td = styled("td", {
   padding: "3px 10px",
-  borderBottom: "1px solid rgba(128,128,128,0.1)",
+  borderBottom: `1px solid ${tint("comment", 25)}`,
   textAlign: "right",
   fontVariantNumeric: "tabular-nums",
   "&:first-child": { textAlign: "left", color: "$comment" },
   variants: {
     highlight: {
       true: {
-        backgroundColor: "rgba(189,147,249,0.12)",
+        backgroundColor: tint("purple", 12),
         fontWeight: 600,
       },
     },
     highlightB: {
       true: {
-        backgroundColor: "rgba(80,250,123,0.08)",
+        backgroundColor: tint("green", 10),
         fontWeight: 600,
       },
     },
     daily: {
       true: {
-        backgroundColor: "rgba(98,114,164,0.08)",
+        backgroundColor: tint("comment", 10),
         fontSize: "0.7rem",
       },
     },
@@ -229,6 +234,33 @@ interface CapitalPreservationScheduleProps {
    * so the schedule prepends one from `initialValue`.
    */
   growthMatrix: LineGraphEntry[];
+  /**
+   * Month-by-month matrix from InvestmentCalculator.getMonthlyMatrix(), on the
+   * same convention: entry[i] is the balance i+1 MONTHS from today.
+   *
+   * The monthly view prints these when they are supplied, because they are
+   * the balances the plan actually held. Without them it interpolates a
+   * straight line between year ends, which smears a mid-year step - a
+   * withdrawal starting at 0.5 years, a rollover landing there - across the
+   * whole year and shows a balance that was never reached.
+   *
+   * Optional so the panel keeps working for a caller that only has year ends;
+   * PortfolioPanel should carry the lane's monthly matrix through alongside
+   * `growthMatrix` so the real path is what gets printed.
+   */
+  monthlyMatrix?: LineGraphEntry[];
+  /**
+   * Which of each entry's two tracks the projected values are read from.
+   *
+   * The hub passes the track the rest of the screen is showing, which keeps
+   * this panel in step with the chart and the totals box. It is NOT
+   * self-evidently the right choice for a required PRICE: `currentPrice` and
+   * every other quantity compared against it are nominal, so an "Inflated"
+   * screen measures a deflated balance against a live quote. That is a
+   * separate, deliberate question about what this panel should show (audit
+   * finding 54) and is not decided by the rename that introduced this prop.
+   */
+  track: DisplayTrack;
   /** The lane's balance today (the calculator's starting amount) */
   initialValue: number;
   /** Holdings — those with currentPrice are included in the schedule */
@@ -238,10 +270,17 @@ interface CapitalPreservationScheduleProps {
    * This row is highlighted in purple.
    */
   withdrawalStartYear: number;
-  /** Annual projected gain percentage (e.g. 10 for 10%) — used for safe-withdrawal status */
-  projectedGain: number;
-  /** Monthly withdrawal amount — used to compute "safe withdrawal" status */
-  monthlyWithdrawal: number;
+  /**
+   * Accepted but unread. The chip these two fed compared today's balance with
+   * a withdrawal that may not begin for decades and called the difference
+   * "covered by growth" — a timing-blind duplicate of a question the hub's
+   * info panel answers from the simulated plan, and a red warning on
+   * well-funded deferred-withdrawal plans. They stay in the signature only
+   * until PortfolioPanel stops passing them.
+   */
+  projectedGain?: number;
+  /** Accepted but unread; see projectedGain */
+  monthlyWithdrawal?: number;
   /** Optional secondary withdrawal start year — highlighted in green */
   withdrawalStartYearB?: number;
   /** Label for the primary withdrawal row (default: "A") */
@@ -270,16 +309,21 @@ interface CapitalPreservationScheduleProps {
  */
 export default function CapitalPreservationSchedule({
   growthMatrix,
+  monthlyMatrix,
+  track,
   initialValue,
   holdings,
   withdrawalStartYear,
-  projectedGain,
-  monthlyWithdrawal,
   withdrawalStartYearB,
   primaryWithdrawalLabel = "A",
   secondaryWithdrawalLabel = "B",
 }: CapitalPreservationScheduleProps) {
   const [granularity, setGranularity] = useState<ScheduleGranularity>("yearly");
+  // One clock for the life of this panel, so flipping granularity or opening
+  // a day breakdown cannot re-date the today row against the matrices it
+  // heads. Mount-scoped on purpose: a timer that re-anchored the schedule
+  // mid-session would move rows under the reader.
+  const today = useMemo(() => planAnchor(), []);
   // Set of month-row indices that are expanded to show daily breakdown
   const [expandedMonths, setExpandedMonths] = useState<Set<number>>(new Set());
 
@@ -303,7 +347,13 @@ export default function CapitalPreservationSchedule({
     return null;
   }
 
-  const matrix = buildScheduleMatrix(growthMatrix, initialValue, granularity);
+  const matrix = buildScheduleMatrix({
+    yearly: growthMatrix,
+    monthly: monthlyMatrix,
+    initialValue,
+    granularity,
+    today,
+  });
   const withdrawalRowIdx = withdrawalRowIndex(
     withdrawalStartYear,
     granularity,
@@ -320,7 +370,7 @@ export default function CapitalPreservationSchedule({
   // Status banner: how far each price is from what withdrawal start requires
   const statusItems = pricedHoldings.map((h) => {
     const requiredAtWithdrawal =
-      h.currentPrice! * (withdrawalEntry.y / initialValue);
+      h.currentPrice! * (withdrawalEntry[track] / initialValue);
     const pctNeeded =
       ((requiredAtWithdrawal - h.currentPrice!) / h.currentPrice!) * 100;
     return {
@@ -330,10 +380,6 @@ export default function CapitalPreservationSchedule({
       level: statusLevel(pctNeeded),
     };
   });
-
-  // Can monthly withdrawals be funded purely from growth on today's balance?
-  const withdrawalSafe =
-    initialValue * (projectedGain / 100 / 12) >= monthlyWithdrawal;
 
   const holdingCells = (factor: number, cell: CellVariants) =>
     pricedHoldings.map((h) => {
@@ -371,13 +417,6 @@ export default function CapitalPreservationSchedule({
       </Header>
 
       <StatusBanner>
-        {monthlyWithdrawal > 0 && (
-          <StatusChip status={withdrawalSafe ? "safe" : "warn"}>
-            {withdrawalSafe ? "[OK]" : "[!]"} Monthly withdrawal ($
-            {monthlyWithdrawal.toLocaleString()}) is{" "}
-            {withdrawalSafe ? "covered by growth" : "exceeding monthly growth"}
-          </StatusChip>
-        )}
         {statusItems.map(({ h, requiredAtWithdrawal, pctNeeded, level }) => (
           <StatusChip key={h.symbol} status={level}>
             {statusIcon(level)} {h.symbol}: needs{" "}
@@ -447,9 +486,9 @@ export default function CapitalPreservationSchedule({
                       )}
                     </Td>
                     <Td {...rowCell} tone="neutral">
-                      {formatPrice(entry.y)}
+                      {formatPrice(entry[track])}
                     </Td>
-                    {holdingCells(entry.y / initialValue, rowCell)}
+                    {holdingCells(entry[track] / initialValue, rowCell)}
                   </tr>
 
                   {dailyRows.map((dayEntry, dIdx) => (
@@ -458,9 +497,11 @@ export default function CapitalPreservationSchedule({
                         &nbsp;&nbsp;&nbsp;{format(dayEntry.x, "EEE, MMM d")}
                       </Td>
                       <Td daily tone="neutral">
-                        {formatPrice(dayEntry.y)}
+                        {formatPrice(dayEntry[track])}
                       </Td>
-                      {holdingCells(dayEntry.y / initialValue, { daily: true })}
+                      {holdingCells(dayEntry[track] / initialValue, {
+                        daily: true,
+                      })}
                     </tr>
                   ))}
                 </Fragment>

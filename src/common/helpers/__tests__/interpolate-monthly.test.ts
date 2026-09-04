@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import { interpolateMonthly } from "../interpolate-monthly";
 import type { LineGraphEntry } from "../../types/types";
 
-const entry = (y: number, alternateY: number, date: Date): LineGraphEntry => ({
+const entry = (nominal: number, real: number, date: Date): LineGraphEntry => ({
   x: date,
-  y,
-  alternateY,
+  nominal,
+  real,
 });
 
 describe("interpolateMonthly", () => {
@@ -33,14 +33,14 @@ describe("interpolateMonthly", () => {
     expect(interpolateMonthly(makeYearly(5))).toHaveLength(49);
   });
 
-  it("first point y value equals the first yearly entry", () => {
+  it("first point equals the first yearly entry on both tracks", () => {
     const yearly = [
       entry(1000, 900, new Date("2026-01-01")),
       entry(1200, 1080, new Date("2027-01-01")),
     ];
     const result = interpolateMonthly(yearly);
-    expect(result[0].y).toBe(1000);
-    expect(result[0].alternateY).toBe(900);
+    expect(result[0].nominal).toBe(1000);
+    expect(result[0].real).toBe(900);
   });
 
   it("last point is exactly the final yearly entry", () => {
@@ -51,14 +51,29 @@ describe("interpolateMonthly", () => {
   });
 
   it("intermediate values are linearly interpolated (floored)", () => {
-    // y goes from 1000 → 1200 (+200 over 12 months)
-    // month 1: t = 1/12, y = floor(1000 + 200 * 1/12) = floor(1016.666) = 1016
+    // nominal goes from 1000 → 1200 (+200 over 12 months)
+    // month 1: t = 1/12 → floor(1000 + 200 * 1/12) = floor(1016.666) = 1016
     const yearly = [
       entry(1000, 0, new Date("2026-01-01")),
       entry(1200, 0, new Date("2027-01-01")),
     ];
     const result = interpolateMonthly(yearly);
-    expect(result[1].y).toBe(1016);
+    expect(result[1].nominal).toBe(1016);
+  });
+
+  it("carries both tracks through, each interpolated on its own", () => {
+    // The tracks move by different amounts over the same 12 months, so a row
+    // that interpolated one and copied the other would be visible here
+    const yearly = [
+      entry(1000, 500, new Date(2026, 0, 1)),
+      entry(1240, 620, new Date(2027, 0, 1)),
+    ];
+    const result = interpolateMonthly(yearly);
+    result.slice(0, 12).forEach((pt, m) => {
+      expect(pt.nominal).toBe(Math.floor(1000 + 240 * (m / 12)));
+      expect(pt.real).toBe(Math.floor(500 + 120 * (m / 12)));
+    });
+    expect(result[12]).toStrictEqual(yearly[1]);
   });
 
   it("dates advance by one month per step", () => {
@@ -88,10 +103,10 @@ describe("interpolateMonthly – edge cases", () => {
     const result = interpolateMonthly(yearly);
     expect(result).toHaveLength(13);
     // First point positive, last point negative
-    expect(result[0].y).toBe(500);
-    expect(result[result.length - 1].y).toBe(-100);
+    expect(result[0].nominal).toBe(500);
+    expect(result[result.length - 1].nominal).toBe(-100);
     // Should cross zero somewhere in between
-    const hasNegative = result.some((p) => p.y < 0);
+    const hasNegative = result.some((p) => p.nominal < 0);
     expect(hasNegative).toBe(true);
   });
 

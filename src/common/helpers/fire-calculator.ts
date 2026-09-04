@@ -11,6 +11,26 @@
  * monthlySavings is treated as constant in today's dollars.
  * The standalone helpers below are rate-agnostic: they
  * compound at whatever rate they are given.
+ *
+ * Timing convention: contributions are credited at the
+ * START of the month and therefore earn that month's
+ * growth (an annuity-DUE, factor ((1 + r)^n - 1) / r *
+ * (1 + r)).  InvestmentCalculator (investment-growth-calculator.ts)
+ * is the authority on this: it adds monthlyContribution *
+ * (1 + monthlyGrowthRate) each month, and FirePanel is fed
+ * the same monthlyContribution sliders, so the two engines
+ * must agree month for month.  Change one and change the other.
+ *
+ * Vocabulary: FireInputs names three quantities the plan
+ * already names, and they are the same numbers, fed from
+ * the same sliders - annualReturn is PlanInputs.projectedGain,
+ * inflationRate is PlanInputs.inflationPct, and monthlySavings
+ * is the sum of both lanes' PlanInputs.monthlyContribution
+ * (currentSavings is likewise the sum of their initialAmount).
+ * They keep the retirement-planning names here because
+ * FirePanel's props are those names and this panel is a
+ * consumer of the plan, not one of its engines; the mapping
+ * is stated per field below so nobody has to rediscover it.
  * ================================================== */
 
 import {
@@ -21,13 +41,19 @@ import {
 /* ---------- Types ---------- */
 
 export interface FireInputs {
-  /** Current total savings / investments */
+  /** Current total savings / investments; the lanes' PlanInputs.initialAmount, summed */
   currentSavings: number;
-  /** Monthly savings (contributions), constant in today's dollars */
+  /**
+   * Monthly savings (contributions), constant in today's dollars: the lanes'
+   * PlanInputs.monthlyContribution, summed.
+   */
   monthlySavings: number;
-  /** Nominal annual expected return as a percentage (e.g. 10 = 10%) */
+  /** Nominal annual expected return as a percentage (e.g. 10 = 10%); PlanInputs.projectedGain */
   annualReturn: number;
-  /** Annual inflation rate as a percentage; converts annualReturn to a real return */
+  /**
+   * Annual inflation rate as a percentage; converts annualReturn to a real
+   * return. The same quantity as PlanInputs.inflationPct, off the same slider.
+   */
   inflationRate: number;
   /** Annual expenses in retirement, in today's dollars */
   annualExpenses: number;
@@ -85,6 +111,10 @@ export function calculateFireNumber(
 /**
  * Converts a nominal annual return into a real (inflation-adjusted)
  * return, both as percentages: ((1 + r) / (1 + i) - 1) * 100.
+ *
+ * Its two arguments are PlanInputs.projectedGain and PlanInputs.inflationPct.
+ * Every helper below it is rate-agnostic and is handed THIS result, not the
+ * plan's own gain, which is why they keep the neutral `annualReturn` name.
  */
 export function realReturn(
   annualReturn: number,
@@ -118,7 +148,9 @@ export function yearsToFire(
 
   for (let month = 1; month <= maxMonths; month++) {
     balance += balance * monthlyRate;
-    balance += monthlySavings;
+    // Contributions earn growth in the month they are made, exactly as
+    // InvestmentCalculator credits them (see the module header)
+    balance += monthlySavings * (1 + monthlyRate);
     if (balance >= targetAmount) {
       return Math.ceil(month / MONTHS_PER_YEAR);
     }
@@ -149,7 +181,9 @@ export function coastFireNumber(
  * Calculates the monthly savings required to reach a target balance
  * within a given number of years, given current savings and return rate.
  *
- * Uses the future-value-of-annuity formula solved for PMT.
+ * Uses the future-value-of-annuity-DUE formula solved for PMT, so it is
+ * the closed form of the yearsToFire loop above:
+ *   PMT = (target - PV(1 + r)^n) / (((1 + r)^n - 1) / r * (1 + r))
  */
 export function monthlySavingsNeeded(
   currentSavings: number,
@@ -175,8 +209,9 @@ export function monthlySavingsNeeded(
 
   if (remaining <= 0) return 0;
 
-  // Future value of annuity factor
-  const fvAnnuity = (Math.pow(1 + r, n) - 1) / r;
+  // Future value of an annuity-DUE: contributions are made at the start of
+  // each month, so every one of them earns that month's growth
+  const fvAnnuity = ((Math.pow(1 + r, n) - 1) / r) * (1 + r);
   return Math.ceil(remaining / fvAnnuity);
 }
 

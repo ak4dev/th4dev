@@ -8,6 +8,10 @@ import {
   type ScenarioSnapshot,
 } from "../scenario-manager";
 import { DEFAULT_TOGGLES } from "../state-manager";
+import {
+  DEFAULT_PROJECTED_GAIN,
+  DEFAULT_YEARS_OF_GROWTH,
+} from "../../constants/app-constants";
 import type { TH4State } from "../../types/types";
 
 /* ---------- Helpers ---------- */
@@ -116,7 +120,7 @@ describe("getSnapshotPreview", () => {
     expect(preview.years).toBe(30);
   });
 
-  it("returns defaults for missing values", () => {
+  it("returns the app's own defaults for missing values", () => {
     const snap: ScenarioSnapshot = {
       id: "s1",
       name: "Empty",
@@ -125,7 +129,9 @@ describe("getSnapshotPreview", () => {
     };
     const preview = getSnapshotPreview(snap);
     expect(preview.investmentA).toBe("0");
-    expect(preview.returnPct).toBe(10);
-    expect(preview.years).toBe(30);
+    // Read off the constants, not restated: the preview used to hardcode its
+    // own copy of 10 and 30, which would have drifted the day either moved
+    expect(preview.returnPct).toBe(DEFAULT_PROJECTED_GAIN);
+    expect(preview.years).toBe(DEFAULT_YEARS_OF_GROWTH);
   });
 });

@@ -1,13 +1,35 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   normalizeStockSymbol,
   extractStockPrice,
   extractQuoteSymbol,
+  validateStockUrlTemplate,
   fetchStockData,
   applyFetchedPrices,
+  describeQuoteBody,
   describeFetchFailures,
 } from "../stock-client";
 import type { PortfolioHolding } from "../../types/portfolio-types";
+
+// `fetch` and `location` are stubbed per test; vi.restoreAllMocks() does NOT
+// undo a stubbed global, so without this the last stub leaks into every file
+// that runs after this one in the same worker.
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+/** fetchStockData now passes an init object; only the URL differs per call. */
+const FETCH_INIT: RequestInit = { signal: undefined, credentials: "omit" };
+
+/** A stubbed fetch that answers every URL with the same 200 body. */
+function stubFetch(body: unknown = { price: "100" }) {
+  const mockFetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: () => Promise.resolve(body),
+  });
+  vi.stubGlobal("fetch", mockFetch);
+  return mockFetch;
+}
 
 // ── normalizeStockSymbol ──────────────────────────────────────────────────────
 
@@ -22,6 +44,10 @@ describe("normalizeStockSymbol", () => {
 
   it("trims and uppercases together", () => {
     expect(normalizeStockSymbol("  goog  ")).toBe("GOOG");
+  });
+
+  it("trims tabs and newlines, not just spaces", () => {
+    expect(normalizeStockSymbol("\t nvda \n")).toBe("NVDA");
   });
 
   it("returns empty string for undefined", () => {
@@ -46,6 +72,28 @@ describe("extractStockPrice", () => {
     expect(extractStockPrice(data)).toBe(45.75);
   });
 
+  it("picks the price out of a full Global Quote block", () => {
+    expect(
+      extractStockPrice({
+        "Global Quote": {
+          "01. symbol": "AMZN",
+          "02. open": "180.00",
+          "05. price": "195.25",
+          "08. previousClose": "190.00",
+        },
+      }),
+    ).toBe(195.25);
+  });
+
+  it("falls back to the top-level price when the Global Quote price is not numeric", () => {
+    expect(
+      extractStockPrice({
+        "Global Quote": { "05. price": "N/A" },
+        price: "12.5",
+      }),
+    ).toBe(12.5);
+  });
+
   it("returns undefined for null input", () => {
     expect(extractStockPrice(null)).toBeUndefined();
   });
@@ -58,6 +106,12 @@ describe("extractStockPrice", () => {
 
   it("returns undefined for non-numeric price string", () => {
     expect(extractStockPrice({ price: "N/A" })).toBeUndefined();
+  });
+
+  it("returns undefined for a rate-limit Information body", () => {
+    expect(
+      extractStockPrice({ Information: "Thank you for using Alpha Vantage" }),
+    ).toBeUndefined();
   });
 });
 
@@ -75,8 +129,21 @@ describe("extractQuoteSymbol", () => {
     expect(extractQuoteSymbol({ symbol: "msft" })).toBe("MSFT");
   });
 
+  it("falls back to the top-level symbol when the Global Quote symbol is blank", () => {
+    expect(
+      extractQuoteSymbol({
+        "Global Quote": { "01. symbol": "  " },
+        symbol: "ibm",
+      }),
+    ).toBe("IBM");
+  });
+
   it("returns undefined for null input", () => {
     expect(extractQuoteSymbol(null)).toBeUndefined();
+  });
+
+  it("returns undefined for an empty object", () => {
+    expect(extractQuoteSymbol({})).toBeUndefined();
   });
 
   it("returns undefined when no symbol key is found", () => {
@@ -84,36 +151,114 @@ describe("extractQuoteSymbol", () => {
   });
 });
 
+// ── validateStockUrlTemplate ──────────────────────────────────────────────────
+
+describe("validateStockUrlTemplate", () => {
+  it("accepts an https template carrying the placeholder", () => {
+    expect(
+      validateStockUrlTemplate("https://api.example.com/quote?s={symbol}"),
+    ).toBeNull();
+  });
+
+  it("accepts a template with the placeholder in path and query", () => {
+    expect(
+      validateStockUrlTemplate(
+        "https://api.example.com/{symbol}/quote?s={symbol}",
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects a template with no {symbol} placeholder", () => {
+    expect(validateStockUrlTemplate("https://api.example.com/quote")).toContain(
+      "{symbol}",
+    );
+  });
+
+  it("rejects a template that is not a URL at all", () => {
+    expect(validateStockUrlTemplate("not a url {symbol}")).toBe(
+      "URL template is not a valid URL.",
+    );
+  });
+
+  it("rejects a javascript: scheme", () => {
+    expect(validateStockUrlTemplate("javascript:alert(1)?{symbol}")).toMatch(
+      /Unsupported URL scheme/,
+    );
+  });
+
+  it("rejects a file: scheme", () => {
+    expect(validateStockUrlTemplate("file:///etc/{symbol}")).toMatch(
+      /Unsupported URL scheme/,
+    );
+  });
+
+  it("rejects an http: template while the page is served over https", () => {
+    vi.stubGlobal("location", { protocol: "https:" });
+    expect(validateStockUrlTemplate("http://api.example.com/{symbol}")).toMatch(
+      /mixed content/,
+    );
+  });
+
+  it("allows an http: template while the page itself is http", () => {
+    vi.stubGlobal("location", { protocol: "http:" });
+    expect(
+      validateStockUrlTemplate("http://api.example.com/{symbol}"),
+    ).toBeNull();
+  });
+});
+
 // ── fetchStockData ────────────────────────────────────────────────────────────
 
 describe("fetchStockData", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-
   it("substitutes {symbol} in the URL template", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ price: "100" }),
-    });
-    vi.stubGlobal("fetch", mockFetch);
+    const mockFetch = stubFetch();
 
     await fetchStockData("https://api.example.com/quote?symbol={symbol}", [
       "AAPL",
     ]);
     expect(mockFetch).toHaveBeenCalledWith(
       "https://api.example.com/quote?symbol=AAPL",
+      FETCH_INIT,
+    );
+  });
+
+  it("substitutes every occurrence, not just the first", async () => {
+    const mockFetch = stubFetch();
+
+    await fetchStockData("https://api.example.com/{symbol}/quote?s={symbol}", [
+      "AAPL",
+    ]);
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://api.example.com/AAPL/quote?s=AAPL",
+      FETCH_INIT,
+    );
+  });
+
+  it("percent-encodes a symbol so it cannot alter the URL structure", async () => {
+    const mockFetch = stubFetch();
+
+    await fetchStockData("https://api.example.com/quote?s={symbol}", [
+      "A&B",
+      "BRK.B",
+      "X Y",
+    ]);
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://api.example.com/quote?s=A%26B",
+      FETCH_INIT,
+    );
+    // A dot is deliberately left alone — it is already URL-safe
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://api.example.com/quote?s=BRK.B",
+      FETCH_INIT,
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://api.example.com/quote?s=X%20Y",
+      FETCH_INIT,
     );
   });
 
   it("returns data on a successful response", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ price: "123" }),
-      }),
-    );
+    stubFetch({ price: "123" });
 
     const results = await fetchStockData("https://api/{symbol}", ["TSLA"]);
     expect(results).toHaveLength(1);
@@ -149,13 +294,7 @@ describe("fetchStockData", () => {
   });
 
   it("processes multiple symbols in parallel", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({}),
-      }),
-    );
+    stubFetch({});
 
     const results = await fetchStockData("https://api/{symbol}", [
       "AAPL",
@@ -165,77 +304,104 @@ describe("fetchStockData", () => {
     expect(results).toHaveLength(3);
     expect(results.map((r) => r.symbol)).toEqual(["AAPL", "MSFT", "GOOG"]);
   });
-});
-
-// ── additional edge cases ─────────────────────────────────────────────────────
-
-describe("normalizeStockSymbol – extra edge cases", () => {
-  it("returns empty string for undefined input", () => {
-    expect(normalizeStockSymbol(undefined)).toBe("");
-  });
-
-  it("trims whitespace-padded input correctly", () => {
-    expect(normalizeStockSymbol("  tsla  ")).toBe("TSLA");
-    expect(normalizeStockSymbol("\t nvda \n")).toBe("NVDA");
-  });
-});
-
-describe("extractStockPrice – extra edge cases", () => {
-  it("extracts price from deeply nested Global Quote structure", () => {
-    const data = {
-      "Global Quote": {
-        "01. symbol": "AMZN",
-        "02. open": "180.00",
-        "05. price": "195.25",
-        "08. previousClose": "190.00",
-      },
-    };
-    expect(extractStockPrice(data)).toBe(195.25);
-  });
-
-  it("falls back to the top-level price when the Global Quote price is not numeric", () => {
-    expect(
-      extractStockPrice({
-        "Global Quote": { "05. price": "N/A" },
-        price: "12.5",
-      }),
-    ).toBe(12.5);
-  });
-
-  it("returns undefined for a rate-limit Information body", () => {
-    expect(
-      extractStockPrice({ Information: "Thank you for using Alpha Vantage" }),
-    ).toBeUndefined();
-  });
-});
-
-describe("extractQuoteSymbol – extra edge cases", () => {
-  it("returns undefined for an empty object", () => {
-    expect(extractQuoteSymbol({})).toBeUndefined();
-  });
-
-  it("falls back to the top-level symbol when the Global Quote symbol is blank", () => {
-    expect(
-      extractQuoteSymbol({
-        "Global Quote": { "01. symbol": "  " },
-        symbol: "ibm",
-      }),
-    ).toBe("IBM");
-  });
-});
-
-describe("fetchStockData – extra edge cases", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
 
   it("returns an empty array when given no symbols", async () => {
-    const mockFetch = vi.fn();
-    vi.stubGlobal("fetch", mockFetch);
+    const mockFetch = stubFetch();
 
     const results = await fetchStockData("https://api/{symbol}", []);
     expect(results).toHaveLength(0);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+// ── fetchStockData: URL safety ────────────────────────────────────────────────
+
+describe("fetchStockData – URL safety", () => {
+  it("refuses a javascript: template without touching the network", async () => {
+    const mockFetch = stubFetch();
+
+    const results = await fetchStockData("javascript:alert(1)?{symbol}", [
+      "AAPL",
+    ]);
+    expect(results[0].error).toMatch(/Unsupported URL scheme/);
+    expect(results[0].data).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("refuses a file: template without touching the network", async () => {
+    const mockFetch = stubFetch();
+
+    const results = await fetchStockData("file:///etc/{symbol}", ["AAPL"]);
+    expect(results[0].error).toMatch(/Unsupported URL scheme/);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects a template with no placeholder rather than fetching one URL per symbol", async () => {
+    const mockFetch = stubFetch();
+
+    const results = await fetchStockData("https://api.example.com/quote", [
+      "AAPL",
+      "MSFT",
+    ]);
+    expect(results.map((r) => r.symbol)).toEqual(["AAPL", "MSFT"]);
+    expect(results[0].error).toContain("{symbol}");
+    expect(results[1].error).toContain("{symbol}");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("refuses an http: template while the page is served over https", async () => {
+    const mockFetch = stubFetch();
+    vi.stubGlobal("location", { protocol: "https:" });
+
+    const results = await fetchStockData("http://api.example.com/{symbol}", [
+      "AAPL",
+    ]);
+    expect(results[0].error).toMatch(/mixed content/);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+// ── fetchStockData: cancellation ──────────────────────────────────────────────
+
+describe("fetchStockData – cancellation", () => {
+  it("reports an aborted request as a timeout, not a raw DOMException", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockRejectedValue(
+          new DOMException("The operation was aborted.", "AbortError"),
+        ),
+    );
+
+    const results = await fetchStockData("https://api/{symbol}", ["AAPL"]);
+    expect(results[0].error).toBe("request timed out — try again");
+    expect(results[0].error).not.toContain("DOMException");
+  });
+
+  it("reports a TimeoutError the same way", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockRejectedValue(
+          new DOMException("The operation timed out.", "TimeoutError"),
+        ),
+    );
+
+    const results = await fetchStockData("https://api/{symbol}", ["AAPL"]);
+    expect(results[0].error).toBe("request timed out — try again");
+  });
+
+  it("passes the caller's signal through to fetch", async () => {
+    const mockFetch = stubFetch();
+    const controller = new AbortController();
+
+    await fetchStockData("https://api/{symbol}", ["AAPL"], controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("https://api/AAPL", {
+      signal: controller.signal,
+      credentials: "omit",
+    });
   });
 });
 
@@ -319,6 +485,68 @@ describe("applyFetchedPrices", () => {
   });
 });
 
+// ── describeQuoteBody ─────────────────────────────────────────────────────────
+
+describe("describeQuoteBody", () => {
+  it("returns an Alpha Vantage Information notice", () => {
+    expect(
+      describeQuoteBody({
+        Information: "Our standard API rate limit is 25/day",
+      }),
+    ).toBe("Our standard API rate limit is 25/day");
+  });
+
+  it("returns a Note when there is no Information", () => {
+    expect(describeQuoteBody({ Note: "Please consider premium" })).toBe(
+      "Please consider premium",
+    );
+  });
+
+  it("returns an Error Message for a missing API key", () => {
+    expect(
+      describeQuoteBody({
+        "Error Message": "the parameter apikey is invalid or missing.",
+      }),
+    ).toBe("the parameter apikey is invalid or missing.");
+  });
+
+  it("falls back to lowercase error and message keys", () => {
+    expect(describeQuoteBody({ error: "bad symbol" })).toBe("bad symbol");
+    expect(describeQuoteBody({ message: "quota exceeded" })).toBe(
+      "quota exceeded",
+    );
+  });
+
+  it("prefers Information over the later keys", () => {
+    expect(describeQuoteBody({ message: "second", Information: "first" })).toBe(
+      "first",
+    );
+  });
+
+  it("collapses whitespace so a wrapped notice stays on one line", () => {
+    expect(describeQuoteBody({ Note: "  rate\n  limit \t reached  " })).toBe(
+      "rate limit reached",
+    );
+  });
+
+  it("truncates a very long notice to about 140 characters", () => {
+    const long = "x".repeat(400);
+    const out = describeQuoteBody({ Information: long });
+    expect(out).toHaveLength(140);
+    expect(out?.endsWith("…")).toBe(true);
+  });
+
+  it("returns undefined when the body carries no message", () => {
+    expect(describeQuoteBody({ "Global Quote": { "05. price": "1" } })).toBe(
+      undefined,
+    );
+    expect(describeQuoteBody({ Information: "   " })).toBeUndefined();
+    expect(describeQuoteBody({ Note: 42 })).toBeUndefined();
+    expect(describeQuoteBody(null)).toBeUndefined();
+    expect(describeQuoteBody("Information")).toBeUndefined();
+  });
+});
+
 // ── describeFetchFailures ─────────────────────────────────────────────────────
 
 describe("describeFetchFailures", () => {
@@ -341,11 +569,47 @@ describe("describeFetchFailures", () => {
     ).toBe("AAPL: HTTP 401: Unauthorized; GOOG: TypeError: Failed to fetch");
   });
 
-  it("reports a successful response that carries no price", () => {
+  it("quotes the provider's own rate-limit Information verbatim", () => {
     expect(
       describeFetchFailures([
         { symbol: "AAPL", data: { Information: "rate limited" } },
       ]),
+    ).toBe("AAPL: rate limited");
+  });
+
+  it("quotes an Alpha Vantage Note verbatim", () => {
+    expect(
+      describeFetchFailures([
+        {
+          symbol: "AAPL",
+          data: { Note: "Thank you for using Alpha Vantage! 5 calls/minute." },
+        },
+      ]),
+    ).toBe("AAPL: Thank you for using Alpha Vantage! 5 calls/minute.");
+  });
+
+  it("truncates a long provider message", () => {
+    const summary = describeFetchFailures([
+      { symbol: "AAPL", data: { Information: "y".repeat(400) } },
+    ]);
+    expect(summary).toBe(`AAPL: ${"y".repeat(139)}…`);
+  });
+
+  it("prefers the transport error over the body", () => {
+    expect(
+      describeFetchFailures([
+        {
+          symbol: "AAPL",
+          error: "request timed out — try again",
+          data: { Information: "rate limited" },
+        },
+      ]),
+    ).toBe("AAPL: request timed out — try again");
+  });
+
+  it("falls back to a generic phrase for a body that explains nothing", () => {
+    expect(
+      describeFetchFailures([{ symbol: "AAPL", data: { "Global Quote": {} } }]),
     ).toBe("AAPL: no price in response");
   });
 });

@@ -2,12 +2,15 @@
  * Stock Data Modal
  * ================================================== */
 
-import { useState, type Dispatch, type SetStateAction } from "react";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Icons from "@radix-ui/react-icons";
 import { styled } from "../../stitches.config";
 import { compactModernInputStyles } from "../common/constants/input-styles";
-import { normalizeStockSymbol } from "../common/helpers/stock-client";
+import {
+  normalizeStockSymbol,
+  validateStockUrlTemplate,
+} from "../common/helpers/stock-client";
 import type { PortfolioHolding } from "../common/types/portfolio-types";
 import { useFetchPrices } from "./portfolio/useFetchPrices";
 import {
@@ -125,6 +128,10 @@ export default function StockModal({
   const [results, setResults] = useState<string | null>(null);
   const { fetchPrices, loading, error } = useFetchPrices(apiUrl, setHoldings);
 
+  // Checked here as well as inside the client so the user sees why the button
+  // is dead before spending a click on a template that cannot be requested.
+  const urlError = useMemo(() => validateStockUrlTemplate(apiUrl), [apiUrl]);
+
   const symbols = holdings.map((h) => h.symbol);
 
   const addSymbols = () => {
@@ -180,7 +187,7 @@ export default function StockModal({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <DialogOverlay />
-        <DialogContent>
+        <DialogContent aria-describedby={undefined}>
           <DialogCloseButton aria-label="Close">
             <Icons.Cross2Icon />
           </DialogCloseButton>
@@ -200,8 +207,9 @@ export default function StockModal({
             spellCheck={false}
           />
           <Hint>
-            Free key at alphavantage.co · Replace <code>demo</code> with your
-            key for live data
+            Replace <code>YOUR_API_KEY</code> with your own key — a free one at
+            alphavantage.co. The provider answers an unset key with an error
+            rather than a price.
           </Hint>
 
           <DialogLabel>Symbols</DialogLabel>
@@ -237,14 +245,16 @@ export default function StockModal({
             <SecondaryButton onClick={addSymbols}>Add</SecondaryButton>
             <ActionButton
               onClick={() => void handleFetch()}
-              disabled={loading || symbols.length === 0}
+              disabled={loading || symbols.length === 0 || urlError !== null}
             >
               {loading ? "Fetching…" : "Fetch"}
             </ActionButton>
           </Row>
 
-          {error && (
-            <ErrorText css={{ margin: "0 0 0.75rem" }}>{error}</ErrorText>
+          {(urlError ?? error) && (
+            <ErrorText css={{ margin: "0 0 0.75rem" }}>
+              {urlError ?? error}
+            </ErrorText>
           )}
 
           {/* Editable projection start prices */}
