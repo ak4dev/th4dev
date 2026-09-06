@@ -246,17 +246,18 @@ export const ROLLOVER_PLAN = plan(
 /**
  * (e) A TARGET the plan cannot reach: $100,000,000 on a $25,000 pot.
  *
- * The Target Value control spans up to maxAchievable() — every lever at its
- * most favourable bound — so the stored goal is CLAMPED to that ceiling on
- * screen, and no year of the plan ever reaches it ("> 20 yrs").
+ * The goal is shown exactly as stored, however far above the slider's span
+ * it sits, and no year of the plan ever reaches it ("> 20 yrs"). It used to
+ * be clamped on screen to the balance a 30% return and a $5,000 contribution
+ * would reach, and a solve rewrote both of those sliders to get there.
  *
  * Lane A also carries a non-zero withdrawal and contribution so that a solve
- * against this target has all three levers to move and reports every one of
- * them, rather than skipping the ones already sitting on their bound.
+ * against this target has every input it could be tempted by: the withdrawal
+ * is the only one it may move, and the contribution must survive untouched.
  */
-export const CLAMPED_TARGET_PLAN = plan(
-  "a target above everything the levers can reach",
-  "maxAchievable as the target ceiling, and the solver cascade the hub hands it",
+export const UNREACHABLE_TARGET_PLAN = plan(
+  "a target above everything the plan can reach",
+  "the goal stored as entered, and the withdrawal as the only input a solve moves",
   {
     inputs: { currentAmountA: "25000", currentAmountB: "25000" },
     sliders: {
@@ -280,5 +281,5 @@ export const PLAN_FIXTURES: readonly PlanFixture[] = [
   FIXED_WITHDRAWAL_PLAN,
   DYNAMIC_POLICY_PLAN,
   ROLLOVER_PLAN,
-  CLAMPED_TARGET_PLAN,
+  UNREACHABLE_TARGET_PLAN,
 ];

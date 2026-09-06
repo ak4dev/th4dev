@@ -23,6 +23,7 @@ import {
   type ChartRow,
   type McSeriesKey,
 } from "../common/helpers/growth-rows";
+import { chartYAxis, targetLineY } from "../common/helpers/chart-domain";
 import { styled } from "../../stitches.config";
 import { CHART_HEIGHT } from "../common/constants/app-constants";
 import {
@@ -223,10 +224,16 @@ export function InvestmentLineChart({
     },
   ] as const;
 
-  // Calculate max value for Y-axis scaling (with 5% padding)
-  const maxValue =
-    Math.max(...rows.map(rowMax), ...targets.map((t) => t.value ?? 0)) *
-    CHART_PADDING_MULTIPLIER;
+  // The y-axis follows the plotted balances (with 5% padding). A goal far
+  // above them used to set the whole axis and squash both lines to a
+  // hairline; it is now drawn no higher than TARGET_HEADROOM times the
+  // balances and labelled as sitting above the chart.
+  const rowsMax = Math.max(0, ...rows.map(rowMax));
+  const { max: maxValue, cap } = chartYAxis(
+    rowsMax,
+    targets.map((t) => t.value),
+    CHART_PADDING_MULTIPLIER,
+  );
 
   return (
     <ChartContainer>
@@ -274,12 +281,12 @@ export function InvestmentLineChart({
             value != null && value > 0 ? (
               <ReferenceLine
                 key={tag}
-                y={value}
+                y={targetLineY(value, cap)}
                 stroke={color}
                 strokeDasharray="6 3"
                 strokeOpacity={0.7}
                 label={{
-                  value: `Target ${tag}: ${compact(value)}`,
+                  value: `Target ${tag}: ${compact(value)}${value > cap ? " (above chart)" : ""}`,
                   fill: color,
                   fontSize: 11,
                   position,

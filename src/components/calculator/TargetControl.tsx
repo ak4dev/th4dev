@@ -22,9 +22,14 @@ import {
 /**
  * Goal for one lane's ending balance, in the units that lane is displayed in.
  *
- * Setting it does not just store a number: `onTarget` runs the solver, which
- * moves whichever inputs the current mode offers (see targetLevers) and
- * stores the balance the solved plan actually reaches.
+ * The goal is stored as entered. In advanced mode with fixed withdrawals
+ * `onTarget` also solves the monthly withdrawal that reaches it (see
+ * targetSolvesWithdrawal); in every other mode it is a marker alone. It never
+ * moves the return, the contribution or any other slider.
+ *
+ * The slider spans the lane's own reachable range, so the thumb is pinned to
+ * the end of the track for a goal typed above it; the box still shows the
+ * goal itself.
  */
 export default function TargetControl({
   lane,

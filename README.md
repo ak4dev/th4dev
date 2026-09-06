@@ -11,11 +11,13 @@ no accounts; state persistence is opt-in via localStorage or JSON export.
 - **Partial years** — horizon, contribution stop year, and withdrawal start
   year all accept fractional values (e.g. `10.5`), resolved to whole months
 - **Rollover** — roll Investment A's ending balance into B at A's finish year
-- **Target solver** — enter a target ending balance and the app solves
-  backwards for it, adjusting the monthly withdrawal in advanced mode, the
-  monthly contribution under a dynamic withdrawal policy, and falling back to
-  the assumed return when no other lever can reach the goal. The info panel
-  names the lever each solve moved
+- **Target value** — mark a goal for the ending balance: a dashed line on the
+  chart, and the info panel reports the first year the plan reaches it. In
+  advanced mode with fixed withdrawals the app also solves the monthly
+  withdrawal that lands on the goal. The target never moves the assumed
+  return, the contribution or any other input, and it is stored exactly as
+  entered even when the plan does not reach it; both rules are pinned by
+  `src/common/helpers/__tests__/target-contract.test.ts`
 - **Dynamic withdrawal** — withdraw a percentage of the balance each year,
   clamped between a floor and ceiling, reflected in the Monte Carlo bands
 - **Monte Carlo simulation** — percentile bands (P10–P90) from randomized

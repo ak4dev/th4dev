@@ -5,11 +5,11 @@ import {
   isDynamic,
   isRollover,
   isTool,
-  laneSliderValues,
   solveLaneTarget,
-  targetLevers,
+  targetSolvesWithdrawal,
   type LaneContext,
 } from "../lane-model";
+import { noWithdrawalBalance } from "../solve-for-target";
 import {
   DEFAULT_INPUTS,
   DEFAULT_SLIDERS,
@@ -96,67 +96,36 @@ describe("isTool", () => {
   });
 });
 
-describe("targetLevers", () => {
+describe("targetSolvesWithdrawal", () => {
   const toggles = (over: Partial<TogglesState> = {}): TogglesState => ({
     ...DEFAULT_TOGGLES,
     ...over,
   });
 
-  it("offers the assumed return alone in basic mode", () => {
-    // There is no contribution or withdrawal control on screen to move
-    expect(targetLevers(toggles(), false)).toEqual(["projectedGain"]);
-    expect(targetLevers(toggles(), true)).toEqual(["projectedGain"]);
+  it("is off in basic mode: the goal is a marker and moves nothing", () => {
+    // There is no withdrawal control on screen to move, and the assumed
+    // return is not a lever in any mode
+    expect(targetSolvesWithdrawal(toggles())).toBe(false);
+    expect(targetSolvesWithdrawal(toggles({ dynamicWithdrawal: true }))).toBe(
+      false,
+    );
   });
 
-  it("spends a surplus through the withdrawal by itself", () => {
-    expect(targetLevers(toggles({ advanced: true }), true)).toEqual([
-      "monthlyWithdrawal",
-    ]);
-  });
-
-  it("cuts the withdrawal before raising contributions and return", () => {
-    expect(targetLevers(toggles({ advanced: true }), false)).toEqual([
-      "monthlyWithdrawal",
-      "monthlyContribution",
-      "projectedGain",
-    ]);
-  });
-
-  it("drops the withdrawal lever when a dynamic policy replaces it", () => {
-    const t = toggles({ advanced: true, dynamicWithdrawal: true });
-    // The fixed withdrawal slider is not on screen, so the solver may not
-    // move it - in either direction
-    expect(targetLevers(t, false)).toEqual([
-      "monthlyContribution",
-      "projectedGain",
-    ]);
-    expect(targetLevers(t, true)).toEqual([
-      "monthlyContribution",
-      "projectedGain",
-    ]);
-  });
-});
-
-describe("laneSliderValues", () => {
-  it("spreads a solution onto the named lane's keys", () => {
+  it("is on in advanced mode with a fixed withdrawal on screen", () => {
+    expect(targetSolvesWithdrawal(toggles({ advanced: true }))).toBe(true);
     expect(
-      laneSliderValues("A", { monthlyWithdrawal: 0, projectedGain: 12 }),
-    ).toEqual({ monthlyWithdrawalA: 0, projectedGainA: 12 });
-    expect(laneSliderValues("B", { monthlyContribution: 250 })).toEqual({
-      monthlyContributionB: 250,
-    });
+      targetSolvesWithdrawal(
+        toggles({ advanced: true, fees: true, rollover: true }),
+      ),
+    ).toBe(true);
   });
 
-  it("round-trips every lever the solver can return", () => {
-    const values = {
-      monthlyWithdrawal: 100,
-      monthlyContribution: 200,
-      projectedGain: 9,
-    };
-    const spread = laneSliderValues("B", values);
+  it("is off when a dynamic policy replaces the fixed withdrawal", () => {
     expect(
-      Object.entries(values).map(([lever, v]) => [`${lever}B`, v]),
-    ).toEqual(Object.entries(spread));
+      targetSolvesWithdrawal(
+        toggles({ advanced: true, dynamicWithdrawal: true }),
+      ),
+    ).toBe(false);
   });
 });
 
@@ -294,23 +263,51 @@ describe("buildLane", () => {
     );
     expect(nominal.displayTarget).toBe(100000);
     // Today's dollars: the same goal, deflated by this lane's own horizon
-    const deflator = nominal.ending.inflationAdjusted / nominal.ending.nominal;
+    // with the Fisher factor the engine itself applies
+    const deflator = Math.pow(1.03, -nominal.plan.yearsOfGrowth);
     expect(real.displayTarget).toBe(Math.round(100000 * deflator));
+    expect(real.deflator).toBeCloseTo(deflator, 12);
+    expect(nominal.deflator).toBe(1);
   });
 
-  it("caps the target control at the best its own levers can reach", () => {
+  it("spans the plan's own no-withdrawal balance and shows the goal as stored", () => {
     const lane = buildLane(
       "A",
       context({
         inputs: { currentAmountA: "25000" },
-        sliders: { targetValueA: 100_000_000, yearsOfGrowthA: 20 },
+        sliders: {
+          targetValueA: 100_000_000,
+          yearsOfGrowthA: 20,
+          monthlyWithdrawalA: 1000,
+          withdrawalStartYearA: 10,
+        },
         toggles: { advanced: true },
       }),
       TODAY,
     );
-    expect(lane.maxTarget).toBeLessThan(100_000_000);
-    expect(lane.maxTarget).toBeGreaterThanOrEqual(lane.total);
-    expect(lane.displayTarget).toBe(lane.maxTarget);
+    expect(lane.maxTarget).toBe(noWithdrawalBalance(lane.plan, lane.track));
+    expect(lane.maxTarget).toBeGreaterThan(lane.total);
+    // Never the balance some other plan would reach: this pot at 10% for 20
+    // years is nowhere near a million, let alone the $86,000,000 the old
+    // ceiling reported for a 30% return and a $5,000 contribution
+    expect(lane.maxTarget).toBeLessThan(1_000_000);
+    // The goal is the goal, however far above the span it sits
+    expect(lane.displayTarget).toBe(100_000_000);
+  });
+
+  it("spans the projection itself where the target moves nothing", () => {
+    for (const toggles of [{}, { advanced: true, dynamicWithdrawal: true }]) {
+      const lane = buildLane(
+        "A",
+        context({
+          inputs: { currentAmountA: "25000" },
+          sliders: { yearsOfGrowthA: 20, monthlyWithdrawalA: 1000 },
+          toggles,
+        }),
+        TODAY,
+      );
+      expect(lane.maxTarget).toBe(Math.max(lane.total, 1));
+    }
   });
 });
 
@@ -370,20 +367,29 @@ describe("buildLanes", () => {
 });
 
 describe("solveLaneTarget", () => {
-  /** The unreachable-goal plan: $100,000,000 asked of a $25,000 pot */
-  const clamped = () => {
-    const toggles: TogglesState = { ...DEFAULT_TOGGLES, advanced: true };
+  const PLAN = {
+    projectedGainA: 7,
+    yearsOfGrowthA: 20,
+    monthlyContributionA: 200,
+    monthlyWithdrawalA: 1000,
+    withdrawalStartYearA: 10,
+  };
+
+  /** A $25,000 pot carrying every input a solve could be tempted by */
+  const laneIn = (
+    over: Partial<TogglesState> = {},
+    sliders: Partial<SliderValues> = {},
+  ) => {
+    const toggles: TogglesState = {
+      ...DEFAULT_TOGGLES,
+      advanced: true,
+      ...over,
+    };
     const lane = buildLane(
       "A",
       context({
         inputs: { currentAmountA: "25000" },
-        sliders: {
-          projectedGainA: 7,
-          yearsOfGrowthA: 20,
-          monthlyContributionA: 200,
-          monthlyWithdrawalA: 1000,
-          withdrawalStartYearA: 10,
-        },
+        sliders: { ...PLAN, ...sliders },
         toggles,
       }),
       TODAY,
@@ -391,54 +397,267 @@ describe("solveLaneTarget", () => {
     return { lane, toggles };
   };
 
-  it("reports the solve as capped when every lever hits its bound", () => {
-    const { lane, toggles } = clamped();
-    const { outcome } = solveLaneTarget(lane, 100_000_000, toggles);
-    // What the Target Reached row prints as " (capped)": the goal shown is
-    // the most the levers could reach, not the figure that was asked for
-    expect(outcome.clamped).toBe(true);
+  /** The lane as it is after the update a solve returned is applied */
+  const afterSolve = (
+    over: Partial<TogglesState>,
+    update: Partial<SliderValues>,
+  ) => laneIn(over, update).lane;
+
+  it("stores the goal as asked and zeroes the withdrawal, nothing more", () => {
+    const { lane, toggles } = laneIn();
+    const sliders = solveLaneTarget(lane, 100_000_000, toggles);
+    expect(sliders).toEqual({
+      monthlyWithdrawalA: 0,
+      targetValueA: 100_000_000,
+    });
   });
 
-  it("names every lever it moved, in cascade order", () => {
-    const { lane, toggles } = clamped();
-    const { outcome } = solveLaneTarget(lane, 100_000_000, toggles);
-    // What the "Target Solved By" row lists
-    expect(outcome.moved).toEqual([
-      "monthlyWithdrawal",
-      "monthlyContribution",
-      "projectedGain",
+  it("never touches the return or the contribution, in any mode", () => {
+    for (const over of [{ advanced: false }, {}, { dynamicWithdrawal: true }]) {
+      const { lane, toggles } = laneIn(over);
+      for (const goal of [1, 10_000, lane.total, 100_000_000]) {
+        const sliders = solveLaneTarget(lane, goal, toggles);
+        expect(sliders).not.toHaveProperty("projectedGainA");
+        expect(sliders).not.toHaveProperty("monthlyContributionA");
+        expect(sliders.targetValueA).toBe(goal);
+      }
+    }
+  });
+
+  it("stores the goal alone where no fixed withdrawal is on screen", () => {
+    for (const over of [{ advanced: false }, { dynamicWithdrawal: true }]) {
+      const { lane, toggles } = laneIn(over);
+      expect(solveLaneTarget(lane, 100_000_000, toggles)).toEqual({
+        targetValueA: 100_000_000,
+      });
+    }
+  });
+
+  it("can be lowered past the projection: the goal stays and the withdrawal rises", () => {
+    const { lane, toggles } = laneIn();
+    const sliders = solveLaneTarget(lane, 1, toggles);
+    expect(sliders.targetValueA).toBe(1);
+    expect(sliders.monthlyWithdrawalA).toBeGreaterThan(PLAN.monthlyWithdrawalA);
+    expect(Object.keys(sliders).sort()).toEqual([
+      "monthlyWithdrawalA",
+      "targetValueA",
     ]);
   });
 
-  it("stores the balance the solved plan reaches, not the request", () => {
-    const { lane, toggles } = clamped();
-    const { sliders } = solveLaneTarget(lane, 100_000_000, toggles);
-    expect(sliders.targetValueA).not.toBe(100_000_000);
-    // Exactly the ceiling the Target Value control already showed
-    expect(sliders.targetValueA).toBe(lane.maxTarget);
-    // The solved levers ride in the same update, on this lane's keys alone
-    expect(Object.keys(sliders).every((key) => key.endsWith("A"))).toBe(true);
-  });
-
-  it("does not report a reachable goal as capped", () => {
-    const { lane, toggles } = clamped();
-    const { outcome, sliders } = solveLaneTarget(
-      lane,
-      lane.total * 1.1,
-      toggles,
-    );
-    expect(outcome.clamped).toBe(false);
-    // A shortfall this small is met by cutting the withdrawal alone
-    expect(outcome.moved).toEqual(["monthlyWithdrawal"]);
-    expect(sliders.targetValueA).toBeGreaterThan(0);
+  it("stores a goal set on the inflated track as its nominal equivalent", () => {
+    const { lane, toggles } = laneIn({ showInflation: true });
+    const goal = 50_000;
+    const sliders = solveLaneTarget(lane, goal, toggles);
+    expect(sliders.targetValueA).toBe(Math.round(goal / lane.deflator));
+    expect(sliders.targetValueA).toBeGreaterThan(goal);
+    // Shown again in today's dollars, it is exactly the goal that was set
+    const after = laneIn({ showInflation: true }, sliders).lane;
+    expect(after.displayTarget).toBe(goal);
   });
 
   it("clears the goal without touching another slider", () => {
-    const { lane, toggles } = clamped();
-    for (const cleared of [0, NaN]) {
-      const { outcome, sliders } = solveLaneTarget(lane, cleared, toggles);
-      expect(outcome).toEqual({ clamped: false, moved: [] });
-      expect(sliders).toEqual({ targetValueA: 0 });
+    const { lane, toggles } = laneIn();
+    for (const cleared of [0, -5000, NaN, Infinity]) {
+      expect(solveLaneTarget(lane, cleared, toggles)).toEqual({
+        targetValueA: 0,
+      });
     }
+  });
+
+  describe("what the lane then reports", () => {
+    it("is capped when the withdrawal is at 0 and the goal is still above the plan", () => {
+      const { lane, toggles } = laneIn();
+      const after = afterSolve({}, solveLaneTarget(lane, 100_000_000, toggles));
+      expect(after.plan.monthlyWithdrawal).toBe(0);
+      expect(after.targetReached).toBeUndefined();
+      expect(after.targetCapped).toBe(true);
+    });
+
+    it("is capped at the ceiling when the withdrawal cannot spend down to the goal", () => {
+      // Six months of withdrawals at the very end cannot empty a $25,000 pot
+      const { lane, toggles } = laneIn(
+        {},
+        { monthlyContributionA: 0, withdrawalStartYearA: 19.5 },
+      );
+      const sliders = solveLaneTarget(lane, 1, toggles);
+      expect(sliders).toEqual({
+        monthlyWithdrawalA: lane.withdrawalMax,
+        targetValueA: 1,
+      });
+      const after = afterSolve(
+        {},
+        { monthlyContributionA: 0, withdrawalStartYearA: 19.5, ...sliders },
+      );
+      expect(after.targetCapped).toBe(true);
+    });
+
+    it("is not capped for a reachable goal", () => {
+      const { lane, toggles } = laneIn();
+      const goal = Math.round(lane.total * 1.1);
+      const sliders = solveLaneTarget(lane, goal, toggles);
+      // A shortfall this small is met by cutting the withdrawal
+      expect(sliders.monthlyWithdrawalA).toBeLessThan(PLAN.monthlyWithdrawalA);
+      const after = afterSolve({}, sliders);
+      expect(after.targetCapped).toBe(false);
+      expect(after.targetReached).toBeDefined();
+    });
+
+    it("is never capped where the target moves nothing", () => {
+      for (const over of [{ advanced: false }, { dynamicWithdrawal: true }]) {
+        const { lane, toggles } = laneIn(over);
+        const after = afterSolve(
+          over,
+          solveLaneTarget(lane, 100_000_000, toggles),
+        );
+        expect(after.targetReached).toBeUndefined();
+        expect(after.targetCapped).toBe(false);
+      }
+    });
+
+    it("re-evaluates as the plan changes rather than remembering a solve", () => {
+      // A solve that capped: withdrawal 0, a $5,000,000 goal out of reach at 7%
+      const { lane, toggles } = laneIn();
+      const capped = solveLaneTarget(lane, 5_000_000, toggles);
+      expect(capped).toEqual({
+        monthlyWithdrawalA: 0,
+        targetValueA: 5_000_000,
+      });
+      expect(afterSolve({}, capped).targetCapped).toBe(true);
+      // The user then raises the return until the plan reaches the goal: the
+      // annotation goes with it, though no second solve has run
+      const reached = afterSolve({}, { ...capped, projectedGainA: 30 });
+      expect(reached.total).toBeGreaterThanOrEqual(5_000_000);
+      expect(reached.targetReached).toBeDefined();
+      expect(reached.targetCapped).toBe(false);
+      // Or moves the withdrawal off its bound: no longer capped either way
+      expect(
+        afterSolve({}, { ...capped, monthlyWithdrawalA: 50 }).targetCapped,
+      ).toBe(false);
+    });
+
+    it("is capped either way when the plan never withdraws at all", () => {
+      const { lane, toggles } = laneIn({}, { withdrawalStartYearA: 20 });
+      for (const goal of [1, 100_000_000]) {
+        const sliders = solveLaneTarget(lane, goal, toggles);
+        // Nothing to move: the withdrawal slider is left where it was
+        expect(sliders).toEqual({ targetValueA: goal });
+        const after = afterSolve({}, { withdrawalStartYearA: 20, ...sliders });
+        expect(after.targetCapped).toBe(true);
+      }
+    });
+
+    it("still reads a goal set to the projection as reached after Inflated flips", () => {
+      // The engine floors each track separately and a goal is converted
+      // between them by rounding, so the goal can sit one dollar above the
+      // balance it was set from on the other track. That must not read as
+      // "> 20 yrs" for a goal the plan meets to the dollar.
+      for (const from of [false, true]) {
+        const { lane, toggles } = laneIn({ showInflation: from });
+        const sliders = solveLaneTarget(lane, lane.total, toggles);
+        for (const to of [false, true]) {
+          const after = laneIn({ showInflation: to }, sliders).lane;
+          // The goal may sit at most a dollar ABOVE the balance either way,
+          // and below it by one real dollar or, viewed nominal, by what one
+          // real dollar is worth at this horizon: 1 / (1.025 ^ -20)
+          const below = to ? 1 : Math.ceil(Math.pow(1.025, 20));
+          expect(after.displayTarget - after.total).toBeLessThanOrEqual(1);
+          expect(after.total - after.displayTarget).toBeLessThanOrEqual(below);
+          expect(after.targetReached).toBeDefined();
+          expect(after.targetCapped).toBe(false);
+        }
+      }
+    });
+
+    it("tolerates a real-dollar goal viewed nominal on a plan that never withdraws", () => {
+      // The nominal-side slack, exercised: a goal set to the projection in
+      // today's dollars is stored as its nominal worth, which can sit several
+      // nominal dollars below the balance at 6% over 30 years. A plan whose
+      // withdrawal is inert must not call that a capped surplus.
+      const long = {
+        yearsOfGrowthA: 30,
+        withdrawalStartYearA: 30,
+        yearlyInflation: 6,
+      };
+      const { lane, toggles } = laneIn({ showInflation: true }, long);
+      const sliders = solveLaneTarget(lane, lane.total, toggles);
+      const nominal = laneIn({}, { ...long, ...sliders }).lane;
+      expect(nominal.displayTarget - nominal.total).toBeLessThanOrEqual(1);
+      expect(nominal.total - nominal.displayTarget).toBeLessThanOrEqual(
+        Math.ceil(Math.pow(1.06, 30)),
+      );
+      expect(nominal.targetReached).toBeDefined();
+      expect(nominal.targetCapped).toBe(false);
+    });
+
+    it("does not read a goal well above the balance as reached at a long horizon", () => {
+      // 10% inflation over 100 years makes one real dollar worth $13,781
+      // nominal at the horizon. That tolerance belongs BELOW the balance
+      // only: a goal $1,000 above a $25,000 pot is a miss on any track
+      const long = {
+        yearsOfGrowthA: 100,
+        yearlyInflation: 10,
+        projectedGainA: 0,
+        monthlyContributionA: 0,
+        monthlyWithdrawalA: 0,
+      };
+      const missed = laneIn({}, { ...long, targetValueA: 26_000 }).lane;
+      expect(missed.total).toBe(25_000);
+      expect(missed.targetReached).toBeUndefined();
+      expect(missed.targetCapped).toBe(true);
+      // And with no inflation at all the two tracks are one: a goal one
+      // dollar above the balance is a miss, not noise
+      const flat = { ...long, yearlyInflation: 0 };
+      expect(
+        laneIn({}, { ...flat, targetValueA: 25_001 }).lane.targetReached,
+      ).toBeUndefined();
+      expect(
+        laneIn({}, { ...flat, targetValueA: 25_000 }).lane.targetReached,
+      ).toBeDefined();
+    });
+
+    it("decides inertness in the engine's whole months", () => {
+      // 10.34 years and a start at 10.3 both round to month 124, so the
+      // engine never withdraws; the withdrawal is inert and an unreachable
+      // goal is capped, whatever the slider shows
+      const inert = {
+        yearsOfGrowthA: 10.34,
+        withdrawalStartYearA: 10.3,
+        monthlyWithdrawalA: 500,
+      };
+      const { lane, toggles } = laneIn({}, inert);
+      expect(lane.withdrawals).toEqual([]);
+      const sliders = solveLaneTarget(lane, 1_000_000_000, toggles);
+      expect(sliders).toEqual({ targetValueA: 1_000_000_000 });
+      expect(laneIn({}, { ...inert, ...sliders }).lane.targetCapped).toBe(true);
+    });
+
+    it("reads a goal the plan holds today as reached on a horizon of zero", () => {
+      const { lane } = laneIn({}, { yearsOfGrowthA: 0, targetValueA: 25_000 });
+      expect(lane.matrix).toEqual([]);
+      expect(lane.total).toBe(25_000);
+      expect(lane.targetReached?.x).toEqual(TODAY);
+      expect(lane.targetCapped).toBe(false);
+    });
+
+    it("is capped when the pot is empty and no withdrawal can ever be taken", () => {
+      const lane = buildLane(
+        "A",
+        context({
+          inputs: { currentAmountA: "0" },
+          sliders: {
+            ...PLAN,
+            monthlyContributionA: 0,
+            monthlyWithdrawalA: 500,
+            withdrawalStartYearA: 0,
+            targetValueA: 1_000_000,
+          },
+          toggles: { advanced: true },
+        }),
+        TODAY,
+      );
+      expect(lane.total).toBe(0);
+      expect(lane.withdrawals).toEqual([]);
+      expect(lane.targetCapped).toBe(true);
+    });
   });
 });

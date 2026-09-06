@@ -1,14 +1,13 @@
 /* ==================================================
  * Investment Calculator Component
  * ================================================== */
-import { useState, useMemo, useCallback, useDeferredValue } from "react";
+import { useMemo, useCallback, useDeferredValue } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { addMonths } from "date-fns/addMonths";
 import { differenceInCalendarMonths } from "date-fns/differenceInCalendarMonths";
 import { styled, keyframes } from "../../stitches.config";
 import { planAnchor } from "../common/helpers/investment-growth-calculator";
-import type { TargetLever } from "../common/helpers/solve-for-target";
 import { formatCurrency } from "../common/helpers/format";
 import {
   buildLanes,
@@ -16,9 +15,7 @@ import {
   isRollover,
   isTool,
   solveLaneTarget,
-  NO_SOLVE,
   type Lane,
-  type TargetOutcome,
 } from "../common/helpers/lane-model";
 import { PanelContainer } from "./ui/primitives";
 import {
@@ -53,11 +50,7 @@ import {
   MONTE_CARLO_SEED,
   MIN_VALUE,
 } from "../common/constants/app-constants";
-import type {
-  InputKey,
-  LaneId,
-  SliderKey,
-} from "../common/constants/app-constants";
+import type { InputKey, SliderKey } from "../common/constants/app-constants";
 import {
   NO_BANDS,
   resolveMcMode,
@@ -194,15 +187,6 @@ const TOOL_TOGGLES: [keyof FeatureToggles, string][] = [
   ["budget", "Budget"],
   ["dynamicWithdrawal", "Dynamic Withdrawal"],
 ];
-
-/* ---------------- Target Solver Reporting ---------------- */
-
-/** Control name of each lever the target solver is allowed to move */
-const LEVER_NAMES: Record<TargetLever, string> = {
-  monthlyWithdrawal: "Monthly Withdrawal",
-  monthlyContribution: "Monthly Contribution",
-  projectedGain: "Return (%)",
-};
 
 /* ---------------- Info Panel Rows ---------------- */
 
@@ -366,14 +350,6 @@ export default function InvestmentCalculatorModern({
       setToggles((prev) => ({ ...prev, [key]: val })),
     [setToggles],
   );
-  // The solver's own account of the last target it solved per lane. It is UI
-  // state rather than a stored slider: the stored target is always the
-  // achievable one, so only the "(capped)" annotation and the "Target Solved
-  // By" row reset on reload.
-  const [targetOutcome, setTargetOutcome] = useState<
-    Record<LaneId, TargetOutcome>
-  >({ A: NO_SOLVE, B: NO_SOLVE });
-
   /* ---------------- Lanes ---------------- */
 
   // THE clock this whole screen is planned against, read once when the
@@ -451,19 +427,26 @@ export default function InvestmentCalculatorModern({
   /* ---------------- Target Value Handlers ---------------- */
 
   /**
-   * Commits the lane's goal along with every input the solver had to move to
-   * reach it, atomically. The decision itself is solveLaneTarget's, in
-   * lane-model; this is the state write it produces.
+   * Commits the lane's goal along with the fixed withdrawal that reaches it,
+   * where the mode offers one, atomically. The decision itself is
+   * solveLaneTarget's, in lane-model; this is the state write it produces.
+   * No other slider is ever part of it.
    */
   const solveTarget = useCallback(
     (lane: Lane, target: number) => {
-      const { outcome, sliders: solved } = solveLaneTarget(
-        lane,
-        target,
-        toggles,
-      );
-      setTargetOutcome((prev) => ({ ...prev, [lane.id]: outcome }));
-      setSliders((prev) => ({ ...prev, ...solved }));
+      const solved = solveLaneTarget(lane, target, toggles);
+      // Through the same range the import gate applies, like every other
+      // write here: a goal typed past the sanity limit must not come back
+      // from a reload as a different number
+      setSliders((prev) => ({
+        ...prev,
+        ...Object.fromEntries(
+          Object.entries(solved).map(([key, value]) => [
+            key,
+            clampSlider(key as SliderKey, value),
+          ]),
+        ),
+      }));
     },
     [toggles, setSliders],
   );
@@ -482,7 +465,7 @@ export default function InvestmentCalculatorModern({
   /* ---------------- Info Panel ---------------- */
 
   // Every row the panel prints, and the same list the PDF takes as its
-  // metrics. Rebuilt only when a lane, a toggle, a solve outcome or a fresh
+  // metrics. Rebuilt only when a lane, a toggle or a fresh
   // set of bands actually changes it.
   const infoItems = useMemo<PdfKeyValue[]>(() => {
     const laneRows = (l: Lane): PdfKeyValue[] => {
@@ -490,9 +473,10 @@ export default function InvestmentCalculatorModern({
       const stop = p.contributionStopYear;
       const withdrawing = l.withdrawals.length > 0;
       const depletedAt = l.calc.getDepletedAtMonth();
-      const { clamped, moved } = targetOutcome[l.id];
-      // A capped target is the most the solver could reach, not the request
-      const capped = l.displayTarget > 0 && clamped ? " (capped)" : "";
+      // Re-derived from the plan on every render (see Lane.targetCapped), so
+      // it is never a stale memory of an earlier solve: the withdrawal sits
+      // at the bound that would help and the plan still misses the goal
+      const capped = l.targetCapped ? " (capped)" : "";
       return [
         ...(toggles.advanced
           ? [
@@ -539,18 +523,6 @@ export default function InvestmentCalculatorModern({
               ? `> ${p.yearsOfGrowth} yrs${capped}`
               : "N/A",
         },
-        // Which control the solve actually moved. Basic mode has only the
-        // assumed return to offer, and raising an assumption is not a plan
-        // anyone can carry out, so the row names the lever instead of letting a
-        // slider move unannounced. Absent until a solve happens in this session.
-        ...(moved.length > 0
-          ? [
-              {
-                label: `(${id}) Target Solved By`,
-                value: moved.map((lever) => LEVER_NAMES[lever]).join(", "),
-              },
-            ]
-          : []),
         ...(toggles.advanced
           ? [
               {
@@ -617,7 +589,6 @@ export default function InvestmentCalculatorModern({
     laneB,
     today,
     toggles,
-    targetOutcome,
     rolloverApplied,
     mcBandsA,
     mcBandsB,

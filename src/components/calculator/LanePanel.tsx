@@ -158,7 +158,8 @@ export default function LanePanel({
             )}
         </>
       )}
-      {/* Goal for the ending balance; drives whichever inputs the mode offers */}
+      {/* Goal for the ending balance; in advanced fixed-withdrawal mode it also
+          solves the monthly withdrawal (see targetSolvesWithdrawal) */}
       <TargetControl lane={lane} onTarget={onTarget} />
     </PanelContainer>
   );

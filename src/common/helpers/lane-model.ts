@@ -4,7 +4,7 @@
  * Everything the calculator derives from one lane's
  * stored sliders, inputs and toggles - the advanced-mode
  * boundary, the horizon clamps, the rollover fit test,
- * the target ceiling and the solver cascade - in one
+ * the target span and the withdrawal solve - in one
  * pure module.
  *
  * It lived inside the calculator page, where the only way
@@ -14,13 +14,8 @@
  * reads the answer.
  * ================================================== */
 
-import { InvestmentCalculator } from "./investment-growth-calculator";
-import {
-  maxAchievable,
-  solveForTarget,
-  type TargetLever,
-  type TargetSolution,
-} from "./solve-for-target";
+import { InvestmentCalculator, toMonths } from "./investment-growth-calculator";
+import { noWithdrawalBalance, solveForTarget } from "./solve-for-target";
 import { displayTrack, endingAmounts } from "./growth-rows";
 import { parseAmountInput } from "./format";
 import {
@@ -80,12 +75,30 @@ export interface Lane {
   ending: RolloverAmounts;
   /** Positive monthly withdrawals actually applied, in simulation order */
   withdrawals: number[];
-  /** Highest ending balance this lane's levers can reach, in display units */
+  /**
+   * Span of the Target Value slider, in display units: the ending balance
+   * with no fixed withdrawal where the target solves one, and the lane's own
+   * projection everywhere else. Never a balance some OTHER plan could reach.
+   */
   maxTarget: number;
   /** Span of this lane's withdrawal, floor and ceiling controls */
   withdrawalMax: number;
-  /** Stored (nominal) target converted to display units */
+  /**
+   * Stored (nominal) target converted to display units, exactly as stored:
+   * a goal above the slider's span is still the goal, and the box shows it
+   * even though the thumb sits at the end of the track.
+   */
   displayTarget: number;
+  /** Display units per nominal dollar at the horizon: 1 on the nominal track */
+  deflator: number;
+  /**
+   * True when the goal is missed and the withdrawal - the one input a target
+   * may move - can do no more about it: it sits at the bound that would help,
+   * or the plan never withdraws at all. Only ever true where the target
+   * solves the withdrawal, and re-derived from the plan on every build, so
+   * it can never be a stale memory of an earlier solve.
+   */
+  targetCapped: boolean;
   targetStep: number;
   targetReached?: LineGraphEntry;
   /**
@@ -121,35 +134,18 @@ export const isDynamic = (t: TogglesState) => isTool(t, "dynamicWithdrawal");
 export const isRollover = (t: TogglesState) => isTool(t, "rollover");
 
 /**
- * Inputs the target solver may move, in cascade order. Only controls the
- * current mode actually shows are offered: basic mode has the return rate
- * alone, and a dynamic policy replaces the fixed withdrawal slider. With
- * fixed withdrawals a surplus is spent through the withdrawal by itself,
- * while a shortfall cuts it back before raising contributions and return.
+ * Whether a target solves the fixed monthly withdrawal, which is the ONE
+ * input a goal may move. It is on screen only in advanced mode without a
+ * dynamic policy; everywhere else the target is a marker - the dashed line
+ * on the chart and the "Target Reached" row - and moves nothing.
  *
- * @param t       - Current toggles
- * @param surplus - Whether the target sits below the lane's projection
- * @returns The levers to hand solveForTarget, in order
+ * The assumed return and the contribution are never levers. A solver that
+ * moved them once turned a slider drag into a 20% return assumption and a
+ * $5,000/mo contribution the user had not chosen, and the ending balance
+ * along with them.
  */
-export function targetLevers(t: TogglesState, surplus: boolean): TargetLever[] {
-  if (!t.advanced) return ["projectedGain"];
-  if (isDynamic(t)) return ["monthlyContribution", "projectedGain"];
-  return surplus
-    ? ["monthlyWithdrawal"]
-    : ["monthlyWithdrawal", "monthlyContribution", "projectedGain"];
-}
-
-/** Spreads solved lever values onto one lane's slider keys */
-export const laneSliderValues = (
-  id: LaneId,
-  values: Partial<Record<TargetLever, number>>,
-): Partial<Record<SliderKey, number>> =>
-  Object.fromEntries(
-    Object.entries(values).map(([lever, value]) => [
-      laneKey(lever as TargetLever, id),
-      value,
-    ]),
-  );
+export const targetSolvesWithdrawal = (t: TogglesState): boolean =>
+  t.advanced && !isDynamic(t);
 
 export function buildLane(
   id: LaneId,
@@ -267,34 +263,33 @@ export function buildLane(
 
   // Targets are stored nominal. The deflator that converts one into display
   // units is this lane's own Fisher factor at its horizon,
-  // (1 + yearlyInflation / 100) ^ -yearsOfGrowth: the calculator simulates a
-  // single nominal balance and derives today's-dollars figure by deflating
-  // it, so the ratio of the ending balance's two tracks IS that factor, up to
-  // the rounding of the two floored figures. It costs nothing and needs no
-  // second simulation.
-  //
-  // A drained or zero-length plan has no meaningful deflator: leave it 1:1.
-  const deflator =
-    ends.nominal > 0 && ends.real > 0 ? ends.real / ends.nominal : 1;
+  // (1 + yearlyInflation / 100) ^ -yearsOfGrowth, computed exactly as the
+  // engine deflates its final checkpoint. It used to be read off the ratio of
+  // the two floored ending balances, which drifted by a few parts in ten
+  // million with every solve and so moved a stored goal by a dollar or two
+  // each time it was converted; a drained plan gave it nothing to read at all.
+  const deflator = Math.pow(
+    1 + plan.inflationPct / PERCENTAGE_DIVISOR,
+    -toMonths(years) / MONTHS_PER_YEAR,
+  );
   const toDisplay = (nominal: number) =>
     track === "real" ? Math.round(nominal * deflator) : nominal;
 
-  // The target slider spans up to the best ending balance this mode's levers
-  // can reach, so a goal above the current projection is expressible. A
-  // dynamic policy can drain the maxed-out plan to zero, so the ceiling never
-  // falls below this lane's own projection and the range stays valid.
-  // The solver searches the range the lane's own controls offer, so a solved
-  // withdrawal is always one the slider can show. That span is an argument
-  // rather than a field of the plan: nothing simulates it.
+  // The target slider spans THIS plan: up to its no-withdrawal balance where
+  // the target solves the withdrawal, and its own projection otherwise. It
+  // used to span the balance with every lever at its most favourable bound
+  // (a 30% return, a $5,000 contribution), about $72,000,000 for the default
+  // plan, which put the user's actual projection at 0.3% of the track and
+  // made every touch of the thumb a demand for a different plan. A goal
+  // above the span can still be typed; the thumb just sits at the end.
   const maxTarget = Math.max(
-    maxAchievable(plan, track, targetLevers(t, false), withdrawalMax),
+    targetSolvesWithdrawal(t) ? noWithdrawalBalance(plan, track) : total,
     total,
     1,
   );
-  const displayTarget = Math.min(
-    toDisplay(s[key("targetValue")] || 0),
-    maxTarget,
-  );
+  // As stored, not clamped: the control shows the goal the user set even
+  // when the plan does not reach it, and the info row says that it does not
+  const displayTarget = toDisplay(s[key("targetValue")] || 0);
   const annualWithdrawal = (withdrawals[0] ?? 0) * 12;
   // Both sides NOMINAL, whatever is on screen: the schedule records what the
   // plan actually pays out, which is a nominal figure.
@@ -304,6 +299,51 @@ export function buildLane(
           (e) => (e.nominal * plan.projectedGain) / 100 >= annualWithdrawal,
         )
       : undefined;
+
+  // The DISPLAY track, deliberately: displayTarget is the stored nominal goal
+  // already converted into the units the Target Value control shows, so the
+  // two sides of this comparison must be in the same units. Reading the
+  // nominal track here would answer a different year whenever Inflated is on,
+  // for a goal the user set on the deflated scale.
+  //
+  // Conversion noise, not a miss. The engine floors each track's balance
+  // separately and a goal is converted between tracks by rounding, so a goal
+  // set to the ending balance on one track can differ from it on the other:
+  // by at most one dollar ABOVE it, either way, and BELOW it by one real
+  // dollar on the inflated track or, on the nominal track, by what one real
+  // dollar is worth at the horizon, 1 / deflator (about $10 at 6% over 40
+  // years). With no inflation the two tracks are one and nothing is
+  // tolerated. A goal that close to the balance must still read as reached
+  // and must not read as capped; a goal further above the balance is a real
+  // miss, whatever the horizon.
+  const exact = deflator === 1;
+  const slackAbove = exact ? 0 : 1;
+  const slackBelow = exact ? 0 : track === "real" ? 1 : Math.ceil(1 / deflator);
+  const reaches = (balance: number) => balance + slackAbove >= displayTarget;
+  // A plan too short to record a year (the Years slider at 0) still holds
+  // its opening balance today, which reaches a goal at or below it now
+  const targetReached =
+    displayTarget > 0
+      ? (matrix.find((e) => reaches(e[track])) ??
+        (matrix.length === 0 && reaches(total)
+          ? { x: today, nominal: ends.nominal, real: ends.real }
+          : undefined))
+      : undefined;
+  const shortfall = !reaches(total);
+  const surplus = total > displayTarget + slackBelow;
+  // A withdrawal the plan can never apply - one that begins at the horizon
+  // (in the engine's whole months), or a positive one that found the pot
+  // empty at every withdrawal month - cannot move the balance at any size
+  const withdrawalInert =
+    toMonths(plan.withdrawalStartYear) >= toMonths(years) ||
+    (plan.monthlyWithdrawal > 0 && withdrawals.length === 0);
+  const targetCapped =
+    targetSolvesWithdrawal(t) &&
+    displayTarget > 0 &&
+    (withdrawalInert
+      ? shortfall || surplus
+      : (shortfall && plan.monthlyWithdrawal <= 0) ||
+        (surplus && plan.monthlyWithdrawal >= withdrawalMax));
 
   return {
     id,
@@ -319,18 +359,12 @@ export function buildLane(
     maxTarget,
     withdrawalMax,
     displayTarget,
+    deflator: track === "real" ? deflator : 1,
     // One order of magnitude below the balance so the slider stays usable at any scale
     targetStep:
       10 ** Math.max(2, Math.floor(Math.log10(Math.max(total, 1000))) - 1),
-    // The DISPLAY track, deliberately: displayTarget is the stored nominal
-    // goal already converted into the units the Target Value control shows,
-    // so the two sides of this comparison must be in the same units. Reading
-    // the nominal track here would answer a different year whenever Inflated
-    // is on, for a goal the user set on the deflated scale.
-    targetReached:
-      displayTarget > 0
-        ? matrix.find((e) => e[track] >= displayTarget)
-        : undefined,
+    targetReached,
+    targetCapped,
     growthCoversDraw:
       covers === undefined
         ? undefined
@@ -373,67 +407,48 @@ export function buildLanes(
 
 /* ---------------- Target Solver ---------------- */
 
-/** What the last solve did to one lane */
-export interface TargetOutcome {
-  /** True when every lever hit its bound before reaching the request */
-  clamped: boolean;
-  /** The levers the solve actually moved, in cascade order */
-  moved: TargetLever[];
-}
-
-/** No solve has run for this lane in this session */
-export const NO_SOLVE: TargetOutcome = { clamped: false, moved: [] };
-
 /**
- * Nominal ending balance of the plan a solve produced, which is what a
- * target is stored as. Slider granularity means a solve lands near, not
- * exactly on, the request, so storing the reached balance keeps the
- * displayed goal attainable; measuring the nominal track directly (rather
- * than deflating `achieved` back) keeps a display-mode flip an exact no-op.
- */
-const solvedNominal = (lane: Lane, solution: TargetSolution): number =>
-  new InvestmentCalculator({
-    ...lane.plan,
-    ...solution.values,
-  }).calculateGrowth().nominal;
-
-/**
- * The lane's goal (given in display units) and every input the solver had to
- * move to reach it, as ONE slider update.
+ * The lane's goal (given in display units) and, where the mode offers one,
+ * the fixed withdrawal that reaches it, as ONE slider update.
  *
- * The balance the solved plan actually reaches is what gets stored, so the
- * control never shows a value the plan misses; 0, empty, or a non-finite
- * entry clears the goal and leaves the other sliders where they are.
+ * The goal is stored EXACTLY as asked, converted to nominal by this lane's
+ * own deflator. It used to be replaced with the balance the solved plan
+ * reached, so a goal below the withdrawal's reach snapped back up and the
+ * user could not lower it past that point. 0, a cleared box, a negative or a
+ * non-finite entry clears the goal and leaves the other sliders where they
+ * are.
  *
- * `outcome` is what the panel annotates the goal with - " (capped)" when
- * every lever hit its bound short of the request, and the "Target Solved By"
- * row naming the levers that moved. Both are derived here rather than in the
- * page so they can be asserted without rendering one.
+ * Nothing else ever rides in this update. Basic mode and a dynamic policy
+ * have no fixed withdrawal on screen, so there the goal is a marker alone;
+ * the assumed return and the contribution are never touched in any mode.
+ * Whether the plan then reaches the goal is the lane's to report (see
+ * Lane.targetReached and Lane.targetCapped), not a memory kept here.
  */
 export function solveLaneTarget(
   lane: Lane,
   target: number,
   toggles: TogglesState,
-): { outcome: TargetOutcome; sliders: Partial<Record<SliderKey, number>> } {
+): Partial<Record<SliderKey, number>> {
   const targetKey = laneKey("targetValue", lane.id);
-  if (!target || !Number.isFinite(target)) {
-    return { outcome: NO_SOLVE, sliders: { [targetKey]: 0 } };
+  if (!(target > 0) || !Number.isFinite(target)) {
+    return { [targetKey]: 0 };
+  }
+  const stored = Math.round(target / lane.deflator);
+  if (!targetSolvesWithdrawal(toggles)) {
+    return { [targetKey]: stored };
   }
   const solution = solveForTarget(
     lane.plan,
     target,
     lane.track,
-    targetLevers(toggles, target < lane.total),
     lane.withdrawalMax,
   );
   return {
-    outcome: {
-      clamped: solution.clamped,
-      moved: Object.keys(solution.values) as TargetLever[],
-    },
-    sliders: {
-      ...laneSliderValues(lane.id, solution.values),
-      [targetKey]: solvedNominal(lane, solution),
-    },
+    ...(solution.monthlyWithdrawal === undefined
+      ? {}
+      : {
+          [laneKey("monthlyWithdrawal", lane.id)]: solution.monthlyWithdrawal,
+        }),
+    [targetKey]: stored,
   };
 }

@@ -4,103 +4,58 @@
 
 import { InvestmentCalculator } from "./investment-growth-calculator";
 import { bisect } from "./bisect";
-import {
-  MAX_MONTHLY_CONTRIBUTION,
-  MAX_MONTHLY_WITHDRAWAL,
-  MAX_PROJECTED_GAIN,
-} from "../constants/app-constants";
+import { MAX_MONTHLY_WITHDRAWAL } from "../constants/app-constants";
 import type { DisplayTrack, InvestmentCalculatorProps } from "../types/types";
 
-/** Inputs the target solver is allowed to move, in cascade order */
-export type TargetLever =
-  "monthlyWithdrawal" | "monthlyContribution" | "projectedGain";
-
+/**
+ * What a solve decided. The ONLY input a target may move is the fixed
+ * monthly withdrawal: the assumed return, the contribution and every other
+ * slider are the user's own assumptions, and a goal is not a licence to
+ * rewrite them. A solver that did (it once raised Return (%) to whatever
+ * closed the gap) turned a $10,000 plan into a $5,000,000 one on a single
+ * slider drag and left the user asking why the ending balance had exploded.
+ */
 export interface TargetSolution {
-  /** Only the levers that moved, ready to merge into the slider map */
-  values: Partial<Record<TargetLever, number>>;
-  /** Ending balance the solution actually reaches (=== target unless clamped) */
+  /**
+   * The withdrawal to store, in whole dollars; absent when the plan already
+   * carries it, or when the withdrawal has no bearing on the outcome (a plan
+   * whose withdrawals start at the horizon) and moving it would reset the
+   * user's slider for nothing.
+   */
+  monthlyWithdrawal?: number;
+  /** Ending balance on `track` the plan reaches with that withdrawal */
   achieved: number;
-  /** True when `achieved` missed the request: every lever hit its bound, or the bisected one could not land on it */
-  clamped: boolean;
+  /**
+   * True when the withdrawal hit its floor of 0 or its ceiling and the balance
+   * still misses the target. The goal itself is never touched: the caller
+   * stores what was asked for and reports that the plan does not reach it.
+   */
+  capped: boolean;
 }
 
-/**
- * Direction the ending balance moves when the lever is raised. It holds for
- * the nominal track always, and for the inflation-adjusted track except under
- * a dynamic withdrawal policy, which sizes its draw off the nominal balance
- * and can therefore shrink the deflated track as the gain rises.
- */
-const LEVER_SLOPE: Record<TargetLever, 1 | -1> = {
-  monthlyWithdrawal: -1,
-  monthlyContribution: 1,
-  projectedGain: 1,
-};
-
-/** Granularity the stored value is rounded to, matching what the sliders show */
-const LEVER_STEP: Record<TargetLever, number> = {
-  monthlyWithdrawal: 1,
-  monthlyContribution: 1,
-  projectedGain: 0.01,
-};
-
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
+/** Ending balance on `track` with the fixed withdrawal set to `monthlyWithdrawal` */
+const evaluateWithdrawal = (
+  props: InvestmentCalculatorProps,
+  track: DisplayTrack,
+  monthlyWithdrawal: number,
+): number =>
+  new InvestmentCalculator({ ...props, monthlyWithdrawal }).calculateGrowth()[
+    track
+  ];
 
 /**
- * Slider range of a lever.
- *
- * The withdrawal ceiling is an ARGUMENT, not a field of the plan: it is the
- * span of one lane's withdrawal controls, which is the solver's search range
- * and nothing else - the calculator never reads it. It used to ride along in
- * InvestmentCalculatorProps, where every consumer of a plan had to carry the
- * solver's bound to construct one.
+ * Snaps the bisected withdrawal to whole dollars, choosing whichever of the
+ * two neighbouring dollars lands closer to the target: the slider cannot
+ * express the exact root, so the nearest one is the best available.
  */
-function leverRange(
-  lever: TargetLever,
-  maxMonthlyWithdrawal: number,
-): { min: number; max: number } {
-  if (lever === "monthlyWithdrawal") {
-    return { min: 0, max: maxMonthlyWithdrawal };
-  }
-  if (lever === "monthlyContribution") {
-    return { min: 0, max: MAX_MONTHLY_CONTRIBUTION };
-  }
-  return { min: 0, max: MAX_PROJECTED_GAIN };
-}
-
-/**
- * The requested levers, de-duplicated.
- *
- * Which levers are legal is the caller's decision, not this module's: the hub
- * hands over only `projectedGain` in basic mode and resolves the plan's cash
- * flows at the same boundary, so a basic-mode plan arrives here with
- * `monthlyWithdrawal: 0` and nothing to move. Consulting a UI mode flag from
- * inside the solver duplicated that rule in a second place, where it could
- * disagree with the first.
- */
-function usableLevers(levers: readonly TargetLever[]): TargetLever[] {
-  return [...new Set(levers)];
-}
-
-/**
- * Snaps a solved lever to its slider granularity, choosing whichever of the
- * two neighbouring steps lands closer to the target: whole dollars cannot
- * express the exact solution, so the nearest one is the best available.
- */
-function snapToStep(
-  lever: TargetLever,
+function snapToDollar(
   raw: number,
-  min: number,
   max: number,
   target: number,
   evaluateAt: (value: number) => number,
 ): number {
-  const step = LEVER_STEP[lever];
-  const decimals = step < 1 ? 2 : 0;
-  const toStep = (value: number) =>
-    clamp(Number((value * step).toFixed(decimals)), min, max);
-  const low = toStep(Math.floor(raw / step));
-  const high = toStep(Math.ceil(raw / step));
+  const low = Math.max(0, Math.floor(raw));
+  const high = Math.min(max, Math.ceil(raw));
   if (low === high) return low;
   const lowMiss = Math.abs(evaluateAt(low) - target);
   const highMiss = Math.abs(evaluateAt(high) - target);
@@ -108,144 +63,88 @@ function snapToStep(
 }
 
 /**
- * Solves `levers` in order so the ending balance lands on `target`.
+ * Solves the fixed monthly withdrawal that ends the plan on `target`.
  *
- * The ending balance is monotonic in every lever (rising with
- * monthlyContribution and projectedGain, falling with monthlyWithdrawal), so
- * each lever is bisected against a full calculator run. The first lever that
- * can close the gap on its own is the one that moves; a lever that cannot is
- * pinned at the bound that helps most and the cascade continues to the next.
- * A lever the plan ignores entirely is left alone rather than pinned.
+ * The ending balance falls as the withdrawal rises, so the withdrawal is
+ * bisected between 0 and the lane's ceiling against a full calculator run.
+ * A target at or above the no-withdrawal balance sets the withdrawal to 0;
+ * one below what the ceiling can spend down to sets it to the ceiling. In
+ * both cases the solve reports itself capped when the balance still misses,
+ * and the caller keeps the goal as typed rather than replacing it with what
+ * the plan reaches - a target the plan misses is information, not an error.
  *
- * When every lever is exhausted the solution is clamped: the levers stay at
- * their bounds and `achieved` reports the best balance the plan can reach, so
- * the caller can store that instead of an unreachable target. A bisected
- * solve is clamped too when it misses, which happens when the lever's
- * reachable range does not span the target — a dynamic policy, whose draw
- * scales with the balance it is solving for, narrows that range sharply.
- * Both display tracks behave the same here: the inflation-adjusted figure is
- * the nominal balance times a fixed positive deflator, so it is monotonic in
- * every lever exactly when the nominal balance is.
- *
- * A target of 0 or less clears the goal and moves nothing. Any dynamic
- * withdrawal policy in `props` is part of the plan being solved and is left
- * untouched.
+ * A target of 0 or less clears the goal and moves nothing. Whether the plan
+ * has a fixed withdrawal to move at all is the caller's decision: basic mode
+ * and a dynamic policy have no such control on screen, so the hub does not
+ * call this for them and the goal is a marker alone.
  *
  * @param props  - The plan for the lane
  * @param target - Desired ending portfolio value in USD, in `track`'s units
  * @param track  - The track the goal is measured on, as the control shows it
- * @param levers - Levers to try, in cascade order
  * @param maxMonthlyWithdrawal - Span of this lane's withdrawal control, which
- *   bounds the withdrawal lever's search. Defaults to the app's standard span,
- *   which is what a lane whose controls have not been widened offers.
- * @returns The levers that moved, the balance reached, and whether it clamped
+ *   bounds the search. Defaults to the app's standard span.
+ * @returns The withdrawal that moved, the balance reached, and whether it capped
  */
 export function solveForTarget(
   props: InvestmentCalculatorProps,
   target: number,
   track: DisplayTrack,
-  levers: readonly TargetLever[],
   maxMonthlyWithdrawal: number = MAX_MONTHLY_WITHDRAWAL,
 ): TargetSolution {
-  const evaluate = (overrides: Partial<Record<TargetLever, number>>) =>
-    new InvestmentCalculator({ ...props, ...overrides }).calculateGrowth()[
-      track
-    ];
-
-  const base = evaluate({});
+  const evaluateAt = (value: number) => evaluateWithdrawal(props, track, value);
+  const current = Math.min(
+    Math.max(props.monthlyWithdrawal, 0),
+    maxMonthlyWithdrawal,
+  );
+  const base = evaluateAt(current);
   if (!Number.isFinite(target) || target <= 0 || target === base) {
-    return { values: {}, achieved: base, clamped: false };
+    return { achieved: base, capped: false };
   }
 
-  const rising = target > base;
-  const overrides: Partial<Record<TargetLever, number>> = {};
-  let balance = base;
+  const atZero = evaluateAt(0);
+  const atCeiling = evaluateAt(maxMonthlyWithdrawal);
+  // A withdrawal the calculator ignores (one that starts after the horizon
+  // ends) leaves the balance untouched at both bounds: pinning it would reset
+  // the user's slider for nothing, so the goal is simply out of reach
+  if (atZero === atCeiling) {
+    return { achieved: base, capped: true };
+  }
 
-  for (const lever of usableLevers(levers)) {
-    const { min, max } = leverRange(lever, maxMonthlyWithdrawal);
-    const current = clamp(props[lever], min, max);
-    // The bound of this lever that pushes the balance toward the target
-    const bound = rising === LEVER_SLOPE[lever] > 0 ? max : min;
-    if (bound === current) continue;
-
-    const atBound = evaluate({ ...overrides, [lever]: bound });
-    if (rising ? atBound < target : atBound > target) {
-      // A lever the calculator ignores (a withdrawal that starts after the
-      // horizon ends) leaves the balance untouched: pinning it would reset the
-      // user's slider for nothing
-      if (atBound !== balance) {
-        overrides[lever] = bound;
-        balance = atBound;
-      }
-      continue;
-    }
-
-    const evaluateAt = (value: number) =>
-      evaluate({ ...overrides, [lever]: value });
-    const raw = bisect(
-      evaluateAt,
-      rising ? bound : current,
-      rising ? current : bound,
-      target,
-    );
-    overrides[lever] = snapToStep(lever, raw, min, max, target, evaluateAt);
-    const achieved = evaluate(overrides);
-    return {
-      values: moved(props, overrides),
-      achieved,
-      // Slider granularity leaves an honest rounding miss, but a slope the
-      // calculator does not honour leaves a real one: report the latter so the
-      // caller stores what the plan reaches rather than what was asked for
-      clamped: Math.abs(achieved - target) > Math.max(1, target * 0.005),
-    };
+  let solved: number;
+  let capped = false;
+  if (atZero <= target) {
+    solved = 0;
+    capped = atZero < target;
+  } else if (atCeiling >= target) {
+    solved = maxMonthlyWithdrawal;
+    capped = atCeiling > target;
+  } else {
+    const raw = bisect(evaluateAt, 0, maxMonthlyWithdrawal, target);
+    solved = snapToDollar(raw, maxMonthlyWithdrawal, target, evaluateAt);
   }
 
   return {
-    values: moved(props, overrides),
-    achieved: evaluate(overrides),
-    clamped: true,
+    ...(solved !== props.monthlyWithdrawal
+      ? { monthlyWithdrawal: solved }
+      : {}),
+    achieved: evaluateAt(solved),
+    capped,
   };
 }
 
-/** Drops levers whose solved value is the one the props already carry */
-function moved(
-  props: InvestmentCalculatorProps,
-  overrides: Partial<Record<TargetLever, number>>,
-): Partial<Record<TargetLever, number>> {
-  const values: Partial<Record<TargetLever, number>> = {};
-  for (const [lever, value] of Object.entries(overrides) as [
-    TargetLever,
-    number,
-  ][]) {
-    if (value !== props[lever]) values[lever] = value;
-  }
-  return values;
-}
-
 /**
- * Highest ending balance reachable with every lever at its most favourable
- * bound: contributions and gain at their ceilings, withdrawals at 0. Levers
- * outside the list keep their prop values, so the ceiling always reflects the
- * controls the current mode actually offers.
+ * The ending balance with no fixed withdrawal at all: the most a target can
+ * ask of the withdrawal lever, and therefore the span of the Target Value
+ * slider in advanced mode. Everything else in the plan stays as the user set
+ * it; this is what THEIR plan reaches, not what some other plan could.
  *
- * @param props  - The plan for the lane
- * @param track  - The track the ceiling is measured on
- * @param levers - Levers the caller is willing to move
- * @param maxMonthlyWithdrawal - Span of this lane's withdrawal control
- * @returns The best ending portfolio value in USD
+ * @param props - The plan for the lane
+ * @param track - The track the ceiling is measured on
+ * @returns The no-withdrawal ending portfolio value in USD
  */
-export function maxAchievable(
+export function noWithdrawalBalance(
   props: InvestmentCalculatorProps,
   track: DisplayTrack,
-  levers: readonly TargetLever[],
-  maxMonthlyWithdrawal: number = MAX_MONTHLY_WITHDRAWAL,
 ): number {
-  const overrides: Partial<Record<TargetLever, number>> = {};
-  for (const lever of usableLevers(levers)) {
-    const { min, max } = leverRange(lever, maxMonthlyWithdrawal);
-    overrides[lever] = LEVER_SLOPE[lever] > 0 ? max : min;
-  }
-  return new InvestmentCalculator({ ...props, ...overrides }).calculateGrowth()[
-    track
-  ];
+  return evaluateWithdrawal(props, track, 0);
 }

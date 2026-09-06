@@ -24,8 +24,8 @@ const FEATURES: ReadonlyArray<readonly [string, string]> = [
   ],
   ["Rollover", "roll Investment A's ending balance into B at A's finish year."],
   [
-    "Target solver",
-    "enter a target ending balance and the app solves backwards for it — adjusting the monthly withdrawal in advanced mode, the monthly contribution under a dynamic withdrawal policy, and falling back to the assumed return when no other lever can reach it. The info panel names the lever each solve moved.",
+    "Target value",
+    "mark a goal for the ending balance: a dashed line on the chart, and the info panel reports the first year the plan reaches it. In Advanced mode with fixed withdrawals the app also solves the monthly withdrawal that lands on the goal. It never moves the return, the contribution or any other input.",
   ],
   [
     "Dynamic Withdrawal",
@@ -52,7 +52,7 @@ const FEATURES: ReadonlyArray<readonly [string, string]> = [
 const STEPS: ReadonlyArray<string> = [
   "Start with Investment A: current amount, expected annual return, and time horizon. Year fields accept partial years such as 10.5.",
   "Enable Advanced to unlock monthly contributions, contribution stop year, withdrawals, withdrawal start year, the tool toggles, and the Investment B comparison lane.",
-  "Use Target Value to solve backwards for a chosen ending balance. It is available in every mode, but the lever changes: basic mode has only the assumed return, advanced mode moves the monthly withdrawal first, and Dynamic Withdrawal moves the monthly contribution. Check the Target Solved By row to see which one moved.",
+  "Use Target Value to mark a goal for the ending balance: it draws a dashed line on the chart and the info panel reports the first year the plan reaches it. In Advanced mode with fixed withdrawals it also solves the monthly withdrawal that lands on the goal; it never changes the return, the contribution or any other input.",
   "Toggle Inflated for inflation-adjusted numbers and Rollover to roll A into B at A's finish year.",
   "Toggle Portfolio to map the calculated total into a stock allocation model: add symbols, fetch prices, set allocations to 100%, and read the capital preservation schedule.",
 ];

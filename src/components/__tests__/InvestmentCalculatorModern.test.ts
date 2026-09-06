@@ -10,11 +10,11 @@ import {
 import type { InputValues, TogglesState } from "../../common/types/types";
 import {
   BASIC_MODE_PLAN,
-  CLAMPED_TARGET_PLAN,
   DYNAMIC_POLICY_PLAN,
   FIXED_WITHDRAWAL_PLAN,
   PLAN_FIXTURES,
   ROLLOVER_PLAN,
+  UNREACHABLE_TARGET_PLAN,
   type PlanFixture,
 } from "./fixtures/plan-fixtures";
 
@@ -161,6 +161,16 @@ const inputValue = (html: string, name: string): string | undefined => {
     html,
   )?.[0];
   return tag === undefined ? undefined : /value="([^"]*)"/.exec(tag)?.[1];
+};
+
+/** The top of the slider whose thumb carries `name` as its accessible name */
+const sliderMax = (html: string, name: string): string | undefined => {
+  const tag = new RegExp(`<span[^>]*aria-label="${name} slider"[^>]*>`).exec(
+    html,
+  )?.[0];
+  return tag === undefined
+    ? undefined
+    : /aria-valuemax="([^"]*)"/.exec(tag)?.[1];
 };
 
 /**
@@ -346,7 +356,7 @@ describe("the totals box is the popover trigger", () => {
  * prints compared against an exact expected value.
  *
  * It exists because all of the hub's engine-to-UI wiring
- * - buildLane, buildLanes, targetLevers, the Monte Carlo
+ * - buildLane, buildLanes, targetSolvesWithdrawal, the Monte Carlo
  * orchestration, laneRows and mcRows - is private to
  * InvestmentCalculatorModern.tsx and can only be reached
  * through rendered output. A refactor that moves those
@@ -455,6 +465,13 @@ interface GoldenPlan {
   totals: string[];
   /** What each lane's Target Value box shows; undefined = lane not rendered */
   targets: [string | undefined, string | undefined];
+  /**
+   * The top of each lane's Target Value slider: the lane's own no-withdrawal
+   * balance where the target solves the withdrawal, its projection elsewhere.
+   * The number this fix moved most - it used to be the balance at a 30%
+   * return and a $5,000 contribution - so it is pinned here.
+   */
+  spans: [string | undefined, string | undefined];
   /** Every Info-panel row, in order, with its exact value */
   info: Record<string, string>;
 }
@@ -467,6 +484,8 @@ const GOLDEN_PLANS: GoldenPlan[] = [
     // figure; basic mode resolves all three to nothing, so none of them do.
     totals: ["$492,680"],
     targets: ["", undefined],
+    // Basic mode: the slider spans the projection itself
+    spans: ["492680", undefined],
     info: {
       "(A) Target Reached": "N/A",
       // Rollover is stored ON, but a tool is advanced-only, so it is not
@@ -481,6 +500,8 @@ const GOLDEN_PLANS: GoldenPlan[] = [
     fixture: FIXED_WITHDRAWAL_PLAN,
     totals: ["$1,070,067", "$0"],
     targets: ["500000", ""],
+    // Each lane's own balance with its withdrawal set to 0
+    spans: ["2055874", "206426"],
     info: {
       "(A) Withdrawal Start": "+120 mo",
       "(A) Contributions End": "+120 mo",
@@ -518,6 +539,9 @@ const GOLDEN_PLANS: GoldenPlan[] = [
     // near $770,000 nominal, which 25 years of 3% inflation deflates to this
     totals: ["$367,704", "$192,787"],
     targets: ["", ""],
+    // A dynamic policy replaces the fixed withdrawal, so the target moves
+    // nothing and the slider spans the projection
+    spans: ["367704", "192787"],
     info: {
       "(A) Withdrawal Start": "+0 mo",
       "(A) Contributions End": "+300 mo",
@@ -554,6 +578,8 @@ const GOLDEN_PLANS: GoldenPlan[] = [
     // injection and B ends near $613,000.
     totals: ["$517,111", "$2,325,482"],
     targets: ["", ""],
+    // Neither lane withdraws, so the no-withdrawal balance is the projection
+    spans: ["517111", "2325482"],
     info: {
       "(A) Withdrawal Start": "N/A",
       "(A) Contributions End": "+120 mo",
@@ -579,11 +605,16 @@ const GOLDEN_PLANS: GoldenPlan[] = [
     },
   },
   {
-    fixture: CLAMPED_TARGET_PLAN,
+    fixture: UNREACHABLE_TARGET_PLAN,
     totals: ["$31,667", "$67,816"],
-    // The stored goal is $100,000,000; the control shows the most the lane's
-    // levers can reach, which is maxAchievable() for this plan
-    targets: ["85984731", ""],
+    // The stored goal is $100,000,000 and the control shows exactly that: a
+    // goal the plan misses is still the goal. It used to show $85,984,731,
+    // the balance a 30% return and a $5,000 contribution would have reached
+    targets: ["100000000", ""],
+    // The slider ends at the plan's own no-withdrawal balance, not at the
+    // $85,984,731 a 30% return and a $5,000 contribution would reach; the
+    // goal sits far past its end
+    spans: ["205761", "67816"],
     info: {
       "(A) Withdrawal Start": "+120 mo",
       // No stop year is stored, so contributions run to the whole horizon
@@ -610,7 +641,7 @@ describe("golden plans render exact figures", () => {
     expect(GOLDEN_PLANS.map((g) => g.fixture)).toEqual([...PLAN_FIXTURES]);
   });
 
-  for (const { fixture, totals, targets, info } of GOLDEN_PLANS) {
+  for (const { fixture, totals, targets, spans, info } of GOLDEN_PLANS) {
     describe(fixture.name, () => {
       // One render per plan: these are pure functions of the fixture, and a
       // Monte Carlo plan pays for five hundred simulations each time
@@ -631,6 +662,16 @@ describe("golden plans render exact figures", () => {
           ],
           why,
         ).toEqual(targets);
+      });
+
+      it("spans each lane's target slider over its own reachable range", () => {
+        expect(
+          [
+            sliderMax(html, "Investment A Target Value"),
+            sliderMax(html, "Investment B Target Value"),
+          ],
+          why,
+        ).toEqual(spans);
       });
 
       it("prints every info row with the value it measured", () => {
@@ -693,23 +734,24 @@ describe("a small but real chance of running out is not rounded to zero", () => 
   });
 });
 
-describe("solving for an unreachable target", () => {
-  /*
-   * The "(capped)" annotation and the "(A) Target Solved By" row are painted
-   * from state the SOLVE writes, and renderToStaticMarkup renders once: a
-   * setState after it returns is a no-op on the server, so neither row can
-   * be observed here. What CAN be observed is the whole of what the solve
-   * decided, which is the part a refactor would break - the lever cascade
-   * the mode offers, the lane the solved values are spread onto, and the
-   * balance stored as the reachable goal.
-   */
+/*
+ * The "(capped)" annotation is derived from the lane on every render, so a
+ * static render of the sliders a solve stored shows it. It is pinned below
+ * along with the rest of what the solve decided, which is the part a
+ * refactor would break: which sliders the update touches, the lane it
+ * touches them on, and the goal it stores.
+ */
+
+/** Drags lane A's Target Value and returns the slider update the hub wrote */
+const dragTarget = (fixture: PlanFixture, target: number) => {
   const setSliders = vi.fn<(update: unknown) => void>();
-  const before = normalizeState(CLAMPED_TARGET_PLAN.state).sliders as Record<
+  const before = normalizeState(fixture.state).sliders as Record<
     string,
     number
   >;
-  renderPlan(CLAMPED_TARGET_PLAN, { setSliders });
-  dragSliderNamed("Investment A Target Value", 100_000_000);
+  renderPlan(fixture, { setSliders });
+  dragSliderNamed("Investment A Target Value", target);
+  expect(setSliders).toHaveBeenCalledTimes(1);
 
   const update = setSliders.mock.calls[0]?.[0] as (
     prev: Record<string, number>,
@@ -718,28 +760,113 @@ describe("solving for an unreachable target", () => {
   const changed = Object.fromEntries(
     Object.entries(after).filter(([key, value]) => before[key] !== value),
   );
+  return { before, after, changed };
+};
 
-  it("writes the solved levers and the reachable goal in one update", () => {
-    expect(setSliders).toHaveBeenCalledTimes(1);
+describe("solving for an unreachable target", () => {
+  const { after, changed } = dragTarget(UNREACHABLE_TARGET_PLAN, 90_000_000);
+
+  it("writes the goal as asked and zeroes the withdrawal, nothing more", () => {
     expect(changed).toEqual({
-      // Advanced mode with fixed withdrawals offers all three levers for a
-      // shortfall, in cascade order, and every one of them ends at its bound
+      // The one input a target may move, at the bound that helps most
       monthlyWithdrawalA: 0,
-      monthlyContributionA: 5000,
-      projectedGainA: 30,
-      // Not the $100,000,000 that was asked for: the goal that is stored is
-      // the balance the clamped plan actually reaches
-      targetValueA: 85_984_731,
+      // The $90,000,000 that was asked for, not the balance the plan reaches.
+      // The $200 contribution and 7% return are the user's own and survive.
+      targetValueA: 90_000_000,
     });
   });
 
-  it("stores exactly the ceiling the Target Value control already showed", () => {
+  it("stores exactly what the Target Value control shows", () => {
+    // Display and store agree; the goal itself is pinned by the test above
     expect(String(after["targetValueA"])).toBe(
-      inputValue(renderPlan(CLAMPED_TARGET_PLAN), "Investment A Target Value"),
+      inputValue(
+        renderPlan(UNREACHABLE_TARGET_PLAN, { sliders: after }),
+        "Investment A Target Value",
+      ),
     );
   });
 
   it("moves lane B's sliders not at all", () => {
     expect(Object.keys(changed).filter((key) => key.endsWith("B"))).toEqual([]);
+  });
+
+  it("prints the goal as capped once the withdrawal is at 0 and it is still missed", () => {
+    expect(
+      infoValue(
+        renderPlan(UNREACHABLE_TARGET_PLAN, { sliders: after }),
+        "(A) Target Reached",
+      ),
+    ).toBe("> 20 yrs (capped)");
+    // With the fixture's own $1,000 withdrawal the goal is missed but the
+    // withdrawal could still be cut, so it is not capped
+    expect(
+      infoValue(renderPlan(UNREACHABLE_TARGET_PLAN), "(A) Target Reached"),
+    ).toBe("> 20 yrs");
+  });
+});
+
+describe("the Target Value control moves no input but the withdrawal", () => {
+  /*
+   * The regression this pins: a target used to raise the assumed return in
+   * basic mode, and zero the withdrawal, max the contribution and then raise
+   * the return in advanced mode, so one slider drag rewrote the plan and its
+   * ending balance with it. In every mode the update may carry the goal and
+   * - only where a fixed withdrawal is on screen - that withdrawal.
+   */
+  const modes: [string, PlanFixture, string[]][] = [
+    ["basic mode", BASIC_MODE_PLAN, ["targetValueA"]],
+    [
+      "advanced mode with fixed withdrawals",
+      FIXED_WITHDRAWAL_PLAN,
+      ["monthlyWithdrawalA", "targetValueA"],
+    ],
+    [
+      "advanced mode with a dynamic policy",
+      DYNAMIC_POLICY_PLAN,
+      ["targetValueA"],
+    ],
+  ];
+
+  for (const [mode, fixture, allowed] of modes) {
+    describe(mode, () => {
+      for (const target of [12_345, 750_000, 50_000_000]) {
+        it(`writes only ${allowed.join(" and ")} for a goal of ${target}`, () => {
+          const { before, after, changed } = dragTarget(fixture, target);
+          // The goal always; the withdrawal only where it is on screen and
+          // the solve had to move it
+          expect(Object.keys(changed).sort()).toEqual(
+            changed["monthlyWithdrawalA"] !== undefined
+              ? allowed
+              : ["targetValueA"],
+          );
+          // The assumed return and the contribution are the user's own
+          expect(after["projectedGainA"]).toBe(before["projectedGainA"]);
+          expect(after["monthlyContributionA"]).toBe(
+            before["monthlyContributionA"],
+          );
+          // And the goal round-trips through the display track exactly
+          expect(
+            inputValue(
+              renderPlan(fixture, { sliders: after }),
+              "Investment A Target Value",
+            ),
+          ).toBe(String(target));
+        });
+      }
+    });
+  }
+
+  it("can be lowered all the way down: the goal is stored, never snapped back", () => {
+    // A goal far below what the plan reaches. The withdrawal rises to meet
+    // it as far as it can, and the goal itself stays at $1
+    const { before, changed } = dragTarget(FIXED_WITHDRAWAL_PLAN, 1);
+    expect(changed["targetValueA"]).toBe(1);
+    expect(changed["monthlyWithdrawalA"]).toBeGreaterThan(
+      before["monthlyWithdrawalA"],
+    );
+    expect(Object.keys(changed).sort()).toEqual([
+      "monthlyWithdrawalA",
+      "targetValueA",
+    ]);
   });
 });
