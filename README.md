@@ -165,6 +165,31 @@ TH4_BUCKET=<bucket> TH4_DIST_ID=<distribution-id> npm run deploy
 The bucket and distribution ID are not in the repo. `deploy` builds, uploads
 with the cache-control policy above, and invalidates the distribution.
 
+`scripts/deploy.sh` wraps that with the things a bare `npm run deploy` leaves
+to you: it installs the `aws` CLI into a venv when the machine has none, runs
+the same five checks CI does **before** anything reaches AWS, prints the commit
+being shipped and warns when it is not what the remote has, and then polls the
+live site until it serves the content-hashed entry chunk that was just built —
+so a deploy that uploaded but never became visible is reported as a failure
+rather than a success.
+
+It reads `TH4_BUCKET` and `TH4_DIST_ID` from the environment and has **no
+defaults**, so the script names no bucket, distribution, account or domain.
+`TH4_SITE` is optional; without it the last step has nothing to poll and is
+skipped. Keep your own values in a wrapper outside version control:
+
+```sh
+#!/usr/bin/env bash
+TH4_BUCKET=... TH4_DIST_ID=... TH4_SITE=https://... \
+  exec "$HOME/th4dev/scripts/deploy.sh" "$@"
+```
+
+```sh
+scripts/deploy.sh              # build, publish, verify
+scripts/deploy.sh --dry-run    # everything up to the build; writes nothing
+scripts/deploy.sh --no-verify  # skip the post-publish fetch
+```
+
 **Deploy the CDK stack** (`npm run deploy:cdk`) provisions the intended
 infrastructure from scratch: bucket, certificate, distribution with security
 headers, and Route 53 aliases. Moving the domain onto it means releasing the
