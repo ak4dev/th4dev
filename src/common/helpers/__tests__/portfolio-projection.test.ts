@@ -11,12 +11,77 @@ const holding = (
   ...overrides,
 });
 
+describe("computePortfolioProjection - deferred withdrawals", () => {
+  const holding = {
+    symbol: "VOO",
+    allocationPct: 100,
+    currentPrice: 500,
+  };
+
+  it("requires nothing extra of a holding before withdrawals begin", () => {
+    // $500,000 drawn at $4,000/mo, but not for twenty years. The chart used
+    // to bill every year from today, demanding a 9.6% gain by next year for
+    // spending two decades away and $1,940 a share by year 30 against the
+    // $980 its own definition gives.
+    const result = computePortfolioProjection({
+      holdings: [holding],
+      totalPortfolioValue: 500000,
+      monthlyWithdrawal: 4000,
+      withdrawalStartYear: 20,
+      yearsForward: 30,
+    });
+    const at = (year: number) =>
+      result["VOO"].find((p) => p.year === year)?.requiredPrice;
+
+    // Nothing has been drawn yet, so today's price is all the plan needs
+    expect(at(0)).toBe(500);
+    expect(at(1)).toBe(500);
+    expect(at(19)).toBe(500);
+    // From year 20 the requirement rises with what is actually withdrawn:
+    // ten years of $48,000 over 1,000 shares
+    expect(at(20)).toBe(500);
+    expect(at(30)).toBe(980);
+  });
+
+  it("carries a fractional start year as the slider steps it", () => {
+    const result = computePortfolioProjection({
+      holdings: [holding],
+      totalPortfolioValue: 500000,
+      monthlyWithdrawal: 1000,
+      withdrawalStartYear: 10.5,
+      yearsForward: 12,
+    });
+    const at = (year: number) =>
+      result["VOO"].find((p) => p.year === year)?.requiredPrice;
+    expect(at(10)).toBe(500);
+    // Half a year of $1,000 over 1,000 shares
+    expect(at(11)).toBeCloseTo(506, 6);
+    expect(at(12)).toBeCloseTo(518, 6);
+  });
+
+  it("bills from today when withdrawals start immediately", () => {
+    const result = computePortfolioProjection({
+      holdings: [holding],
+      totalPortfolioValue: 500000,
+      monthlyWithdrawal: 4000,
+      withdrawalStartYear: 0,
+      yearsForward: 2,
+    });
+    const at = (year: number) =>
+      result["VOO"].find((p) => p.year === year)?.requiredPrice;
+    expect(at(0)).toBe(500);
+    expect(at(1)).toBe(548);
+    expect(at(2)).toBe(596);
+  });
+});
+
 describe("computePortfolioProjection", () => {
   it("returns empty object when holdings have no currentPrice", () => {
     const result = computePortfolioProjection({
       holdings: [holding({ currentPrice: undefined })],
       totalPortfolioValue: 10000,
       monthlyWithdrawal: 100,
+      withdrawalStartYear: 0,
       yearsForward: 5,
     });
     expect(Object.keys(result)).toHaveLength(0);
@@ -30,6 +95,7 @@ describe("computePortfolioProjection", () => {
       ],
       totalPortfolioValue: 10000,
       monthlyWithdrawal: 100,
+      withdrawalStartYear: 0,
       yearsForward: 2,
     });
     expect(Object.keys(result)).toHaveLength(0);
@@ -40,6 +106,7 @@ describe("computePortfolioProjection", () => {
       holdings: [holding({ allocationPct: 0 })],
       totalPortfolioValue: 10000,
       monthlyWithdrawal: 100,
+      withdrawalStartYear: 0,
       yearsForward: 2,
     });
     expect(Object.keys(result)).toHaveLength(0);
@@ -50,6 +117,7 @@ describe("computePortfolioProjection", () => {
       holdings: [holding()],
       totalPortfolioValue: 10000,
       monthlyWithdrawal: 100,
+      withdrawalStartYear: 0,
       yearsForward: 5,
     });
     expect(result["AAPL"]).toHaveLength(6);
@@ -60,6 +128,7 @@ describe("computePortfolioProjection", () => {
       holdings: [holding({ currentPrice: 150 })],
       totalPortfolioValue: 10000,
       monthlyWithdrawal: 100,
+      withdrawalStartYear: 0,
       yearsForward: 3,
     });
     expect(result["AAPL"][0].requiredPrice).toBe(150);
@@ -74,6 +143,7 @@ describe("computePortfolioProjection", () => {
       holdings: [holding({ currentPrice: 100, allocationPct: 100 })],
       totalPortfolioValue: 10000,
       monthlyWithdrawal: 100,
+      withdrawalStartYear: 0,
       yearsForward: 2,
     });
     expect(result["AAPL"][1].requiredPrice).toBe(112);
@@ -84,6 +154,7 @@ describe("computePortfolioProjection", () => {
       holdings: [holding()],
       totalPortfolioValue: 10000,
       monthlyWithdrawal: 200,
+      withdrawalStartYear: 0,
       yearsForward: 10,
     });
     const prices = result["AAPL"].map((p) => p.requiredPrice);
@@ -100,6 +171,7 @@ describe("computePortfolioProjection", () => {
       ],
       totalPortfolioValue: 10000,
       monthlyWithdrawal: 100,
+      withdrawalStartYear: 0,
       yearsForward: 3,
     });
     expect(result["AAPL"]).toHaveLength(4);
@@ -114,6 +186,7 @@ describe("computePortfolioProjection", () => {
       holdings: [holding()],
       totalPortfolioValue: 10000,
       monthlyWithdrawal: 50,
+      withdrawalStartYear: 0,
       yearsForward: 4,
     });
     result["AAPL"].forEach((pt, i) => {
@@ -134,6 +207,7 @@ describe("computePortfolioProjection – edge cases", () => {
       ],
       totalPortfolioValue: 100000,
       monthlyWithdrawal: 500,
+      withdrawalStartYear: 0,
       yearsForward: 3,
     });
     expect(Object.keys(result)).toHaveLength(3);
@@ -151,6 +225,7 @@ describe("computePortfolioProjection – edge cases", () => {
       holdings: [holding({ currentPrice: 42.5 })],
       totalPortfolioValue: 5000,
       monthlyWithdrawal: 200,
+      withdrawalStartYear: 0,
       yearsForward: 5,
     });
     expect(result["AAPL"][0].requiredPrice).toBe(42.5);
@@ -161,6 +236,7 @@ describe("computePortfolioProjection – edge cases", () => {
       holdings: [holding({ currentPrice: 100 })],
       totalPortfolioValue: 10000,
       monthlyWithdrawal: 0,
+      withdrawalStartYear: 0,
       yearsForward: 10,
     });
     const prices = result["AAPL"].map((p) => p.requiredPrice);
@@ -172,6 +248,7 @@ describe("computePortfolioProjection – edge cases", () => {
       holdings: [holding({ allocationPct: -50 })],
       totalPortfolioValue: 10000,
       monthlyWithdrawal: 100,
+      withdrawalStartYear: 0,
       yearsForward: 2,
     });
     expect(Object.keys(result)).toHaveLength(0);
@@ -182,6 +259,7 @@ describe("computePortfolioProjection – edge cases", () => {
       holdings: [holding()],
       totalPortfolioValue: 0,
       monthlyWithdrawal: 100,
+      withdrawalStartYear: 0,
       yearsForward: 2,
     });
     expect(Object.keys(result)).toHaveLength(0);

@@ -35,6 +35,16 @@ export interface ProjectionParams {
   totalPortfolioValue: number;
   /** Total monthly withdrawal across the whole portfolio in USD (PlanInputs.monthlyWithdrawal) */
   monthlyWithdrawal: number;
+  /**
+   * Years from today at which withdrawals begin (PlanInputs.withdrawalStartYear).
+   *
+   * Required rather than optional, and deliberately so: the panel already held
+   * this figure and simply did not pass it, so the chart billed every plan for
+   * withdrawals from day one and demanded roughly twice the share price a
+   * deferred-withdrawal plan actually needs. A caller that forgets it now
+   * fails to compile instead of drawing a wrong line.
+   */
+  withdrawalStartYear: number;
   /** Number of years forward to project */
   yearsForward: number;
 }
@@ -48,20 +58,32 @@ export interface ProjectionParams {
  * future year-end such that the holding's value exactly equals its initial allocation
  * value plus all withdrawals drawn from it to that date.
  *
- * Formula (year y):
+ * Formula (year y), where `drawn` is the years actually spent withdrawing:
  *   allocationValue  = totalPortfolioValue × (allocationPct / 100)
  *   shares           = allocationValue / currentPrice
  *   withdrawalShare  = monthlyWithdrawal × (allocationPct / 100)
- *   requiredPrice(y) = (allocationValue + y × 12 × withdrawalShare) / shares
- *                    = currentPrice × (1 + y × 12 × withdrawalShare / allocationValue)
+ *   drawn(y)         = max(0, y - withdrawalStartYear)
+ *   requiredPrice(y) = (allocationValue + drawn × 12 × withdrawalShare) / shares
+ *                    = currentPrice × (1 + drawn × 12 × withdrawalShare / allocationValue)
+ *
+ * Before withdrawals begin nothing has been drawn, so the required price is
+ * simply today's price: a plan that starts spending in twenty years does not
+ * need its holdings to have grown by next year. Fractional start years are
+ * carried as they are, which matches the month the engine actually starts
+ * paying (the slider steps in half years).
  *
  * Holdings without a currentPrice are skipped.
  */
 export function computePortfolioProjection(
   params: ProjectionParams,
 ): PortfolioProjection {
-  const { holdings, totalPortfolioValue, monthlyWithdrawal, yearsForward } =
-    params;
+  const {
+    holdings,
+    totalPortfolioValue,
+    monthlyWithdrawal,
+    withdrawalStartYear,
+    yearsForward,
+  } = params;
   const today = new Date();
   const result: PortfolioProjection = {};
 
@@ -83,8 +105,9 @@ export function computePortfolioProjection(
     const points: RequiredPricePoint[] = [];
 
     for (let year = 0; year <= yearsForward; year++) {
+      const yearsDrawing = Math.max(0, year - withdrawalStartYear);
       const cumulativeWithdrawals =
-        year * MONTHS_PER_YEAR * monthlyWithdrawalShare;
+        yearsDrawing * MONTHS_PER_YEAR * monthlyWithdrawalShare;
       const requiredPrice = (allocationValue + cumulativeWithdrawals) / shares;
 
       points.push({

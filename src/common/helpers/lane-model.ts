@@ -31,6 +31,7 @@ import {
   MONTHS_PER_YEAR,
   PERCENTAGE_DIVISOR,
   MIN_VALUE,
+  SLIDER_LIMITS,
   laneKey,
 } from "../constants/app-constants";
 import type {
@@ -433,7 +434,16 @@ export function solveLaneTarget(
   if (!(target > 0) || !Number.isFinite(target)) {
     return { [targetKey]: 0 };
   }
-  const stored = Math.round(target / lane.deflator);
+  // A goal is held nominal, so one set in today's dollars is stored as the
+  // larger figure it is worth at the horizon - far larger on a long, highly
+  // inflationary plan. Past the sanity limit every slider is read back
+  // through it could not be stored at all, so the goal is capped HERE, in the
+  // units the control is showing, and what the box displays is what was
+  // stored. Clamping it on the way into state instead left the box showing an
+  // unrecognisable figure: at 10% over 100 years a $999,999,999,999 goal
+  // converts to 1.4e16, which comes back as $653,613,862,188.
+  const largestGoal = Math.floor(SLIDER_LIMITS[targetKey].max * lane.deflator);
+  const stored = Math.round(Math.min(target, largestGoal) / lane.deflator);
   if (!targetSolvesWithdrawal(toggles)) {
     return { [targetKey]: stored };
   }

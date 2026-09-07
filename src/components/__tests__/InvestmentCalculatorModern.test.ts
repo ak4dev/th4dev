@@ -568,7 +568,7 @@ const GOLDEN_PLANS: GoldenPlan[] = [
       "(A+B) Median Outcome": "$601,335",
       "(A+B) 90th Percentile": "$1,160,214 (1 in 10 end above)",
       "(A+B) 10th Percentile": "$312,949 (1 in 10 end below)",
-      "(A+B) Chance of Running Out": "0%",
+      "(A+B) Chance of Running Out": "1%",
     },
   },
   {
@@ -802,6 +802,56 @@ describe("solving for an unreachable target", () => {
     expect(
       infoValue(renderPlan(UNREACHABLE_TARGET_PLAN), "(A) Target Reached"),
     ).toBe("> 20 yrs");
+  });
+});
+
+describe("FIRE compounds the pot it was handed", () => {
+  /*
+   * The pot is the SUM over the rendered lanes, so the rate that grows it has
+   * to describe both of them. Lane A's rate alone kept lane B's money while
+   * discarding lane B's return, which told a user whose second lane grows far
+   * faster that they would never reach FIRE and had to save more every month.
+   *
+   * Asserted as a difference rather than an exact year count: if the panel
+   * were fed one lane's rate again, lane B's return would not move a single
+   * figure here, whatever the arithmetic of the blend.
+   */
+  const metric = (html: string, label: string): string | undefined =>
+    new RegExp(`<span[^>]*>${label}</span><span[^>]*>([^<]*)</span>`).exec(
+      html,
+    )?.[1];
+
+  const withLaneB = (projectedGainB: number) =>
+    render({
+      toggles: { advanced: true, fire: true },
+      inputs: { currentAmountA: "100000", currentAmountB: "100000" },
+      sliders: {
+        projectedGainA: 4,
+        projectedGainB,
+        yearsOfGrowthA: 30,
+        yearsOfGrowthB: 30,
+        fireAnnualExpenses: 40000,
+        fireSWR: 4,
+        fireCurrentAge: 30,
+        fireRetirementAge: 65,
+      },
+    });
+
+  it("moves when the second lane's return does", () => {
+    const slow = withLaneB(4);
+    const fast = withLaneB(14);
+    expect(metric(slow, "FIRE Number")).toBe("$1,000,000");
+    expect(metric(fast, "FIRE Number")).toBe("$1,000,000");
+    // The same pot, the same goal; only the rate compounding it differs
+    expect(metric(fast, "Years to FIRE")).not.toBe(
+      metric(slow, "Years to FIRE"),
+    );
+  });
+
+  it("reaches FIRE sooner the faster the money grows", () => {
+    const years = (html: string) =>
+      Number(/(\d+) yrs/.exec(metric(html, "Years to FIRE") ?? "")?.[1]);
+    expect(years(withLaneB(14))).toBeLessThan(years(withLaneB(4)));
   });
 });
 

@@ -117,6 +117,14 @@ export class InvestmentCalculator {
   /** Monthly amount in force for the current dynamic-withdrawal year */
   private dynamicMonthly = 0;
   private nominal = 0;
+  /**
+   * Whether the plan has ever held money. A plan that starts empty and is
+   * being funded has nothing to run out of yet, which is the rule this
+   * engine's own comment states and the rule Monte Carlo's `funded` gate
+   * applies; without the flag the two engines contradicted each other, one
+   * reporting depletion in month 0 while the other reported a 0% chance of it.
+   */
+  private hasHeldBalance = false;
   /** Months from today at which the balance first ran dry, if it ever did */
   private depletedAtMonth: number | undefined;
 
@@ -157,6 +165,7 @@ export class InvestmentCalculator {
     this.cumulativeFees = 0;
     this.monthsElapsed = 0;
     this.dynamicMonthly = 0;
+    this.hasHeldBalance = false;
     this.depletedAtMonth = undefined;
     this.nominal = this.props.initialAmount;
     // A rollover due at month 0 lands before the first month is simulated
@@ -294,6 +303,7 @@ export class InvestmentCalculator {
       // A plan can only spend what it holds. Capping the draw floors the
       // balance at zero, so an exhausted portfolio stops paying out instead of
       // compounding a negative balance at the growth rate.
+      if (this.nominal > 0) this.hasHeldBalance = true;
       const requested = this.currentWithdrawal();
       const withdrawal = Math.min(requested, Math.max(0, this.nominal));
       this.withdrawalSchedule.push(withdrawal);
@@ -301,8 +311,11 @@ export class InvestmentCalculator {
       if (this.nominal <= 0) {
         this.nominal = 0;
         // Only a plan that asked for money it did not have has run dry; one
-        // that merely starts empty and is being funded has not
-        if (requested > 0) this.depletedAtMonth ??= this.monthsElapsed;
+        // that merely starts empty and is being funded has not - so it must
+        // also have held something to lose
+        if (requested > 0 && this.hasHeldBalance) {
+          this.depletedAtMonth ??= this.monthsElapsed;
+        }
       }
 
       // Growth, fees and contributions all still run on the floored balance:

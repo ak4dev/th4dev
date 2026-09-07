@@ -239,14 +239,21 @@ export function calculateFire(inputs: FireInputs): FireResult {
   const rate = realReturn(annualReturn, inflationRate);
   const fireNum = calculateFireNumber(annualExpenses, safeWithdrawalRate);
   const reached = currentSavings >= fireNum;
-  // Floor so that 100 is reported only once the FIRE Number is actually reached
-  const progressPct =
-    fireNum > 0
+  // Floor so that 100 is reported only once the FIRE Number is actually
+  // reached. A target of 0 - which is what clearing Annual Expenses means -
+  // has been met by any balance, and every other figure in this result already
+  // says so (yearsToFire returns 0, fireAge is the current age, nothing more
+  // is needed to save), so reporting 0% there made the panel contradict
+  // itself. Only an unreachable target (a 0% withdrawal rate, whose FIRE
+  // Number is infinite and renders "N/A") has no progress worth reporting.
+  const progressPct = !Number.isFinite(fireNum)
+    ? 0
+    : fireNum > 0
       ? Math.min(
           100,
           Math.floor((currentSavings / fireNum) * PERCENTAGE_DIVISOR),
         )
-      : 0;
+      : 100;
 
   const yrsToFire = yearsToFire(currentSavings, monthlySavings, rate, fireNum);
   const yearsUntilRetirement = Math.max(0, targetRetirementAge - currentAge);

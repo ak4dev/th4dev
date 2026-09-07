@@ -453,6 +453,49 @@ export function computeBands(
 }
 
 /**
+ * Share of runs, per checkpoint, in which ANY leg of a multi-lane portfolio has
+ * run dry.
+ *
+ * Depletion cannot be read off a summed series: a lane that never withdraws
+ * can never reach zero, so the sum never reaches zero either, and the spending
+ * lane's risk disappears into it. The app's default Monte Carlo mode is
+ * "combined" and advanced mode always carries a lane B, so the masking lane
+ * was one the user had not chosen - the panel reported a 0% chance of running
+ * out beside a row naming the very date the plan runs out.
+ *
+ * Each leg carries the same `funded`/`ranOut` gates computeBands applies, so a
+ * leg that has never held money has nothing to run out of, and a leg once seen
+ * empty stays counted. `until` bounds the checkpoints a leg exists over, for a
+ * rollover where one account is absorbed into the other partway along.
+ */
+function ruinAcrossLegs(
+  legs: { paths: number[][]; until?: number }[],
+  checkpoints: number,
+): number[] {
+  const runs = legs[0]?.paths.length ?? 0;
+  if (runs === 0) return new Array<number>(checkpoints).fill(0);
+  const funded = legs.map(() => new Array<boolean>(runs).fill(false));
+  const ranOut = legs.map(() => new Array<boolean>(runs).fill(false));
+
+  return Array.from({ length: checkpoints }, (_, i) => {
+    let depleted = 0;
+    for (let run = 0; run < runs; run++) {
+      let any = false;
+      legs.forEach((leg, l) => {
+        if (i < (leg.until ?? checkpoints)) {
+          const value = leg.paths[run][i];
+          if (value > 0) funded[l][run] = true;
+          else if (funded[l][run]) ranOut[l][run] = true;
+        }
+        if (ranOut[l][run]) any = true;
+      });
+      if (any) depleted++;
+    }
+    return depleted / runs;
+  });
+}
+
+/**
  * Runs paired A+B simulations, sums paths element-wise, returns combined bands.
  * Each investment is simulated for its own horizon; past it, its final value
  * is carried forward as a constant so only the other's randomness drives
@@ -472,12 +515,16 @@ export function runCombinedSimulation(
     random,
     { grid },
   );
-  return computeBands(
-    pathsA.map((pathA, i) =>
-      pathA[track].map((value, k) => value + pathsB[i][track][k]),
-    ),
+  const legA = pathsA.map((p) => p[track]);
+  const legB = pathsB.map((p) => p[track]);
+  const bands = computeBands(
+    legA.map((a, i) => a.map((value, k) => value + legB[i][k])),
     grid,
   );
+  // Percentiles describe the portfolio; running out is a property of the
+  // accounts inside it, so it is measured on the legs (see ruinAcrossLegs)
+  const ruin = ruinAcrossLegs([{ paths: legA }, { paths: legB }], grid.length);
+  return bands.map((band, i) => ({ ...band, depletedPct: ruin[i] }));
 }
 
 /**
@@ -528,6 +575,8 @@ export function runRolloverSimulation(
   const rolloverMonth = Math.max(0, toMonths(paramsA.yearsOfGrowth));
   const fires = rolloverMonth <= Math.max(0, toMonths(paramsB.yearsOfGrowth));
 
+  const legA: number[][] = [];
+  const legB: number[][] = [];
   const portfolioPaths = simulatePaths(paramsA, random, { grid }).map(
     (pathA) => {
       // A is sampled on the shared grid, so its last entry is its horizon
@@ -537,6 +586,8 @@ export function runRolloverSimulation(
         grid,
         injection: fires ? { month: rolloverMonth, amount } : undefined,
       });
+      legA.push(pathA[track]);
+      legB.push(pathB[track]);
       return grid.map((months, k) =>
         fires && months >= rolloverMonth
           ? pathB[track][k]
@@ -545,7 +596,21 @@ export function runRolloverSimulation(
     },
   );
 
-  return computeBands(portfolioPaths, grid);
+  const bands = computeBands(portfolioPaths, grid);
+  // Until the roll fires the two accounts are separate and either can run dry
+  // behind the sum; after it there is one account, and A no longer exists to
+  // fail on its own
+  const rollAt = fires
+    ? grid.findIndex((months) => months >= rolloverMonth)
+    : -1;
+  const ruin = ruinAcrossLegs(
+    [
+      { paths: legA, until: rollAt === -1 ? grid.length : rollAt },
+      { paths: legB },
+    ],
+    grid.length,
+  );
+  return bands.map((band, i) => ({ ...band, depletedPct: ruin[i] }));
 }
 
 /**

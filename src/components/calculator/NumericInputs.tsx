@@ -18,7 +18,7 @@ import type { ReactNode } from "react";
 import * as Switch from "@radix-ui/react-switch";
 import { styled } from "../../../stitches.config";
 import { compactModernInputStyles } from "../../common/constants/input-styles";
-import { parseAmountInput } from "../../common/helpers/format";
+import { formatCurrency, parseAmountInput } from "../../common/helpers/format";
 import {
   AMOUNT_FIELD,
   sanitizeNumericText,
@@ -174,7 +174,11 @@ export function CurrencyInput({
   // which is true, instead of naming a value that does not exist.
   const amount = parseAmountInput(value ?? "");
   const field = useDraftField({
-    display: Number.isFinite(amount) ? `$${amount.toLocaleString()}` : "",
+    // Through the app's one formatter, which pins en-US. A bare
+    // toLocaleString() rendered "$250.000" wherever the browser groups
+    // thousands with a dot, disagreeing with the total underneath it and
+    // handing the next keystroke a decimal point to swallow.
+    display: Number.isFinite(amount) ? formatCurrency(amount) : "",
     policy: AMOUNT_FIELD,
     // Amounts are held as whole dollars, so cents round rather than shifting
     // the number by a factor of a hundred

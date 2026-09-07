@@ -41,11 +41,18 @@ export function useDraftField({
 }) {
   const [draft, setDraft] = useState<string | null>(null);
 
-  const commitDraft = () => {
+  /**
+   * Writes the draft through. `keepEditing` is Enter rather than blur: the box
+   * still has focus, so dropping the draft would put the FORMATTED display
+   * back under the caret and the next keystroke would be appended to its
+   * punctuation - "$250.000" plus "5" reads back as 250.0005. Holding the
+   * committed number instead keeps typing where the user left it.
+   */
+  const commitDraft = (keepEditing = false) => {
     if (draft === null) return;
     const value = parseFieldValue(draft, policy);
     if (value !== "revert") commit(value);
-    setDraft(null);
+    setDraft(keepEditing && value !== "revert" ? String(value) : null);
   };
 
   return {
@@ -53,10 +60,10 @@ export function useDraftField({
     onFocus: seed && (() => setDraft(seed())),
     onChange: (e: ChangeEvent<HTMLInputElement>) =>
       setDraft(sanitizeNumericText(e.target.value, policy.decimal)),
-    onBlur: commitDraft,
+    onBlur: () => commitDraft(),
     onKeyDown: (e: KeyboardEvent<HTMLInputElement>) => {
       const action = numericFieldKeyAction(e.key);
-      if (action === "commit") commitDraft();
+      if (action === "commit") commitDraft(true);
       else if (action === "revert") setDraft(null);
     },
   };

@@ -59,6 +59,46 @@ afterAll(() => {
 
 // ── invalid input ─────────────────────────────────────────────────────────────
 
+describe("getDepletedAtMonth - a plan that starts with nothing", () => {
+  const plan = {
+    initialAmount: 0,
+    projectedGain: 7,
+    yearsOfGrowth: 30,
+    monthlyContribution: 2000,
+    monthlyWithdrawal: 500,
+    withdrawalStartYear: 0,
+    inflationPct: 2.5,
+  };
+
+  it("has not run out on the day it is opened", () => {
+    // An empty pot being funded has nothing to run out of. The engine used to
+    // record month 0 anyway and the panel printed "Runs Out: today" for a
+    // plan that finishes with hundreds of thousands in it - while Monte
+    // Carlo, which applies exactly this rule, reported a 0% chance of it.
+    const calc = new InvestmentCalculator(plan, new Date(2026, 0, 1));
+    const { nominal } = calc.calculateGrowth();
+    expect(nominal).toBeGreaterThan(0);
+    expect(calc.getDepletedAtMonth()).toBeUndefined();
+  });
+
+  it("still reports the month a funded plan drains", () => {
+    const calc = new InvestmentCalculator(
+      {
+        ...plan,
+        initialAmount: 12000,
+        projectedGain: 0,
+        monthlyContribution: 0,
+        monthlyWithdrawal: 1000,
+        yearsOfGrowth: 3,
+      },
+      new Date(2026, 0, 1),
+    );
+    calc.calculateGrowth();
+    // The twelfth withdrawal empties it, and months are counted from 0
+    expect(calc.getDepletedAtMonth()).toBe(11);
+  });
+});
+
 describe("invalid input", () => {
   // initialAmount is a NUMBER the caller has already read out of whatever
   // text box or file it came from, so the cases that used to be spelled

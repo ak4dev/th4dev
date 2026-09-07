@@ -596,41 +596,71 @@ export default function InvestmentCalculatorModern({
 
   /* ---------------- PDF Report ---------------- */
 
-  const assumptions = useMemo<PdfKeyValue[]>(
-    () => [
-      {
-        label: "Initial Amount (A)",
-        value: formatCurrency(laneA.initialAmount),
-      },
-      { label: "Return Rate (A)", value: `${laneA.plan.projectedGain}%` },
-      { label: "Years (A)", value: `${laneA.plan.yearsOfGrowth}` },
-      {
-        label: "Monthly Contribution (A)",
-        value: formatCurrency(laneA.plan.monthlyContribution),
-      },
-      ...(laneA.plan.dynamicWithdrawal
-        ? dynamicWithdrawalAssumptions("A", laneA.plan.dynamicWithdrawal)
-        : [
-            {
-              label: "Monthly Withdrawal (A)",
-              value: formatCurrency(laneA.plan.monthlyWithdrawal),
-            },
-          ]),
-      {
-        label: "Inflation Rate",
-        value: `${laneA.plan.inflationPct}%`,
-      },
-      ...(isTool(toggles, "fees")
-        ? [
-            {
-              label: "Annual Fee (A)",
-              value: `${laneA.plan.annualFeePct ?? 0}%`,
-            },
-          ]
-        : []),
-    ],
-    [laneA, toggles],
-  );
+  // Per LANE, exactly like the metric rows and the chart: the report used to
+  // draw two lines and print "(B)" metrics under a set of assumptions that
+  // named only Investment A, so a reader attributed A's amount, rate and
+  // horizon to the whole plan. Inflation is the plan's, not a lane's, so it
+  // closes the list once.
+  const assumptions = useMemo<PdfKeyValue[]>(() => {
+    const laneAssumptions = (l: Lane): PdfKeyValue[] => {
+      const { id, plan: p } = l;
+      return [
+        {
+          label: `Initial Amount (${id})`,
+          value: formatCurrency(l.initialAmount),
+        },
+        { label: `Return Rate (${id})`, value: `${p.projectedGain}%` },
+        { label: `Years (${id})`, value: `${p.yearsOfGrowth}` },
+        {
+          label: `Monthly Contribution (${id})`,
+          value: formatCurrency(p.monthlyContribution),
+        },
+        ...(p.dynamicWithdrawal
+          ? dynamicWithdrawalAssumptions(id, p.dynamicWithdrawal)
+          : [
+              {
+                label: `Monthly Withdrawal (${id})`,
+                value: formatCurrency(p.monthlyWithdrawal),
+              },
+            ]),
+        ...(isTool(toggles, "fees")
+          ? [
+              {
+                label: `Annual Fee (${id})`,
+                value: `${p.annualFeePct ?? 0}%`,
+              },
+            ]
+          : []),
+      ];
+    };
+    return [
+      ...lanes.flatMap(laneAssumptions),
+      { label: "Inflation Rate", value: `${laneA.plan.inflationPct}%` },
+    ];
+  }, [lanes, laneA, toggles]);
+
+  /* ---------------- FIRE ---------------- */
+
+  /**
+   * The return that compounds the FIRE pot.
+   *
+   * The pot below is the SUM over the rendered lanes, so the rate applied to
+   * it has to describe all of them: lane A's rate alone discarded lane B's
+   * while keeping lane B's money, which told a user whose second lane grows
+   * faster that they would never reach FIRE and needed to save another
+   * $1,215 a month. Weighted by each lane's opening balance, which is what
+   * the pot is made of; a pot of nothing has no blend to take, so lane A's
+   * own rate stands in.
+   */
+  const fireReturn = useMemo(() => {
+    const pot = lanes.reduce((sum, l) => sum + l.initialAmount, 0);
+    return pot > 0
+      ? lanes.reduce(
+          (sum, l) => sum + l.initialAmount * l.plan.projectedGain,
+          0,
+        ) / pot
+      : laneA.plan.projectedGain;
+  }, [lanes, laneA]);
 
   /* ---------------- Portfolio ---------------- */
 
@@ -817,7 +847,7 @@ export default function InvestmentCalculatorModern({
             (sum, l) => sum + l.plan.monthlyContribution,
             0,
           )}
-          annualReturn={laneA.plan.projectedGain}
+          annualReturn={fireReturn}
           inflationRate={laneA.plan.inflationPct}
           annualExpenses={
             sliders.fireAnnualExpenses ?? DEFAULT_FIRE_ANNUAL_EXPENSES

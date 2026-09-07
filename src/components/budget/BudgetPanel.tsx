@@ -349,6 +349,14 @@ export default function BudgetPanel({
   const canAdd = items.length < MAX_ITEMS;
 
   /* --- Fire integration: only a non-empty budget feeds FIRE --- */
+  //
+  // The first run ADOPTS the total without pushing it. prevAnnualRef used to
+  // start at null, so the mount run always looked like a change and wrote the
+  // budget's total over whatever the user had typed into FIRE's own Annual
+  // Expenses box - on every page load, and persisted. The FIRE field was
+  // therefore write-only for anyone with a budget. Only a total that changes
+  // while the panel is open is the user editing the budget, and only that
+  // feeds FIRE.
   const prevAnnualRef = useRef<number | null>(null);
   useEffect(() => {
     if (items.length === 0) {
@@ -356,7 +364,9 @@ export default function BudgetPanel({
       return;
     }
     if (!onAnnualTotalChange || prevAnnualRef.current === annualTotal) return;
+    const adopting = prevAnnualRef.current === null;
     prevAnnualRef.current = annualTotal;
+    if (adopting) return;
     onAnnualTotalChange(annualTotal);
   }, [annualTotal, items.length, onAnnualTotalChange]);
 

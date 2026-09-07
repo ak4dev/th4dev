@@ -45,6 +45,47 @@ const pmtForTarget = (
   );
 };
 
+describe("calculateFire - a target of zero", () => {
+  const inputs = {
+    currentSavings: 250000,
+    monthlySavings: 1000,
+    annualReturn: 7,
+    inflationRate: 2.5,
+    safeWithdrawalRate: 4,
+    currentAge: 30,
+    targetRetirementAge: 65,
+  };
+
+  it("reports the goal as met when annual expenses are cleared", () => {
+    // Clearing the Annual Expenses box is one gesture, and every other figure
+    // already said the goal was met: years to FIRE 0, FIRE age today, nothing
+    // more to save. Only the progress bar dissented, reading 0% and badging
+    // the panel "Coast FIRE".
+    const result = calculateFire({ ...inputs, annualExpenses: 0 });
+    expect(result.fireNumber).toBe(0);
+    expect(result.yearsToFire).toBe(0);
+    expect(result.progressPct).toBe(100);
+  });
+
+  it("still reports no progress toward a target nothing can reach", () => {
+    // A 0% withdrawal rate makes the FIRE Number infinite, which the panel
+    // renders "N/A"; there is no progress to report toward it
+    const result = calculateFire({
+      ...inputs,
+      annualExpenses: 40000,
+      safeWithdrawalRate: 0,
+    });
+    expect(Number.isFinite(result.fireNumber)).toBe(false);
+    expect(result.progressPct).toBe(0);
+  });
+
+  it("is unchanged for an ordinary target", () => {
+    const result = calculateFire({ ...inputs, annualExpenses: 40000 });
+    expect(result.fireNumber).toBe(1000000);
+    expect(result.progressPct).toBe(25);
+  });
+});
+
 describe("calculateFireNumber", () => {
   it("$40k expenses at 4% SWR = $1,000,000", () => {
     expect(calculateFireNumber(40000, 4)).toBe(1000000);

@@ -455,6 +455,38 @@ describe("solveLaneTarget", () => {
     expect(after.displayTarget).toBe(goal);
   });
 
+  it("caps a goal too large to store, in the units the control shows", () => {
+    // A goal is held nominal, so one set in today's dollars on a long,
+    // inflationary plan is stored as a much larger figure. The cap is applied
+    // in DISPLAY units, so the box shows what was stored rather than an
+    // unrecognisable number the state clamp handed back.
+    const extreme = { yearsOfGrowthA: 100, yearlyInflation: 10 };
+    const { lane, toggles } = laneIn({ showInflation: true }, extreme);
+    const typed = 999_999_999_999;
+    const sliders = solveLaneTarget(lane, typed, toggles);
+
+    const stored = sliders.targetValueA as number;
+    expect(stored).toBeLessThanOrEqual(Number.MAX_SAFE_INTEGER);
+    expect(stored).toBeGreaterThan(0);
+    // What the control shows next is what is stored, to the dollar, and it
+    // is the largest goal this plan can express rather than what was typed
+    const after = laneIn(
+      { showInflation: true },
+      { ...extreme, ...sliders },
+    ).lane;
+    expect(after.displayTarget).toBeLessThan(typed);
+    expect(
+      Math.abs(
+        after.displayTarget -
+          Math.floor(Number.MAX_SAFE_INTEGER * lane.deflator),
+      ),
+    ).toBeLessThanOrEqual(1);
+    // And it is stable: setting the goal the box now shows stores the same
+    expect(
+      solveLaneTarget(after, after.displayTarget, toggles).targetValueA,
+    ).toBe(stored);
+  });
+
   it("clears the goal without touching another slider", () => {
     const { lane, toggles } = laneIn();
     for (const cleared of [0, -5000, NaN, Infinity]) {

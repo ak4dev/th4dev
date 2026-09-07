@@ -102,14 +102,9 @@ export function buildChartRows({
   const rowAt = (months: number): ChartRow => {
     let row = byMonth.get(months);
     if (!row) {
-      row = {
-        date: format(
-          addMonths(today, months),
-          months % MONTHS_PER_YEAR === 0 ? "yyyy" : "yyyy-MM",
-        ),
-        investmentA: null,
-        investmentB: null,
-      };
+      // Dated at the end, once every row is known: the format depends on the
+      // whole set, not on this row
+      row = { date: "", investmentA: null, investmentB: null };
       byMonth.set(months, row);
     }
     return row;
@@ -142,7 +137,20 @@ export function buildChartRows({
     }
   }
 
-  return [...byMonth.entries()].sort(([a], [b]) => a - b).map(([, row]) => row);
+  // One format for the whole axis. A bare year reads as January, so mixing
+  // it with "yyyy-MM" rows put a March label between two of them and made the
+  // axis look like it ran backwards. As soon as any row falls mid-year, every
+  // row carries its month.
+  const months = [...byMonth.keys()];
+  const pattern = months.some((m) => m % MONTHS_PER_YEAR !== 0)
+    ? "yyyy-MM"
+    : "yyyy";
+  return [...byMonth.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([m, row]) => ({
+      ...row,
+      date: format(addMonths(today, m), pattern),
+    }));
 }
 
 /* ---------- Ending balance ---------- */

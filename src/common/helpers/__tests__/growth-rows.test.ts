@@ -168,10 +168,12 @@ describe("buildChartRows", () => {
       investmentB: null,
     });
 
-    // B's 11-year point keeps its own year rather than landing on A's partial
+    // B's 11-year point keeps its own month rather than landing on A's
+    // partial. Every row carries its month once any row falls mid-year: a
+    // bare "2037" reads as January and would sort before A's July row.
     const yearElevenB = matrixB[10];
     expect(rows.find((r) => r.investmentB === yearElevenB.nominal)?.date).toBe(
-      "2037",
+      "2037-01",
     );
     expect(rows.map((r) => r.date)).toEqual([
       ...new Set(rows.map((r) => r.date)),
@@ -200,15 +202,15 @@ describe("buildChartRows", () => {
     const rowAt = (date: string) => rows.find((r) => r.date === date)!;
 
     expect(rowAt("2036-07").mc?.p50).toBe(bandAt(126));
-    expect(rowAt("2037").mc?.p50).toBe(bandAt(132));
-    expect(rowAt("2038").mc?.p50).toBe(bandAt(144));
+    expect(rowAt("2037-01").mc?.p50).toBe(bandAt(132));
+    expect(rowAt("2038-01").mc?.p50).toBe(bandAt(144));
     // Every row the lanes reach carries a band, and no band invents a row
     expect(rows.every((r) => r.mc !== undefined)).toBe(true);
     expect(rows).toHaveLength(bands.length);
     // A is finished by 2037, so the cone there is B plus A's held balance
-    expect(rowAt("2037").investmentA).toBeNull();
+    expect(rowAt("2037-01").investmentA).toBeNull();
     expect(bandAt(132)).toBe(
-      matrixA[matrixA.length - 1].nominal + rowAt("2037").investmentB!,
+      matrixA[matrixA.length - 1].nominal + rowAt("2037-01").investmentB!,
     );
   });
 
@@ -289,6 +291,19 @@ describe("buildChartRows", () => {
 describe("buildChartRows – the plan's anchor", () => {
   const anchor = new Date(2030, 5, 10);
 
+  it("labels a whole-year axis by year alone", () => {
+    // Nothing falls mid-year, so nothing needs a month to disambiguate it
+    const rows = buildChartRows({
+      matrixA: [entry(addMonths(anchor, 12), 1100)],
+      track: "nominal",
+      advanced: false,
+      initialA: 1000,
+      bands: {},
+      today: anchor,
+    });
+    expect(rows.map((r) => r.date)).toEqual(["2030", "2031"]);
+  });
+
   it("dates every row from the anchor it is given", () => {
     const rows = buildChartRows({
       matrixA: [
@@ -302,8 +317,10 @@ describe("buildChartRows – the plan's anchor", () => {
       today: anchor,
     });
     // Row 0 is the anchor itself, then whole-year and mid-year offsets read
-    // straight back off the dates the engine stamped
-    expect(rows.map((r) => r.date)).toEqual(["2030", "2031", "2031-12"]);
+    // straight back off the dates the engine stamped. The mid-year row makes
+    // every row carry its month, so the axis cannot read as though a March
+    // sat between two Januaries.
+    expect(rows.map((r) => r.date)).toEqual(["2030-06", "2031-06", "2031-12"]);
     expect(rows.map((r) => r.investmentA)).toEqual([1000, 1100, 1160]);
   });
 

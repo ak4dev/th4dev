@@ -303,6 +303,7 @@ export function InvestmentLineChart({
                 <Area
                   type="monotone"
                   dataKey={`${key}.outer`}
+                  connectNulls
                   fill={color}
                   fillOpacity={0.08}
                   stroke="none"
@@ -313,6 +314,7 @@ export function InvestmentLineChart({
                 <Area
                   type="monotone"
                   dataKey={`${key}.inner`}
+                  connectNulls
                   fill={color}
                   fillOpacity={0.12}
                   stroke="none"
@@ -323,6 +325,7 @@ export function InvestmentLineChart({
                 <Line
                   type="monotone"
                   dataKey={`${key}.p50`}
+                  connectNulls
                   stroke={color}
                   strokeWidth={1.5}
                   strokeDasharray="4 3"
@@ -338,6 +341,7 @@ export function InvestmentLineChart({
           <Line
             type="monotone"
             dataKey="investmentA"
+            connectNulls
             stroke={investmentAColor}
             strokeWidth={3}
             dot={false}
@@ -350,6 +354,7 @@ export function InvestmentLineChart({
             <Line
               type="monotone"
               dataKey="investmentB"
+              connectNulls
               stroke={investmentBColor}
               strokeWidth={3}
               dot={false}

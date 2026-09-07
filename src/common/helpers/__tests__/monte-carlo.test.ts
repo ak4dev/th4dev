@@ -735,15 +735,32 @@ describe("depletion probability", () => {
     }
   });
 
-  it("measures the whole portfolio, not either leg on its own", () => {
-    // A is drained by year 1; the combined portfolio never is, so a per-leg
-    // measurement would report the wrong series entirely
+  it("measures ruin on the legs, so a saving lane cannot hide a spending one", () => {
+    // A drains inside its first year while B only grows, so their SUM never
+    // reaches zero. Read off that sum, the risk of the plan the user is
+    // actually spending disappears: the panel printed "Chance of Running
+    // Out: 0%" beside its own row naming the date lane A runs out. The
+    // percentiles still describe the whole portfolio; only ruin looks inside.
     const rich = zeroVol({ yearsOfGrowth: 3 });
     expect(last(runMonteCarloSimulation(dry()))).toBe(0);
-    for (const band of runCombinedSimulation(dry(), rich)) {
-      expect(band.depletedPct).toBe(0);
-    }
-    for (const band of runRolloverSimulation(dry(), rich)) {
+
+    const combined = runCombinedSimulation(dry(), rich);
+    // The portfolio itself is never empty - which is why the sum could not
+    // see this - and every run has still lost the lane that was spending
+    expect(last(combined)).toBeGreaterThan(0);
+    expect(combined[0].depletedPct).toBe(0);
+    expect(combined.at(-1)?.depletedPct).toBe(1);
+
+    const rollover = runRolloverSimulation(dry(), rich);
+    expect(rollover[0].depletedPct).toBe(0);
+    expect(rollover.at(-1)?.depletedPct).toBe(1);
+  });
+
+  it("counts no ruin when neither leg ever spends", () => {
+    // Both lanes only grow, so nothing can run out and the combined figure
+    // stays at zero for the whole horizon
+    const grower = zeroVol({ yearsOfGrowth: 3, monthlyWithdrawal: 0 });
+    for (const band of runCombinedSimulation(grower, grower)) {
       expect(band.depletedPct).toBe(0);
     }
   });

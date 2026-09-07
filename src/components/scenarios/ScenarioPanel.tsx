@@ -18,7 +18,7 @@ import {
   MAX_SCENARIOS,
   type ScenarioSnapshot,
 } from "../../common/helpers/scenario-manager";
-import { formatCurrency } from "../../common/helpers/format";
+import { formatCurrency, parseAmountInput } from "../../common/helpers/format";
 import {
   PanelContainer,
   PanelTitle,
@@ -90,6 +90,21 @@ const CardActions = styled("div", {
 });
 
 /* ---------- Helpers ---------- */
+
+/**
+ * The starting amount a scenario card lists, read the way every other consumer
+ * of that box reads it.
+ *
+ * parseInt stopped at the first separator, so a saved "250,000.00" plan was
+ * listed as "$250" and a "$120,000" one as "$0" - and the amount is the only
+ * number on the card that tells two snapshots apart. parseAmountInput is the
+ * app's single definition of what a money string means, and the engine has
+ * always read the same box through it.
+ */
+const previewAmount = (raw: string): number => {
+  const amount = parseAmountInput(raw);
+  return Number.isFinite(amount) ? amount : 0;
+};
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -183,7 +198,7 @@ export default function ScenarioPanel({
               </CardTop>
               <ScenarioMeta>
                 {formatDate(s.createdAt)} ·{" "}
-                {formatCurrency(parseInt(preview.investmentA) || 0)} ·{" "}
+                {formatCurrency(previewAmount(preview.investmentA))} ·{" "}
                 {preview.returnPct}% · {preview.years}yr
               </ScenarioMeta>
               <CardActions>

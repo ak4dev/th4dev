@@ -210,7 +210,15 @@ const ALLOCATION_FIELD = {
  * based on the start price and time elapsed since the projection was initialised.
  *
  * Formula (same as computePortfolioProjection, solved for elapsed fractional years):
- *   target = startPrice × (1 + elapsedYears × 12 × monthlyWithdrawal / totalPortfolioValue)
+ *   drawn  = max(0, elapsedYears - withdrawalStartYear)
+ *   target = startPrice × (1 + drawn × 12 × monthlyWithdrawal / totalPortfolioValue)
+ *
+ * The two clocks are different and the subtraction is what reconciles them:
+ * `elapsedYears` counts forward from the day the projection was pinned, while
+ * `withdrawalStartYear` counts forward from today. So a plan whose spending
+ * has not begun has drawn nothing, and its target price is simply the price it
+ * started at - not the ever-rising figure that used to paint a perfectly
+ * healthy holding red.
  */
 function computeTargetPriceToday(
   h: {
@@ -220,6 +228,7 @@ function computeTargetPriceToday(
   },
   totalPortfolioValue: number,
   monthlyWithdrawal: number,
+  withdrawalStartYear: number,
 ): number | undefined {
   if (h.startPrice == null) return h.currentPrice;
   if (!h.projectionStartDate || totalPortfolioValue <= 0) return h.startPrice;
@@ -228,10 +237,11 @@ function computeTargetPriceToday(
     (Date.now() - new Date(h.projectionStartDate).getTime()) /
       (365.25 * 24 * 60 * 60 * 1000),
   );
+  const yearsDrawing = Math.max(0, elapsedYears - withdrawalStartYear);
   return Math.max(
     0,
     h.startPrice *
-      (1 + (elapsedYears * 12 * monthlyWithdrawal) / totalPortfolioValue),
+      (1 + (yearsDrawing * 12 * monthlyWithdrawal) / totalPortfolioValue),
   );
 }
 
@@ -336,6 +346,7 @@ export default function PortfolioPanel({
           holdings: holdingsWithPrice,
           totalPortfolioValue: active.portfolioValue,
           monthlyWithdrawal: active.monthlyWithdrawal,
+          withdrawalStartYear: active.withdrawalStartYear,
           yearsForward: active.years,
         })
       : {};
@@ -393,6 +404,7 @@ export default function PortfolioPanel({
               h,
               active.portfolioValue,
               active.monthlyWithdrawal,
+              active.withdrawalStartYear,
             );
             const targetMet =
               targetPrice != null && h.currentPrice != null
