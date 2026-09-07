@@ -368,13 +368,19 @@ const ruinRows = (
   const [a, b] = lanes;
   const legs = last.legDepletion;
   // A single-lane band set has no accounts to break down: the portfolio and
-  // the account are the same thing, so the plain figure is already correct
+  // the account are the same thing, so the plain figure is already correct.
+  //
+  // Where a breakdown IS present but only one lane was named, the account's
+  // own leg is read rather than the union. Belt and braces: the caller is
+  // meant to hand over every lane a portfolio band set was built from, and a
+  // mis-sized list is exactly how the union came to be printed under one
+  // account's name before. It cannot happen twice for the same reason.
   if (!legs || !b) {
     return a?.withdrawing
       ? [
           {
             label: `(${a.id}) Chance of Running Out`,
-            value: riskPct(last.depletedPct),
+            value: riskPct(legs ? legs.a.depletedPct : last.depletedPct),
           },
         ]
       : [];
