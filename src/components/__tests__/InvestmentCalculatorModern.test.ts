@@ -14,6 +14,7 @@ import {
   FIXED_WITHDRAWAL_PLAN,
   PLAN_FIXTURES,
   ROLLOVER_PLAN,
+  TAXED_SPENDING_PLAN,
   UNREACHABLE_TARGET_PLAN,
   type PlanFixture,
 } from "./fixtures/plan-fixtures";
@@ -523,10 +524,14 @@ const GOLDEN_PLANS: GoldenPlan[] = [
       "Inflation Rate": "2.5%",
       // Individual mode, so each lane gets its own bands off one shared
       // random stream. The fixed seed is what makes these exact.
-      "(A) Median Outcome": "$1,088,372",
-      "(A) 90th Percentile": "$3,220,310 (1 in 10 end above)",
-      "(A) 10th Percentile": "$122,347 (1 in 10 end below)",
-      "(A) Chance of Running Out": "5%",
+      // Individual mode, so each lane has its own band set and its own risk
+      // row: the label already named the account it measured here, and the
+      // figures moved only because the simulation now runs 2,000 paths under
+      // the clustered market rather than 500 under the independent one
+      "(A) Median Outcome": "$1,040,094",
+      "(A) 90th Percentile": "$3,048,119 (1 in 10 end above)",
+      "(A) 10th Percentile": "$100,838 (1 in 10 end below)",
+      "(A) Chance of Running Out": "6%",
       "(B) Median Outcome": "$0",
       "(B) 90th Percentile": "$0 (1 in 10 end above)",
       "(B) 10th Percentile": "$0 (1 in 10 end below)",
@@ -549,7 +554,7 @@ const GOLDEN_PLANS: GoldenPlan[] = [
       // 5% of $600,000 is $2,500/mo on day one, and the top of the range is
       // above the stored $3,000 ceiling because the guardrails are indexed
       "(A) Withdrawal":
-        "$2,500–$3,176/mo nominal (5% of balance, guardrails indexed)",
+        "$2,500–$3,176/mo drawn nominal (5% of balance, guardrails indexed)",
       "(A) Target Reached": "N/A",
       // Nominal, not the displayed real track: 6% of the year-1 NOMINAL
       // balance is $3,030/mo. Reading `y` here would report a deflated
@@ -559,16 +564,25 @@ const GOLDEN_PLANS: GoldenPlan[] = [
       "(B) Contributions End": "+300 mo",
       "(B) Runs Out": "Not within horizon",
       "(B) Withdrawal":
-        "$899–$1,319/mo nominal (4% of balance, guardrails indexed)",
+        "$899–$1,319/mo drawn nominal (4% of balance, guardrails indexed)",
       "(B) Target Reached": "N/A",
       "(B) Growth covers draw from": "+1 yr ($1,061/mo gross, nominal)",
       "Rollover Date": "N/A",
       "Rollover Amount": "N/A",
       "Inflation Rate": "3%",
-      "(A+B) Median Outcome": "$601,335",
-      "(A+B) 90th Percentile": "$1,160,214 (1 in 10 end above)",
-      "(A+B) 10th Percentile": "$312,949 (1 in 10 end below)",
-      "(A+B) Chance of Running Out": "1%",
+      // The three percentile rows describe the SUMMED portfolio and say so
+      "(A+B) Median Outcome": "$592,635",
+      "(A+B) 90th Percentile": "$1,190,193 (1 in 10 end above)",
+      "(A+B) 10th Percentile": "$289,303 (1 in 10 end below)",
+      // ...and the risk rows describe ACCOUNTS, which is a different pool.
+      // One row used to carry the "(A+B)" label for the any-account figure,
+      // so a reader took "1% chance of running out" as a statement about the
+      // $289,303 above it. It never was: here A alone carries 1%, B carries
+      // 2%, and the chance that EITHER runs dry is 4% - a figure that belongs
+      // to neither account and to no percentile on screen.
+      "(A) Chance of Running Out": "1%",
+      "(B) Chance of Running Out": "2%",
+      "(A or B) Chance of Running Out": "4% (either account, not the total)",
     },
   },
   {
@@ -598,9 +612,9 @@ const GOLDEN_PLANS: GoldenPlan[] = [
       "Inflation Rate": "2.5%",
       // Rollover mode outranks the Monte Carlo mode switch, and its bands
       // describe the whole portfolio rather than either lane
-      "(Portfolio) Median Outcome": "$2,398,740",
-      "(Portfolio) 90th Percentile": "$5,212,440 (1 in 10 end above)",
-      "(Portfolio) 10th Percentile": "$1,158,697 (1 in 10 end below)",
+      "(Portfolio) Median Outcome": "$2,488,316",
+      "(Portfolio) 90th Percentile": "$5,005,211 (1 in 10 end above)",
+      "(Portfolio) 10th Percentile": "$1,134,981 (1 in 10 end below)",
       // No "Chance of Running Out": nothing here ever withdraws
     },
   },
@@ -633,6 +647,50 @@ const GOLDEN_PLANS: GoldenPlan[] = [
     },
   },
 ];
+
+GOLDEN_PLANS.push({
+  fixture: TAXED_SPENDING_PLAN,
+  totals: ["$964,102", "$705,080"],
+  targets: ["", ""],
+  spans: ["4580334", "1717625"],
+  info: {
+    "(A) Withdrawal Start": "+0 mo",
+    "(A) Contributions End": "+300 mo",
+    "(A) Runs Out": "Not within horizon",
+    // $2,500 of spending at a 25% rate costs the portfolio $3,333 on day one,
+    // and $6,962 by year 25 because the same basket costs more then. The
+    // slider shows $2,500 and would show $2,500 for ever; without this row
+    // neither of the other two figures appears anywhere on screen.
+    "(A) Withdrawal":
+      "$3,333–$6,962/mo drawn nominal ($2,500/mo spendable, indexed)",
+    "(A) Target Reached": "N/A",
+    "(A) Growth covers draw from": "+1 yr ($4,758/mo gross, nominal)",
+    "(B) Withdrawal Start": "+0 mo",
+    "(B) Contributions End": "+300 mo",
+    "(B) Runs Out": "Not within horizon",
+    "(B) Withdrawal":
+      "$933–$1,949/mo drawn nominal ($700/mo spendable, indexed)",
+    "(B) Target Reached": "N/A",
+    "(B) Growth covers draw from": "+1 yr ($1,807/mo gross, nominal)",
+    "Rollover Date": "N/A",
+    "Rollover Amount": "N/A",
+    "Inflation Rate": "3%",
+    // The whole reason this change set exists, in five rows. The three
+    // percentiles describe the SUMMED portfolio - whose 10th percentile is a
+    // positive $146,165 - while the three risk rows describe the ACCOUNTS
+    // inside it, one of which is dry in 45% of runs. Read as one pool they
+    // say "the bad case still leaves me $146,165 and there is a 45% chance of
+    // trouble", which is two different pots described as one.
+    "(A+B) Median Outcome": "$2,139,404",
+    "(A+B) 90th Percentile": "$8,890,123 (1 in 10 end above)",
+    "(A+B) 10th Percentile": "$146,165 (1 in 10 end below)",
+    // 45% is also strictly inside max(34, 17) and min(100, 34 + 17): the
+    // any-account figure is a union, never a maximum and never a sum
+    "(A) Chance of Running Out": "34%",
+    "(B) Chance of Running Out": "17%",
+    "(A or B) Chance of Running Out": "45% (either account, not the total)",
+  },
+});
 
 describe("golden plans render exact figures", () => {
   it("covers every fixture the plan file exports", () => {
@@ -918,5 +976,247 @@ describe("the Target Value control moves no input but the withdrawal", () => {
       "monthlyWithdrawalA",
       "targetValueA",
     ]);
+  });
+});
+
+describe("the risk row names the account it measures", () => {
+  /** A combined-mode plan where exactly one of the two lanes spends */
+  const oneSpender = (spender: "A" | "B") =>
+    render({
+      toggles: { advanced: true, monteCarlo: true, monteCarloMode: "combined" },
+      inputs: { currentAmountA: "400000", currentAmountB: "400000" },
+      sliders: {
+        yearsOfGrowthA: 20,
+        yearsOfGrowthB: 20,
+        [`monthlyWithdrawal${spender}`]: 3000,
+        [`withdrawalStartYear${spender}`]: 0,
+      },
+    });
+
+  it("moves with the account that can actually run dry", () => {
+    // A hard-coded "(A)" passes a single-case test; only the swap proves the
+    // label follows the money. The summed percentiles keep their "(A+B)" in
+    // both renders, which is what says the two rows describe different pools.
+    const aSpends = oneSpender("A");
+    expect(infoValue(aSpends, "(A) Chance of Running Out")).toBeDefined();
+    expect(infoValue(aSpends, "(B) Chance of Running Out")).toBeUndefined();
+    expect(infoValue(aSpends, "(A+B) Chance of Running Out")).toBeUndefined();
+    expect(infoValue(aSpends, "(A+B) Median Outcome")).toBeDefined();
+
+    const bSpends = oneSpender("B");
+    expect(infoValue(bSpends, "(B) Chance of Running Out")).toBeDefined();
+    expect(infoValue(bSpends, "(A) Chance of Running Out")).toBeUndefined();
+    expect(infoValue(bSpends, "(A+B) Median Outcome")).toBeDefined();
+  });
+
+  it("prints no roll-up when only one account can fail", () => {
+    // Any-account ruin IS that account's ruin then, so a third row would be
+    // the same number under a third name
+    expect(
+      infoValue(oneSpender("A"), "(A or B) Chance of Running Out"),
+    ).toBeUndefined();
+  });
+
+  it("says in words that the roll-up is not about the total", () => {
+    const both = render({
+      toggles: { advanced: true, monteCarlo: true, monteCarloMode: "combined" },
+      inputs: { currentAmountA: "400000", currentAmountB: "400000" },
+      sliders: {
+        yearsOfGrowthA: 20,
+        yearsOfGrowthB: 20,
+        monthlyWithdrawalA: 3000,
+        monthlyWithdrawalB: 2500,
+      },
+    });
+    expect(infoValue(both, "(A or B) Chance of Running Out")).toContain(
+      "either account, not the total",
+    );
+  });
+
+  it("does not call a portfolio a Portfolio when the roll cannot land", () => {
+    // resolveMcMode answers "rollover" on the toggle alone while the engine
+    // runs a plain A+B portfolio when the roll does not fit, so these bands
+    // used to be labelled "(Portfolio)" two rows above "Rollover Date: Not
+    // applied"
+    const cannotLand = render({
+      toggles: { advanced: true, monteCarlo: true, rollover: true },
+      sliders: { yearsOfGrowthA: 30, yearsOfGrowthB: 10 },
+    });
+    expect(infoValue(cannotLand, "Rollover Date")).toBe("Not applied");
+    expect(infoValue(cannotLand, "(Portfolio) Median Outcome")).toBeUndefined();
+    expect(infoValue(cannotLand, "(A+B) Median Outcome")).toBeDefined();
+  });
+});
+
+describe("the simulation settings reach the engine", () => {
+  const withModel = (returnModel: TogglesState["returnModel"]) =>
+    render({
+      toggles: {
+        advanced: true,
+        monteCarlo: true,
+        monteCarloMode: "individual",
+        returnModel,
+      },
+      inputs: { currentAmountA: "400000" },
+      sliders: { yearsOfGrowthA: 20, monthlyWithdrawalA: 2000 },
+    });
+
+  it("draws a different market for each return model", () => {
+    // The likeliest wiring failure is a setting that lands in state, renders
+    // its control and never reaches toMcParams - invisible to every engine
+    // test and to every string-matching UI test
+    expect(infoValue(withModel("clustered"), "(A) Median Outcome")).not.toBe(
+      infoValue(withModel("normal"), "(A) Median Outcome"),
+    );
+  });
+
+  it("shows what a taxed plan actually sells, not just what it spends", () => {
+    // With Taxes on and a fixed $2,000 slider, the portfolio pays $2,666 a
+    // month. Before this row there was no label and no control anywhere on
+    // screen carrying that figure.
+    const taxed = render({
+      toggles: { advanced: true, taxes: true },
+      inputs: { currentAmountA: "400000" },
+      sliders: { monthlyWithdrawalA: 2000, withdrawalTaxA: 25 },
+    });
+    expect(infoValue(taxed, "(A) Withdrawal")).toBe(
+      "$2,667/mo drawn nominal ($2,000/mo spendable)",
+    );
+    // ...and it stays off screen for a plan with nothing to disclose
+    expect(
+      infoValue(render({ toggles: { advanced: true } }), "(A) Withdrawal"),
+    ).toBeUndefined();
+  });
+});
+
+describe("indexed spending is disclosed as well as applied", () => {
+  it("shows the range the payment actually covers", () => {
+    // The slider shows the first payment and goes on showing it, so without
+    // this row a plan whose draw rises 3% a year says so nowhere
+    const indexed = render({
+      toggles: { advanced: true, spendingKeepsPace: true },
+      inputs: { currentAmountA: "1000000" },
+      sliders: {
+        monthlyWithdrawalA: 2000,
+        withdrawalStartYearA: 0,
+        yearsOfGrowthA: 20,
+        yearlyInflation: 3,
+      },
+    });
+    expect(infoValue(indexed, "(A) Withdrawal")).toBe(
+      "$2,000–$3,603/mo drawn nominal ($2,000/mo spendable, indexed)",
+    );
+  });
+});
+
+describe("a rollover names the pool the engine actually simulated", () => {
+  /** A + B, rollover on; A outlives B unless `fits`, so the roll cannot land */
+  const rolled = (fits: boolean, mode: "combined" | "individual") =>
+    render({
+      toggles: {
+        advanced: true,
+        monteCarlo: true,
+        rollover: true,
+        monteCarloMode: mode,
+      },
+      inputs: { currentAmountA: "400000", currentAmountB: "300000" },
+      sliders: {
+        yearsOfGrowthA: fits ? 10 : 30,
+        yearsOfGrowthB: fits ? 30 : 10,
+        monthlyWithdrawalA: 3000,
+        withdrawalStartYearA: 0,
+      },
+    });
+
+  for (const mode of ["combined", "individual"] as const) {
+    it(`calls a non-firing roll an A+B portfolio in ${mode} mode`, () => {
+      // resolveMcMode answers "rollover" on the toggle alone while the engine
+      // computes `fires` for itself, so these bands are the summed A+B
+      // portfolio. In individual mode the label used to fall through to "(A)"
+      // and print the any-account risk as lane A's own — a two-account figure
+      // under one account's name, beside "Rollover Date: Not applied".
+      const html = rolled(false, mode);
+      expect(infoValue(html, "Rollover Date")).toBe("Not applied");
+      expect(infoValue(html, "(A+B) 10th Percentile")).toBeDefined();
+      expect(infoValue(html, "(A) 10th Percentile")).toBeUndefined();
+      expect(infoValue(html, "(Portfolio) Median Outcome")).toBeUndefined();
+    });
+  }
+
+  it("reports a roll that lands as a portfolio, plus the bridge account", () => {
+    // Once the roll fires there are no longer two accounts to break down:
+    // lane B has BECOME the portfolio, so a "(B)" row would describe the same
+    // money as the "(Portfolio)" percentiles under a different name. What
+    // stays meaningful is whether the bridge ran dry before it could roll.
+    const html = rolled(true, "combined");
+    expect(infoValue(html, "(Portfolio) Median Outcome")).toBeDefined();
+    expect(infoValue(html, "(Portfolio) Chance of Running Out")).toBeDefined();
+    // Dated by the same clock and in the same shape as the row that names
+    // the roll, so the two cannot drift into describing different instants
+    expect(infoValue(html, "(A) Runs Dry Before Rollover")).toContain(
+      `(by ${infoValue(html, "Rollover Date")})`,
+    );
+    expect(infoValue(html, "(B) Chance of Running Out")).toBeUndefined();
+    expect(infoValue(html, "(A or B) Chance of Running Out")).toBeUndefined();
+  });
+});
+
+describe("a withdrawal row means the same thing whichever policy made it", () => {
+  const drainedBy = (dynamic: boolean) =>
+    render({
+      toggles: { advanced: true, taxes: true, dynamicWithdrawal: dynamic },
+      inputs: { currentAmountA: "400000" },
+      sliders: {
+        yearsOfGrowthA: 20,
+        monthlyWithdrawalA: 3000,
+        withdrawalStartYearA: 0,
+        withdrawalRateA: 12,
+        withdrawalFloorA: 3000,
+        withdrawalCeilingA: 3000,
+        withdrawalTaxA: 25,
+        yearlyInflation: 0,
+      },
+    });
+
+  it("never prints the dying part-payment as the bottom of the range", () => {
+    // A plan that runs dry records the balance as its last withdrawal. Left
+    // in, a flat $4,000/mo draw prints as "$107–$4,000/mo", implying months
+    // the policy never had. The dynamic helper always filtered it; the fixed
+    // one did not, and they serve the same row.
+    expect(infoValue(drainedBy(false), "(A) Runs Out")).not.toBe("N/A");
+    expect(infoValue(drainedBy(false), "(A) Withdrawal")).toBe(
+      "$4,000/mo drawn nominal ($3,000/mo spendable)",
+    );
+  });
+
+  it("names the spendable figure under a policy too", () => {
+    // A percentage-of-balance rate is deliberately not grossed up, so nothing
+    // in the drawn figure moves with the tax: without this the row was
+    // byte-identical at 0% and at 40% and never said what was spendable,
+    // beside a helper claiming the sliders are what you get to spend.
+    expect(infoValue(drainedBy(true), "(A) Withdrawal")).toContain("spendable");
+  });
+});
+
+describe("a ceiling nobody chose says so on screen", () => {
+  it("names the ceiling, not the rate, as what set the withdrawal", () => {
+    // The flag is plumbing; the disclosure is the deliverable. $5,000,000 on a
+    // 4% policy asks for $16,667/mo and gets the DEFAULT $10,000 ceiling - a
+    // guardrail nobody set - so a flat number that looks like a policy would
+    // be the plan silently disagreeing with the rate above it.
+    const html = render({
+      toggles: { advanced: true, dynamicWithdrawal: true },
+      inputs: { currentAmountA: "5000000" },
+      sliders: {
+        withdrawalRateA: 4,
+        withdrawalFloorA: 0,
+        withdrawalCeilingA: 10000,
+        withdrawalStartYearA: 0,
+        yearlyInflation: 0,
+      },
+    });
+    expect(infoValue(html, "(A) Withdrawal")).toBe(
+      "$10,000/mo drawn nominal (4% of balance, held at the ceiling)",
+    );
   });
 });

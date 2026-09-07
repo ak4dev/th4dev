@@ -52,7 +52,16 @@ interface BudgetPanelProps {
   setItems: (items: BudgetItem[]) => void;
   /** Called with the annual total of a non-empty budget whenever it changes (FIRE integration) */
   onAnnualTotalChange?: (annual: number) => void;
-  /** Callback to set monthly withdrawal to budget total */
+  /**
+   * Callback to set monthly withdrawal to budget total.
+   *
+   * The total is rent plus food plus insurance - SPENDABLE dollars - and the
+   * withdrawal slider holds spendable dollars too, so this button needs no
+   * conversion of its own even with Taxes on: the engines gross the figure up
+   * by 1 / (1 - t) when they draw it. Do not "fix" this by dividing here; a
+   * second place that knows the tax rule is the seam where the two would
+   * drift apart.
+   */
   onSetMonthlyWithdrawal?: (monthly: number) => void;
 }
 

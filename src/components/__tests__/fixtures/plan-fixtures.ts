@@ -1,11 +1,11 @@
 /* ==================================================
  * Golden Plan Fixtures
  *
- * Five complete plans, each one a different route
+ * Six complete plans, each one a different route
  * through the hub's engine-to-UI wiring: basic mode, a
  * fixed withdrawal, a dynamic policy read in today's
- * dollars, a rollover, and a target the solver cannot
- * reach.
+ * dollars, a rollover, a target the solver cannot reach,
+ * and taxed spending that keeps pace with prices.
  *
  * They exist to be RENDERED and compared against exact
  * numbers (see InvestmentCalculatorModern.test.ts), so
@@ -275,6 +275,58 @@ export const UNREACHABLE_TARGET_PLAN = plan(
   },
 );
 
+/**
+ * (f) A SPENDING plan: taxed withdrawals, indexed to inflation, on both lanes.
+ *
+ * Lane A: $800,000 drawing $2,500/mo of SPENDING from day one at a 25%
+ * effective rate, so the portfolio actually sells $3,333/mo — and the figure
+ * rises every year, because the plan is also told prices go up 3%. Lane B:
+ * $300,000 drawing $700/mo at the same rate.
+ *
+ * Both are disclosure cases as much as modelling ones. The withdrawal slider
+ * shows $2,500 and nothing else on screen would carry either of the other two
+ * figures, which is why the "(A) Withdrawal" row is pinned here character for
+ * character.
+ *
+ * The dynamic-policy toggle is deliberately OFF: it replaces the fixed
+ * withdrawal outright, so a fixture that switched it on would exercise the
+ * guardrail path instead of the gross-up path this one exists for. Monte
+ * Carlo runs combined and both lanes spend, so this is also the fixture that
+ * holds all three per-account depletion rows still — the defect that started
+ * this change lived exactly there.
+ */
+export const TAXED_SPENDING_PLAN = plan(
+  "taxed, inflation-indexed spending on both lanes",
+  "the withdrawal gross-up, the indexed payment, and the per-account depletion rows",
+  {
+    inputs: { currentAmountA: "800000", currentAmountB: "300000" },
+    sliders: {
+      projectedGainA: 7,
+      yearsOfGrowthA: 25,
+      monthlyContributionA: 0,
+      monthlyWithdrawalA: 2500,
+      withdrawalStartYearA: 0,
+      withdrawalTaxA: 25,
+      volatilityA: 18,
+      projectedGainB: 7,
+      yearsOfGrowthB: 25,
+      monthlyContributionB: 0,
+      monthlyWithdrawalB: 700,
+      withdrawalStartYearB: 0,
+      withdrawalTaxB: 25,
+      volatilityB: 18,
+      yearlyInflation: 3,
+    },
+    toggles: {
+      advanced: true,
+      taxes: true,
+      spendingKeepsPace: true,
+      monteCarlo: true,
+      monteCarloMode: "combined",
+    },
+  },
+);
+
 /** Every fixture, in the order the suite walks them */
 export const PLAN_FIXTURES: readonly PlanFixture[] = [
   BASIC_MODE_PLAN,
@@ -282,4 +334,5 @@ export const PLAN_FIXTURES: readonly PlanFixture[] = [
   DYNAMIC_POLICY_PLAN,
   ROLLOVER_PLAN,
   UNREACHABLE_TARGET_PLAN,
+  TAXED_SPENDING_PLAN,
 ];

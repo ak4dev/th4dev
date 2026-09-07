@@ -10,11 +10,16 @@ import {
 import { addMonths } from "date-fns/addMonths";
 import {
   InvestmentCalculator,
+  dynamicMonthlyWithdrawal,
+  grossWithdrawal,
   planAnchor,
   toMonths,
 } from "../investment-growth-calculator";
-import type { InvestmentCalculatorProps } from "../../types/types";
-import { MAX_PROJECTED_GAIN } from "../../constants/app-constants";
+import type { InvestmentCalculatorProps, PlanInputs } from "../../types/types";
+import {
+  MAX_PROJECTED_GAIN,
+  MAX_WITHDRAWAL_TAX,
+} from "../../constants/app-constants";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -1094,5 +1099,162 @@ describe("Annual fee (expense ratio)", () => {
     });
     const atNinePercent = numeric({ yearsOfGrowth: 1, projectedGain: 9 });
     expect(Math.abs(withFee - atNinePercent)).toBeLessThan(10);
+  });
+});
+
+/* ==================================================
+ * Withdrawal tax
+ * ================================================== */
+
+describe("a taxed withdrawal", () => {
+  /** $120,000 drawn at $1,000/mo from day one, at 0% growth and 0% inflation */
+  const drawnDown = (o: Partial<PlanInputs> = {}) => {
+    const calc = new InvestmentCalculator({
+      initialAmount: 120_000,
+      projectedGain: 0,
+      yearsOfGrowth: 10,
+      monthlyContribution: 0,
+      monthlyWithdrawal: 1000,
+      withdrawalStartYear: 0,
+      inflationPct: 0,
+      ...o,
+    });
+    calc.calculateGrowth();
+    return {
+      years: calc.getGrowthMatrix().map((e) => e.nominal),
+      dryAt: calc.getDepletedAtMonth(),
+      paid: calc.getWithdrawalSchedule(),
+    };
+  };
+
+  it("costs the portfolio nothing extra at a zero rate", () => {
+    // Round numbers on purpose: $12,000 a year out of $120,000 lasts exactly
+    // ten years, so anything the tax code touches shows up immediately
+    const { years, dryAt } = drawnDown();
+    expect(years).toEqual([
+      108_000, 96_000, 84_000, 72_000, 60_000, 48_000, 36_000, 24_000, 12_000,
+      0,
+    ]);
+    expect(dryAt).toBe(119);
+  });
+
+  it("sells more than the user spends, and runs out sooner for it", () => {
+    // $1,000 of spending at a 25% rate costs the portfolio $1,333.33, so
+    // $16,000 leaves it each year rather than $12,000 and the same pot funds
+    // seven and a half years instead of ten. This is the whole feature in one
+    // assertion: the slider is what reaches the user, not what is sold.
+    const { years, dryAt } = drawnDown({ withdrawalTaxPct: 25 });
+    expect(years).toEqual([
+      104_000, 88_000, 72_000, 56_000, 40_000, 24_000, 8_000, 0, 0, 0,
+    ]);
+    expect(dryAt).toBe(90);
+  });
+
+  it("records what LEFT the portfolio, not what reached the user", () => {
+    // The schedule has to sum to the drawdown - `nominal -= withdrawal` is
+    // the engine's own arithmetic - and every consumer of it is asking a
+    // portfolio question: the capital-preservation schedule wants to know
+    // what must be sold, and "growth covers draw" must compare gross growth
+    // against the gross draw or it declares a plan self-sustaining while the
+    // tax takes another third.
+    const { paid } = drawnDown({ withdrawalTaxPct: 25 });
+    expect(paid[0]).toBeCloseTo(1000 / 0.75, 6);
+  });
+
+  it("pays what it can afford in the month it runs dry, tax and all", () => {
+    // The cap applies to the GROSS figure, so the last payment is the
+    // balance itself. Capping the net and grossing afterwards would drive the
+    // balance negative and compound a debt for the rest of the horizon.
+    const { paid } = drawnDown({ withdrawalTaxPct: 25, initialAmount: 1000 });
+    expect(paid[0]).toBe(1000);
+    expect(paid[1]).toBe(0);
+  });
+
+  it("is bounded, so no plan can divide by zero", () => {
+    // 1 / (1 - t) has a pole at 100%. A hand-edited import or a plan built by
+    // spreading never passes through SLIDER_LIMITS, so the helper holds the
+    // bound itself rather than trusting the state gate.
+    expect(grossWithdrawal(1000, 0)).toBe(1000);
+    expect(grossWithdrawal(1000, 100)).toBe(
+      1000 / (1 - MAX_WITHDRAWAL_TAX / 100),
+    );
+    expect(grossWithdrawal(1000, -5)).toBe(1000);
+    expect(Number.isFinite(grossWithdrawal(1000, 1e9))).toBe(true);
+  });
+
+  it("grosses a dynamic policy's guardrails and leaves its rate alone", () => {
+    // "4% of the balance" has a settled meaning outside this app. A floor is
+    // a statement about groceries, so it is spendable and grosses up.
+    const policy = { ratePct: 4, floor: 0, ceiling: 1_000_000 };
+    expect(dynamicMonthlyWithdrawal(300_000, policy, 1, 25)).toBe(
+      (300_000 * 4) / 100 / 12,
+    );
+    const floored = { ratePct: 0, floor: 2000, ceiling: 1_000_000 };
+    expect(dynamicMonthlyWithdrawal(300_000, floored, 1, 25)).toBeCloseTo(
+      2000 / 0.75,
+      6,
+    );
+  });
+
+  it("keeps the floor-beats-ceiling tie-break under tax", () => {
+    // Both guardrails are grossed by the same positive factor, so their
+    // ordering survives; grossing one and not the other would invert it
+    const inverted = { ratePct: 10, floor: 3000, ceiling: 1000 };
+    expect(dynamicMonthlyWithdrawal(100_000, inverted, 1, 40)).toBe(
+      dynamicMonthlyWithdrawal(100_000, inverted, 1) / 0.6,
+    );
+  });
+});
+
+/* ==================================================
+ * Indexed spending
+ * ================================================== */
+
+describe("spending that keeps pace with prices", () => {
+  const plan = (o: Partial<PlanInputs> = {}): PlanInputs => ({
+    initialAmount: 120_000,
+    projectedGain: 0,
+    yearsOfGrowth: 10,
+    monthlyContribution: 0,
+    monthlyWithdrawal: 1000,
+    withdrawalStartYear: 0,
+    inflationPct: 10,
+    ...o,
+  });
+  const run = (p: PlanInputs) => {
+    const calc = new InvestmentCalculator(p);
+    calc.calculateGrowth();
+    return { calc, years: calc.getGrowthMatrix().map((e) => e.nominal) };
+  };
+
+  it("leaves a plan that does not ask for it exactly as it was", () => {
+    expect(run(plan()).years).toEqual(
+      run(plan({ spendingKeepsPace: false })).years,
+    );
+  });
+
+  it("pays what the same shopping basket costs on the day", () => {
+    // The plan is told prices rise 10% a year; a $1,000 basket therefore
+    // costs $1,000 today and about $2,590 in year ten. Held flat it would be
+    // a 61% real spending cut the plan never announces - which is why the
+    // same pot that lasted ten years now lasts seven.
+    const { calc, years } = run(plan({ spendingKeepsPace: true }));
+    expect(years).toEqual([
+      107_459, 93_664, 78_490, 61_799, 43_438, 23_242, 1_025, 0, 0, 0,
+    ]);
+    expect(calc.getDepletedAtMonth()).toBe(84);
+    const paid = calc.getWithdrawalSchedule();
+    expect(paid[0]).toBe(1000);
+    expect(paid[12]).toBeCloseTo(1100, 6);
+  });
+
+  it("leaves a dynamic policy alone: its guardrails are already indexed", () => {
+    const policy = {
+      dynamicWithdrawal: { ratePct: 4, floor: 500, ceiling: 5000 },
+      monthlyWithdrawal: 0,
+    };
+    expect(run(plan({ ...policy, spendingKeepsPace: true })).years).toEqual(
+      run(plan(policy)).years,
+    );
   });
 });

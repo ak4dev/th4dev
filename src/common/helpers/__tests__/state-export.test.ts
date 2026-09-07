@@ -60,8 +60,13 @@ const fullState: NormalizedState = {
     fire: true,
     scenarios: true,
     budget: true,
+    // Key order matters here and only here: the round trip compares BYTES, and
+    // normalizeState emits toggles in DEFAULT_TOGGLES order
     dynamicWithdrawal: true,
+    taxes: true,
+    spendingKeepsPace: true,
     monteCarloMode: "individual",
+    returnModel: "normal",
   },
   stock: {
     apiUrl: "https://example.com/api?symbol={symbol}",

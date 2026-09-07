@@ -36,6 +36,24 @@ export interface LineGraphEntry {
 export type DisplayTrack = "nominal" | "real";
 
 /**
+ * The shape of one year's simulated return draw, at a fixed mean and spread.
+ *
+ * - "normal": independent draws from a Gaussian. Every year is a fresh coin.
+ * - "clustered": bad years arrive in RUNS, from a two-state market that
+ *   switches between calm and crisis and tends to stay where it is.
+ *
+ * It lives here, in the shared vocabulary, rather than in the engine that
+ * consumes it: the engine already imports this module, and the toggle that
+ * chooses a model is state. monte-carlo.ts owns the CALIBRATION and documents
+ * it there; this owns only the name. See that file for what each shape does
+ * to a withdrawal plan.
+ */
+export type ReturnModel = "normal" | "clustered";
+
+/** Runtime twin of ReturnModel: what an imported file is checked against */
+export const RETURN_MODELS: readonly ReturnModel[] = ["normal", "clustered"];
+
+/**
  * Dynamic withdrawal policy: each withdrawal year, the annual withdrawal is
  * re-evaluated as ratePct% of the current balance (so spending rises in
  * up-markets and falls in downturns), then clamped to the monthly guardrails.
@@ -139,6 +157,38 @@ export interface PlanInputs {
   annualFeePct?: number;
   /** Percentage-of-balance withdrawal policy; replaces monthlyWithdrawal when set */
   dynamicWithdrawal?: DynamicWithdrawal;
+  /**
+   * Effective tax on money drawn from this account, as a PERCENTAGE
+   * (25 = 25%). Absent or 0 - and only then - means the plan is untaxed, and
+   * every figure it produces is bit-for-bit what it produced before this
+   * field existed.
+   *
+   * It changes what a withdrawal figure MEANS. Every spendable quantity the
+   * user enters - `monthlyWithdrawal`, and a dynamic policy's floor and
+   * ceiling - is money that must reach their pocket, so the portfolio gives
+   * up that figure divided by (1 - t). The one exception is a dynamic
+   * policy's ratePct, which stays a draw ON the balance: "4% of the balance"
+   * has a settled meaning outside this app and is not this app's to redefine.
+   *
+   * It is a flat effective rate, not a tax calculator: no brackets, no cost
+   * basis, no account types, no state. It answers "what if a quarter of every
+   * dollar I draw goes to tax", which is the question a plan is sensitive to.
+   */
+  withdrawalTaxPct?: number;
+  /**
+   * Whether the FIXED monthly withdrawal is a today's-dollars figure that
+   * rises with `inflationPct`, rather than a flat nominal instruction.
+   *
+   * Absent means flat, which is what this engine has always done and what
+   * keeps every recorded figure unchanged. But flat is a strange default for
+   * a plan that is simultaneously told prices rise every year: a $3,000
+   * grocery bill held flat for twenty years is a 45% real spending cut the
+   * plan never announces, and switching this on moves a stressed plan's
+   * measured ruin from 20.8% to 52.7%. A dynamic policy needs nothing here -
+   * its guardrails are already indexed and its rate leg scales with the
+   * balance - so this governs the fixed withdrawal alone.
+   */
+  spendingKeepsPace?: boolean;
   /** Whether a rollover from the other lane lands in this plan */
   rollOver?: boolean;
   /** Amount rolled in from another investment; a bare number is added to both tracks */
@@ -175,6 +225,10 @@ export interface FeatureToggles {
   budget: boolean;
   /** Percentage-of-balance withdrawals with floor/ceiling guardrails */
   dynamicWithdrawal: boolean;
+  /** An effective tax rate on every dollar drawn from a lane */
+  taxes: boolean;
+  /** Fixed withdrawals are today's-dollars spending and rise with inflation */
+  spendingKeepsPace: boolean;
 }
 
 /**
@@ -189,6 +243,19 @@ export interface TogglesState extends FeatureToggles {
    * treated as one.
    */
   monteCarloMode: "combined" | "individual";
+  /**
+   * Shape of the simulated annual return (see ReturnModel in monte-carlo.ts).
+   * Not a feature toggle: it is a string, and FeatureToggles is uniformly
+   * boolean on purpose so the tool grid and `isTool` can iterate the set.
+   *
+   * It defaults to "clustered" rather than to the engine's own "normal",
+   * which is a deliberate split. The engine defaults to the plain Gaussian so
+   * that a caller which asks for no model gets the numbers this engine has
+   * always produced; the APP asks for the model that reproduces how bad years
+   * actually arrive, because that is the question a withdrawal plan is being
+   * asked. Both keep the return and volatility sliders' plain reading.
+   */
+  returnModel: ReturnModel;
 }
 
 /**

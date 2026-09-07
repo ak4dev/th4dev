@@ -32,8 +32,20 @@ const FEATURES: ReadonlyArray<readonly [string, string]> = [
     "withdraw a percentage of the balance, re-evaluated each withdrawal year and clamped between a floor and a ceiling; the same policy is applied in Monte Carlo.",
   ],
   [
+    "Taxes",
+    "one flat effective rate on every dollar drawn. With it on, the withdrawal figures are what you get to spend and the plan sells spending ÷ (1 − rate) to deliver it; the info panel prints both figures.",
+  ],
+  [
+    "Indexed Spending",
+    "the fixed monthly withdrawal becomes a today's-dollars figure that rises with inflation, instead of a flat nominal amount whose purchasing power quietly falls every year.",
+  ],
+  [
     "Monte Carlo",
-    "P10–P90 percentile bands from randomized annual returns, in combined, individual, or rollover modes. Like every tool toggle it runs in Advanced mode only, so turning Advanced off stops the simulation as well as hiding it.",
+    "P10–P90 percentile bands from randomized annual returns, in combined, individual, or rollover modes. Like every tool toggle it runs in Advanced mode only, so turning Advanced off stops the simulation as well as hiding it. The percentile rows describe the summed portfolio and the depletion rows describe the individual accounts — each row says which.",
+  ],
+  [
+    "Return model",
+    "Clustered (the default) or Independent. Both hold the average return and the volatility exactly as set, at every horizon; what changes is when the bad years arrive and how deep the worst of them go. Clustered switches between a calm and a crisis market that each tend to persist, so bad years come in runs the way 1973–74, 2000–02 and 2008–09 did — which is what actually empties a portfolio being drawn down.",
   ],
   [
     "Portfolio capital preservation",
@@ -55,6 +67,7 @@ const STEPS: ReadonlyArray<string> = [
   "Use Target Value to mark a goal for the ending balance: it draws a dashed line on the chart and the info panel reports the first year the plan reaches it. In Advanced mode with fixed withdrawals it also solves the monthly withdrawal that lands on the goal; it never changes the return, the contribution or any other input.",
   "Toggle Inflated for inflation-adjusted numbers and Rollover to roll A into B at A's finish year.",
   "Toggle Portfolio to map the calculated total into a stock allocation model: add symbols, fetch prices, set allocations to 100%, and read the capital preservation schedule.",
+  "Turn on Monte Carlo to see the range of outcomes rather than one line. Read the depletion rows per account, not as a statement about the summed total: they are different pools.",
 ];
 
 const OUTPUTS: ReadonlyArray<string> = [

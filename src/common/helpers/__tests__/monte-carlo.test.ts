@@ -7,8 +7,13 @@ import {
   runCombinedSimulation,
   runIndividualSimulations,
   runRolloverSimulation,
+  returnDraw,
+  makeRandom,
+  CLUSTERED_CALIBRATION,
   type MonteCarloParams,
 } from "../monte-carlo";
+import { RETURN_MODELS } from "../../types/types";
+import type { ReturnModel } from "../../types/types";
 import { InvestmentCalculator } from "../investment-growth-calculator";
 import type {
   DisplayTrack,
@@ -1071,5 +1076,536 @@ describe("return distribution calibration", () => {
     const full = sdOfLogGrowth(1);
     expect(half / full).toBeCloseTo(Math.SQRT1_2, 1);
     expect(half).toBeCloseTo((Math.SQRT1_2 * baseParams.volatility) / 100, 2);
+  });
+});
+
+/* ==================================================
+ * Return models
+ * ================================================== */
+
+describe("return models", () => {
+  /** Mean, sd, lag-1 autocorrelation, skew, and the same for |x - mean| */
+  const shape = (values: number[]) => {
+    const n = values.length;
+    const mean = values.reduce((s, v) => s + v, 0) / n;
+    const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+    const sd = Math.sqrt(variance);
+    const skew = values.reduce((s, v) => s + (v - mean) ** 3, 0) / n / sd ** 3;
+    const auto = (xs: number[]) => {
+      const m = xs.reduce((s, v) => s + v, 0) / xs.length;
+      const v = xs.reduce((s, x) => s + (x - m) ** 2, 0) / xs.length;
+      let cov = 0;
+      for (let i = 1; i < xs.length; i++) cov += (xs[i] - m) * (xs[i - 1] - m);
+      return cov / (xs.length - 1) / v;
+    };
+    return {
+      mean,
+      sd,
+      skew,
+      ac1: auto(values),
+      // Autocorrelation of the ABSOLUTE deviation: this is what "clustering"
+      // means. A market can have no memory of its direction (ac1 ~ 0) while
+      // very much having a memory of how violent it is.
+      acAbs: auto(values.map((v) => Math.abs(v - mean))),
+    };
+  };
+
+  /** N standardised draws from one path of `model` */
+  const draws = (model: ReturnModel, seed: number, n: number) => {
+    const draw = returnDraw(model, makeRandom(seed));
+    return Array.from({ length: n }, draw);
+  };
+
+  const SAMPLE = 40_000;
+  const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
+
+  /**
+   * The tolerances are the estimators' own standard errors, not taste.
+   * At N = 40,000 on a unit-variance stream: se(mean) = 1/sqrt(N) = 0.005,
+   * se(sd) ~ 1/sqrt(2N) = 0.0035, se(ac1) ~ 1/sqrt(N) = 0.005.
+   *
+   * Checked rather than assumed: over a sweep of 40 seeds the observed ranges
+   * are mean -0.0116..0.0158, sd 0.9891..1.0096, ac1 -0.0119..0.0114, and for
+   * the clustered model acAbs 0.0486..0.0733 and skew -0.604..-0.457. Every
+   * bound below clears the worst of those by at least half again, while a
+   * real miscalibration misses by orders of magnitude - forgetting the
+   * standardisation alone inflates sd by 12%.
+   */
+  for (const seed of SEEDS) {
+    it(`keeps the sliders' plain reading under every model (seed ${seed})`, () => {
+      for (const model of RETURN_MODELS) {
+        const { mean, sd } = shape(draws(model, seed, SAMPLE));
+        expect(Math.abs(mean), model).toBeLessThan(0.04);
+        expect(Math.abs(sd - 1), model).toBeLessThan(0.04);
+      }
+    });
+  }
+
+  it("gives 'normal' no memory of direction and none of violence", () => {
+    for (const seed of SEEDS) {
+      const { ac1, acAbs, skew } = shape(draws("normal", seed, SAMPLE));
+      expect(Math.abs(ac1)).toBeLessThan(0.04);
+      expect(Math.abs(acAbs)).toBeLessThan(0.04);
+      expect(Math.abs(skew)).toBeLessThan(0.1);
+    }
+  });
+
+  it("gives 'clustered' a memory of violence but not of direction", () => {
+    // The whole point of the model, stated as two numbers: bad years arrive
+    // in runs (acAbs well above zero) while the returns themselves stay
+    // serially uncorrelated, which is what the annual record shows. A regime
+    // that also shifted the MEAN would show up here as a non-zero ac1 - and
+    // it would quietly rescale the user's sigma, which the horizon test below
+    // is what catches.
+    for (const seed of SEEDS) {
+      const { ac1, acAbs, skew } = shape(draws("clustered", seed, SAMPLE));
+      // Two-sided: an OVER-persistent regime is as much a miscalibration as
+      // an absent one. Neither bound resolves the spell length itself - see
+      // "holds the calibration the annual record was fitted to" for that.
+      expect(acAbs, `seed ${seed}`).toBeGreaterThan(0.03);
+      expect(acAbs, `seed ${seed}`).toBeLessThan(0.1);
+      expect(Math.abs(ac1), `seed ${seed}`).toBeLessThan(0.04);
+      // Left-skewed, about -0.5: the one non-normality that survives being
+      // aggregated up to a whole year
+      expect(skew, `seed ${seed}`).toBeLessThan(-0.3);
+      expect(skew, `seed ${seed}`).toBeGreaterThan(-0.8);
+    }
+  });
+
+  it("makes sigma mean sigma at thirty years as well as at one", () => {
+    // Var(30-year sum) / (30 * Var(one year)). Serial dependence in the LEVEL
+    // of returns breaks this, and breaking it is a covert volatility change:
+    // an earlier calibration with a regime mean tilt measured 1.31 here,
+    // turning a slider set to 12 into an effective 13.8 over a long plan
+    // while every one-year statistic above still passed.
+    //
+    // Over 40 seeds this estimator ranges 0.9855..1.0173, so the bounds below
+    // sit about three and a half times its spread away - wide enough never to
+    // flake, and nowhere near wide enough to admit the tilted model.
+    for (const model of RETURN_MODELS) {
+      const random = makeRandom(4242);
+      const sums = Array.from({ length: 40_000 }, () => {
+        const draw = returnDraw(model, random);
+        let total = 0;
+        for (let year = 0; year < 30; year++) total += draw();
+        return total;
+      });
+      const mean = sums.reduce((s, v) => s + v, 0) / sums.length;
+      const variance =
+        sums.reduce((s, v) => s + (v - mean) ** 2, 0) / sums.length;
+      expect(variance / 30, model).toBeGreaterThan(0.94);
+      expect(variance / 30, model).toBeLessThan(1.06);
+    }
+  });
+
+  it("starts a clustered path from the stationary regime, not from calm", () => {
+    // Every path must begin as a random year of the market, not as a quiet
+    // one. Starting them all calm hands each path an unearned opening - and a
+    // withdrawal plan is at its most fragile in exactly those first years -
+    // which measured 14.7% ruin against a stationary 21.7% on the same plan.
+    //
+    // Observed as the share of FIRST draws that are violent: with an
+    // always-calm start it collapses towards the calm state's own spread.
+    const firsts = Array.from({ length: 20_000 }, (_, i) =>
+      returnDraw("clustered", makeRandom(i + 1))(),
+    );
+    const violent = firsts.filter((v) => Math.abs(v) > 1.5).length / 20_000;
+    const later =
+      draws("clustered", 7, 20_000)
+        .slice(1000)
+        .filter((v) => Math.abs(v) > 1.5).length / 19_000;
+    expect(Math.abs(violent - later)).toBeLessThan(0.02);
+  });
+
+  it("costs a plan that never asked for a model nothing at all", () => {
+    // The engine default is the plain Gaussian, so a caller that says nothing
+    // gets exactly what it got before models existed - deep equality across
+    // every entry point, on a fractional horizon so the trailing partial-year
+    // chunk is exercised too. This is a randomness-BUDGET test as much as a
+    // value test: a model that consumed one extra uniform would re-phase every
+    // path after it and change bands that have been recorded for months.
+    const a = { ...baseParams, yearsOfGrowth: 10.5, monthlyWithdrawal: 300 };
+    const b = { ...baseParams, yearsOfGrowth: 12, initialAmount: 50000 };
+    const named = { ...a, returnModel: "normal" as const };
+    const namedB = { ...b, returnModel: "normal" as const };
+    expect(runMonteCarloSimulation(named)).toEqual(runMonteCarloSimulation(a));
+    expect(runCombinedSimulation(named, namedB)).toEqual(
+      runCombinedSimulation(a, b),
+    );
+    expect(runRolloverSimulation(named, namedB)).toEqual(
+      runRolloverSimulation(a, b),
+    );
+    expect(runIndividualSimulations(named, namedB)).toEqual(
+      runIndividualSimulations(a, b),
+    );
+  });
+
+  it("draws a different market once a model is asked for", () => {
+    // The counterpart to the test above: the field must actually reach the
+    // draw. A setting that lands in state, renders its control and changes
+    // nothing is the likeliest wiring failure and no value test elsewhere
+    // would see it.
+    const plain = runMonteCarloSimulation(baseParams);
+    const clustered = runMonteCarloSimulation({
+      ...baseParams,
+      returnModel: "clustered",
+    });
+    expect(clustered.at(-1)!.p50).not.toBe(plain.at(-1)!.p50);
+  });
+
+  it("collapses onto the deterministic plan under every model at sigma 0", () => {
+    // Volatility multiplies the WHOLE standardised deviate, so no model may
+    // leave anything behind at zero. A regime mean written outside that
+    // multiplier survives here and breaks the parity contract.
+    for (const model of RETURN_MODELS) {
+      const plan = calcProps({
+        monthlyWithdrawal: 200,
+        withdrawalStartYear: 2,
+      });
+      const bands = runMonteCarloSimulation({
+        ...mcFrom(plan),
+        returnModel: model,
+      });
+      expectWithinADollar(
+        bands.slice(1).map((band) => band.p50),
+        yearly(plan),
+      );
+    }
+  });
+});
+
+/* ==================================================
+ * Per-account depletion
+ * ================================================== */
+
+describe("depletion is measured per account and says which", () => {
+  const spender: MonteCarloParams = {
+    ...baseParams,
+    initialAmount: 400_000,
+    monthlyWithdrawal: 3000,
+    withdrawalStartYear: 0,
+    yearsOfGrowth: 20,
+    seed: 4242,
+  };
+  const saver: MonteCarloParams = {
+    ...baseParams,
+    initialAmount: 400_000,
+    monthlyWithdrawal: 0,
+    yearsOfGrowth: 20,
+    seed: 4242,
+  };
+
+  it("reports the spending account's own risk, not the portfolio's", () => {
+    // The defect this whole field exists for: the summed portfolio holds both
+    // pots, so its percentiles are dominated by the saver, while the risk
+    // figure beside them is the spender's alone. Now both are on the record
+    // and each says which pool it describes.
+    const bands = runCombinedSimulation(spender, saver);
+    const legs = bands.at(-1)!.legDepletion!;
+    expect(legs.a.depletedPct).toBeGreaterThan(0.05);
+    expect(legs.b.depletedPct).toBe(0);
+    expect(bands.at(-1)!.depletedPct).toBe(legs.a.depletedPct);
+    // ...and the percentile it sits next to is made almost entirely of the
+    // account that carries none of that risk
+    expect(bands.at(-1)!.p10).toBeGreaterThan(400_000);
+  });
+
+  it("matches what each account reports when simulated on its own", () => {
+    // Exact, not statistical: runCombinedSimulation consumes the shared
+    // stream in the same order (all of A's paths, then all of B's), so leg A
+    // IS the single-lane run. An implementation that returned the wrong leg,
+    // the sum, or the average fails here rather than looking plausible.
+    const bands = runCombinedSimulation(spender, saver);
+    const alone = runMonteCarloSimulation(spender);
+    expect(bands.map((band) => band.legDepletion!.a.depletedPct)).toEqual(
+      alone.map((band) => band.depletedPct),
+    );
+  });
+
+  it("keeps the any-account figure a union, never a sum or a maximum", () => {
+    const bothSpend = runCombinedSimulation(spender, {
+      ...spender,
+      seed: 4242,
+      monthlyWithdrawal: 2500,
+    });
+    for (const band of bothSpend) {
+      const { a, b } = band.legDepletion!;
+      expect(band.depletedPct).toBeGreaterThanOrEqual(
+        Math.max(a.depletedPct, b.depletedPct),
+      );
+      expect(band.depletedPct).toBeLessThanOrEqual(
+        Math.min(1, a.depletedPct + b.depletedPct),
+      );
+    }
+    // And on a plan where both can fail it is strictly inside those bounds,
+    // so the test above is not passing on a degenerate case
+    const end = bothSpend.at(-1)!;
+    expect(end.depletedPct).toBeGreaterThan(
+      Math.max(
+        end.legDepletion!.a.depletedPct,
+        end.legDepletion!.b.depletedPct,
+      ),
+    );
+  });
+
+  it("counts a rollover lane that drains in its own final year", () => {
+    // `until` is an exclusive bound and the rollover index IS lane A's last
+    // checkpoint, so stopping at it skipped the one place a spend-down lane
+    // most often first reads zero. The same pair in combined mode reported
+    // the failure; rollover mode reported none, and the panel would have
+    // printed "0% chance of running out" beside a row naming the very month
+    // it ran out.
+    const drains: MonteCarloParams = {
+      ...baseParams,
+      initialAmount: 12000,
+      projectedGain: 0,
+      volatility: 0,
+      yearsOfGrowth: 3,
+      monthlyWithdrawal: 1000,
+      withdrawalStartYear: 2,
+      simCount: 10,
+    };
+    const receiver: MonteCarloParams = {
+      ...drains,
+      initialAmount: 50000,
+      monthlyWithdrawal: 0,
+      withdrawalStartYear: 0,
+      yearsOfGrowth: 6,
+    };
+    const combined = runCombinedSimulation(drains, receiver);
+    const rollover = runRolloverSimulation(drains, receiver);
+    expect(combined.at(-1)!.depletedPct).toBe(1);
+    expect(rollover.at(-1)!.depletedPct).toBe(1);
+    // A is absorbed at the roll, so its figure is dated there rather than at
+    // the horizon - the row it feeds is a closed question, not a live one
+    expect(rollover.at(-1)!.legDepletion!.a.throughMonth).toBe(36);
+    expect(rollover.at(-1)!.legDepletion!.b.throughMonth).toBe(72);
+  });
+
+  it("leaves a single-lane run with no breakdown to give", () => {
+    // One account IS the portfolio there, so depletedPct already names the
+    // right pool and a redundant field would break the identity
+    // runIndividualSimulations(a, b).a === runMonteCarloSimulation(a)
+    expect(
+      runMonteCarloSimulation(spender).at(-1)!.legDepletion,
+    ).toBeUndefined();
+    expect(
+      runIndividualSimulations(spender, saver).a.at(-1)!.legDepletion,
+    ).toBeUndefined();
+  });
+});
+
+/* ==================================================
+ * Withdrawal tax and indexed spending
+ * ================================================== */
+
+describe("both engines agree about tax and indexed spending", () => {
+  it("grosses a fixed withdrawal up identically in both engines", () => {
+    expectParity({
+      monthlyWithdrawal: 1000,
+      withdrawalStartYear: 2,
+      withdrawalTaxPct: 25,
+    });
+  });
+
+  it("agrees once a taxed plan has run itself dry", () => {
+    // The cap is applied to the GROSS draw, so the two engines must also
+    // agree about the partial payment in the month the money runs out
+    expectParity({
+      initialAmount: 120_000,
+      projectedGain: 0,
+      monthlyWithdrawal: 1000,
+      withdrawalStartYear: 0,
+      withdrawalTaxPct: 25,
+    });
+  });
+
+  it("indexes a fixed withdrawal identically in both engines", () => {
+    expectParity(
+      {
+        monthlyWithdrawal: 1000,
+        withdrawalStartYear: 1,
+        inflationPct: 3,
+        spendingKeepsPace: true,
+      },
+      "real",
+    );
+  });
+
+  it("grosses a dynamic policy's guardrails, and only those, in both", () => {
+    expectParity({
+      initialAmount: 200_000,
+      monthlyWithdrawal: 0,
+      dynamicWithdrawal: { ratePct: 4, floor: 2000, ceiling: 3000 },
+      inflationPct: 2.5,
+      withdrawalTaxPct: 25,
+    });
+  });
+
+  it("grosses AND indexes the same figure in the same order in both engines", () => {
+    // The combination the app itself ships. Grossing before indexing and
+    // indexing before grossing agree at month 0 and compound apart after it,
+    // so only a long horizon separates them - and this is the one arithmetic
+    // both engines write out by hand rather than sharing.
+    expectParity({
+      initialAmount: 400_000,
+      monthlyWithdrawal: 2500,
+      withdrawalStartYear: 0,
+      inflationPct: 3,
+      yearsOfGrowth: 25,
+      withdrawalTaxPct: 25,
+      spendingKeepsPace: true,
+    });
+  });
+
+  it("leaves a dynamic policy alone under indexed spending, in the simulation too", () => {
+    // The deterministic engine has this test; the simulated one did not. The
+    // toggle governs the FIXED withdrawal alone - a policy's guardrails are
+    // already indexed and its rate leg scales with the balance - so the
+    // simulated bands must be untouched by it.
+    const policy = {
+      monthlyWithdrawal: 0,
+      dynamicWithdrawal: { ratePct: 4, floor: 2000, ceiling: 3000 },
+      inflationPct: 3,
+      withdrawalTaxPct: 25,
+    };
+    expect(
+      runMonteCarloSimulation(
+        mcFrom(calcProps({ ...policy, spendingKeepsPace: true })),
+      ),
+    ).toEqual(runMonteCarloSimulation(mcFrom(calcProps(policy))));
+  });
+
+  it("costs an untaxed, unindexed plan nothing at all", () => {
+    const plain = { ...baseParams, monthlyWithdrawal: 400 };
+    expect(
+      runMonteCarloSimulation({
+        ...plain,
+        withdrawalTaxPct: 0,
+        spendingKeepsPace: false,
+      }),
+    ).toEqual(runMonteCarloSimulation(plain));
+  });
+
+  it("empties a plan sooner once the same spending is taxed", () => {
+    const spending = {
+      ...baseParams,
+      initialAmount: 400_000,
+      monthlyWithdrawal: 3000,
+      withdrawalStartYear: 0,
+      yearsOfGrowth: 20,
+      simCount: 2000,
+      seed: 4242,
+    };
+    const untaxed = runMonteCarloSimulation(spending).at(-1)!.depletedPct;
+    const taxed = runMonteCarloSimulation({
+      ...spending,
+      withdrawalTaxPct: 25,
+    }).at(-1)!.depletedPct;
+    expect(taxed).toBeGreaterThan(untaxed);
+  });
+
+  it("empties a plan sooner once the same spending keeps pace with prices", () => {
+    // A fixed nominal draw is a real spending cut the plan never announces.
+    // Indexing it is the single largest correction in this engine: measured
+    // on a stressed plan it moves ruin from 20.8% to 52.7%.
+    const spending = {
+      ...baseParams,
+      initialAmount: 400_000,
+      monthlyWithdrawal: 3000,
+      withdrawalStartYear: 0,
+      yearsOfGrowth: 20,
+      inflationPct: 3,
+      simCount: 2000,
+      seed: 4242,
+    };
+    const flat = runMonteCarloSimulation(spending).at(-1)!.depletedPct;
+    const indexed = runMonteCarloSimulation({
+      ...spending,
+      spendingKeepsPace: true,
+    }).at(-1)!.depletedPct;
+    expect(indexed).toBeGreaterThan(flat * 1.5);
+  });
+});
+
+describe("the clustered market is the one that was calibrated", () => {
+  const SAMPLE = 40_000;
+  const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
+  const draws = (seed: number, n: number) => {
+    const draw = returnDraw("clustered", makeRandom(seed));
+    return Array.from({ length: n }, draw);
+  };
+
+  it("holds the calibration the annual record was fitted to", () => {
+    // Pinned as constants because no sample this suite can afford resolves
+    // them: cutting the mean crisis spell from 2.0 years to 1.7 while holding
+    // the stationary share passes every distributional assertion above, and a
+    // 400-seed sweep of the clustering measure has the two ranges overlapping.
+    // Spell length is the model's whole reason for existing - the depletion
+    // difference it is documented to produce is a function of it - so a change
+    // here has to be a deliberate edit to a test rather than a silent retune.
+    const c = CLUSTERED_CALIBRATION;
+    // A quarter of years in the volatile state...
+    expect(c.calmToCrisis / (c.calmToCrisis + c.crisisToCalm)).toBeCloseTo(
+      0.26,
+      2,
+    );
+    // ...spells of two years...
+    expect(1 / c.crisisToCalm).toBeCloseTo(2, 5);
+    // ...and roughly twice as violent while they last
+    expect(c.crisisSd / c.calmSd).toBeCloseTo(2.19, 2);
+  });
+
+  it("gives the two regimes ONE mean, so sigma is not quietly rescaled", () => {
+    // The sabotage every other assertion misses. Give the crisis state a mean
+    // 0.6 sd below the calm state's and renormalise to hold the marginal
+    // variance at 1: the mean, the sd, the autocorrelation, the skew and even
+    // Var(30-year sum) all stay inside their bounds, because the tilt
+    // manufactures exactly the left skew the skew-normal was there to supply.
+    // What it actually is, is a persistent DRIFT - and a persistent drift is
+    // the thing the calibration comment says it refuses, because it turns the
+    // volatility slider into a number that means something else at 30 years.
+    //
+    // Measured here as the difference between the mean return AFTER a violent
+    // year and after a calm one: HEAD spans -0.027..+0.010 over these seeds,
+    // the tilted variant -0.133..-0.060.
+    for (const seed of SEEDS) {
+      const xs = draws(seed, SAMPLE);
+      const after: [number[], number[]] = [[], []];
+      for (let i = 1; i < xs.length; i++) {
+        after[Math.abs(xs[i - 1]) > 1.5 ? 0 : 1].push(xs[i]);
+      }
+      const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
+      expect(
+        Math.abs(mean(after[0]) - mean(after[1])),
+        `seed ${seed}`,
+      ).toBeLessThan(0.045);
+    }
+  });
+
+  it("starts every path's regime afresh, so no path inherits the last one's", () => {
+    // The stationary-start test measures the MARGINAL, which a regime hoisted
+    // to module scope reproduces exactly - such a chain is still stationary,
+    // it is merely no longer independent between paths. This measures the
+    // dependence instead: consecutive path openings taken off ONE stream, the
+    // way runCombinedSimulation consumes it. HEAD spans 0.000..0.011 over
+    // these seeds; hoisting the regime gives 0.050..0.066.
+    for (const seed of SEEDS) {
+      const random = makeRandom(seed * 31);
+      const openings = Array.from({ length: SAMPLE }, () =>
+        Math.abs(returnDraw("clustered", random)()),
+      );
+      const m = openings.reduce((s, v) => s + v, 0) / openings.length;
+      const v =
+        openings.reduce((s, x) => s + (x - m) ** 2, 0) / openings.length;
+      let cov = 0;
+      for (let i = 1; i < openings.length; i++) {
+        cov += (openings[i] - m) * (openings[i - 1] - m);
+      }
+      expect(
+        Math.abs(cov / (openings.length - 1) / v),
+        `seed ${seed}`,
+      ).toBeLessThan(0.02);
+    }
   });
 });

@@ -7,7 +7,10 @@ import * as Popover from "@radix-ui/react-popover";
 import { addMonths } from "date-fns/addMonths";
 import { differenceInCalendarMonths } from "date-fns/differenceInCalendarMonths";
 import { styled, keyframes } from "../../stitches.config";
-import { planAnchor } from "../common/helpers/investment-growth-calculator";
+import {
+  planAnchor,
+  toMonths,
+} from "../common/helpers/investment-growth-calculator";
 import { formatCurrency } from "../common/helpers/format";
 import {
   buildLanes,
@@ -19,7 +22,7 @@ import {
 } from "../common/helpers/lane-model";
 import { PanelContainer } from "./ui/primitives";
 import {
-  dynamicWithdrawalAssumptions,
+  planAssumptions,
   type PdfKeyValue,
 } from "../common/helpers/pdf-report-data";
 import DateAmountTable from "./date-amount-table";
@@ -186,6 +189,8 @@ const TOOL_TOGGLES: [keyof FeatureToggles, string][] = [
   ["scenarios", "Scenarios"],
   ["budget", "Budget"],
   ["dynamicWithdrawal", "Dynamic Withdrawal"],
+  ["taxes", "Taxes"],
+  ["spendingKeepsPace", "Indexed Spending"],
 ];
 
 /* ---------------- Info Panel Rows ---------------- */
@@ -204,21 +209,16 @@ const yearsFromToday = (today: Date, d: Date): number =>
   differenceInCalendarMonths(d, today) / 12;
 
 /**
- * What a dynamic policy actually paid, per month, in NOMINAL dollars - which
- * is what the schedule records whichever display mode the panel is in.
+ * What a plan actually paid, per month, in NOMINAL dollars - which is what
+ * the schedule records whichever display mode the panel is in.
  *
- * The two ends of the range each moved in meaning once guardrails became
- * inflation-indexed and a drained plan started recording the part-payment it
- * could afford: a floor equal to the ceiling still spans a range (the
- * guardrails rise with inflation), and the last payment before the money ran
- * out is the balance, not the policy's amount. So the range is taken over
- * the full payments only, collapses to a single figure when the policy never
- * moved, and says which of the two is on show.
+ * The last payment before the money ran out is the BALANCE, not the amount the
+ * plan asked for, so it is stripped: leaving it in prints a dying gasp of $107
+ * as the bottom of what reads like a policy range. Both callers below share
+ * this so that the range means the same thing in both rows - they did not, and
+ * the fixed one printed the gasp while the dynamic one filtered it.
  */
-const dynamicWithdrawalRange = (
-  l: Lane,
-  { ratePct }: NonNullable<PlanInputs["dynamicWithdrawal"]>,
-): string => {
+const paidRange = (l: Lane): number[] => {
   const depletedAt = l.calc.getDepletedAtMonth();
   const beforeRunningDry =
     depletedAt === undefined
@@ -227,31 +227,90 @@ const dynamicWithdrawalRange = (
           .getWithdrawalSchedule()
           .slice(0, depletedAt)
           .filter((m) => m > 0);
-  const paid = beforeRunningDry.length > 0 ? beforeRunningDry : l.withdrawals;
-  const low = formatCurrency(Math.min(...paid));
-  const high = formatCurrency(Math.max(...paid));
-  const notes = [`${ratePct}% of balance`];
-  if (l.plan.inflationPct > 0) notes.push("guardrails indexed");
-  const amount = low === high ? `${low}/mo` : `${low}–${high}/mo`;
-  return `${amount} nominal (${notes.join(", ")})`;
+  return beforeRunningDry.length > 0 ? beforeRunningDry : l.withdrawals;
 };
+
+/** "$X/mo", or "$X–$Y/mo" where the two ends differ */
+const moRange = (values: number[]): string => {
+  const low = formatCurrency(Math.min(...values));
+  const high = formatCurrency(Math.max(...values));
+  return low === high ? `${low}/mo` : `${low}–${high}/mo`;
+};
+
+/**
+ * What a tax leaves the user out of a range that LEFT the portfolio.
+ *
+ * Both rows below print a drawn figure, so both owe the reader the other half
+ * of it. Without this the dynamic row was byte-identical at 0% and at 40% tax:
+ * a percentage-of-balance rate is deliberately not grossed up, so nothing in
+ * the drawn figure moved, and the row never named what was actually spendable.
+ */
+const spendableNote = (l: Lane, paid: number[]): string[] => {
+  const tax = l.plan.withdrawalTaxPct ?? 0;
+  if (!tax) return [];
+  return [`${moRange(paid.map((m) => m * (1 - tax / 100)))} spendable`];
+};
+
+/**
+ * The word below is "drawn", never "gross": the "Growth covers draw from" row
+ * in the same panel already prints "$X/mo gross" for a growth figure, where
+ * gross means before fees and inflation. Two orthogonal senses of one word in
+ * one info panel is how a reader ends up confidently misreading both.
+ *
+ * The two ends of a policy's range each moved in meaning once guardrails
+ * became inflation-indexed: a floor equal to the ceiling still spans a range,
+ * because the guardrails rise with inflation. So the range collapses to a
+ * single figure only when the policy never moved, and the notes say why.
+ */
+const dynamicWithdrawalRange = (
+  l: Lane,
+  { ratePct }: NonNullable<PlanInputs["dynamicWithdrawal"]>,
+): string => {
+  const paid = paidRange(l);
+  const notes = [`${ratePct}% of balance`];
+  // A binding ceiling has turned the policy into a fixed withdrawal, and the
+  // default ceiling is the slider span rather than a figure anyone picked, so
+  // the row says so instead of printing a flat number that looks like a policy
+  if (l.ceilingBinds) notes.push("held at the ceiling");
+  if (l.plan.inflationPct > 0) notes.push("guardrails indexed");
+  notes.push(...spendableNote(l, paid));
+  return `${moRange(paid)} drawn nominal (${notes.join(", ")})`;
+};
+
+/**
+ * What a FIXED withdrawal actually costs the portfolio, and what reaches the
+ * user, once tax and indexed spending have had their say.
+ */
+const fixedWithdrawalRange = (l: Lane): string => {
+  if (l.withdrawals.length === 0) return "N/A";
+  const paid = paidRange(l);
+  const notes = [`${formatCurrency(l.plan.monthlyWithdrawal)}/mo spendable`];
+  if (l.plan.spendingKeepsPace) notes.push("indexed");
+  return `${moRange(paid)} drawn nominal (${notes.join(", ")})`;
+};
+
+/**
+ * A risk share as a percentage. A real but small risk is shown as "<1%"
+ * rather than rounded to a "0%" that reads as impossible.
+ */
+const riskPct = (risk: number): string =>
+  risk > 0 && risk < 0.005 ? "<1%" : `${Math.round(risk * 100)}%`;
 
 /**
  * Percentile summary of one band set at its horizon.
  *
- * The depletion row is only printed for a portfolio that actually withdraws:
- * for one that never spends, "0%" is not information, it is an answer to a
- * question nobody asked. When it is printed, a real but small risk is shown
- * as "<1%" rather than rounded to a "0%" that reads as impossible.
+ * These three rows describe ONE POOL - the portfolio the band set was drawn
+ * on - and nothing else is allowed to share their label. The depletion figure
+ * used to, and that was the whole defect: in combined mode "(A+B) Chance of
+ * Running Out" sat under "(A+B) 10th Percentile" while measuring something
+ * else entirely (see ruinRows). On a plan whose first lane draws 9% a year
+ * beside a second lane that only saves, the two rows read as one story about
+ * one pot and were in fact a statement about the small lane's survival next
+ * to a percentile made almost entirely of the large lane's money.
  */
-const mcRows = (
-  label: string,
-  bands: PercentileBand[],
-  withdrawing: boolean,
-): PdfKeyValue[] => {
+const mcRows = (label: string, bands: PercentileBand[]): PdfKeyValue[] => {
   const last = bands.at(-1);
   if (!last) return [];
-  const risk = last.depletedPct;
   return [
     { label: `(${label}) Median Outcome`, value: formatCurrency(last.p50) },
     // A percentile is the boundary of a decile, not the outcome of it:
@@ -265,21 +324,104 @@ const mcRows = (
       label: `(${label}) 10th Percentile`,
       value: `${formatCurrency(last.p10)} (1 in 10 end below)`,
     },
-    ...(withdrawing
+  ];
+};
+
+/**
+ * The depletion rows, which describe ACCOUNTS and say which ones.
+ *
+ * Four rules, each of them the answer to a way the old single row misled:
+ *
+ * 1. Every row names the pool it measures. A per-account figure carrying the
+ *    portfolio's label is the defect this whole block exists to close.
+ * 2. A row is printed only for an account that actually withdraws. One that
+ *    never spends cannot run dry, and "0%" there is an answer to a question
+ *    nobody asked - the rule the percentile block has always followed.
+ * 3. The roll-up is printed only when BOTH accounts spend. When one of them
+ *    does, any-account ruin IS that account's ruin, and printing "(A) 21%",
+ *    "(B) 0%", "(A or B) 21%" is three rows for one fact.
+ * 4. A ROLLOVER is reported differently, because after the roll there are no
+ *    longer two accounts to break down: lane B has become the whole portfolio
+ *    and a "(B)" row would sit under "(Portfolio)" percentiles describing the
+ *    same money by a different name - while latching a failure its own $20,000
+ *    side pot had eighteen years before the roll refunded it. So a rollover
+ *    prints the union under the portfolio's own name, plus the one
+ *    decomposition that stays meaningful: whether the bridge account ran dry
+ *    before it could roll.
+ *
+ * "(A or B)" against "(A+B)" is a two-character difference, so the roll-up
+ * sits directly beneath its two components rather than beside the summed
+ * percentiles, and its value column spells the distinction out in words.
+ */
+interface RuinLane {
+  id: string;
+  withdrawing: boolean;
+}
+
+const ruinRows = (
+  bands: PercentileBand[],
+  lanes: RuinLane[],
+  rollover?: { today: Date; month: number },
+): PdfKeyValue[] => {
+  const last = bands.at(-1);
+  if (!last) return [];
+  const [a, b] = lanes;
+  const legs = last.legDepletion;
+  // A single-lane band set has no accounts to break down: the portfolio and
+  // the account are the same thing, so the plain figure is already correct
+  if (!legs || !b) {
+    return a?.withdrawing
       ? [
           {
-            label: `(${label}) Chance of Running Out`,
-            value:
-              risk > 0 && risk < 0.005 ? "<1%" : `${Math.round(risk * 100)}%`,
+            label: `(${a.id}) Chance of Running Out`,
+            value: riskPct(last.depletedPct),
+          },
+        ]
+      : [];
+  }
+  if (rollover) {
+    return [
+      ...(a.withdrawing
+        ? [
+            {
+              label: `(${a.id}) Runs Dry Before Rollover`,
+              value: `${riskPct(legs.a.depletedPct)} (by ${dateAfterMonths(rollover.today, rollover.month)})`,
+            },
+          ]
+        : []),
+      ...(a.withdrawing || b.withdrawing
+        ? [
+            {
+              label: "(Portfolio) Chance of Running Out",
+              value: `${riskPct(last.depletedPct)} (either account, not the total)`,
+            },
+          ]
+        : []),
+    ];
+  }
+  const perLeg = [[a, legs.a] as const, [b, legs.b] as const].flatMap(
+    ([lane, leg]) =>
+      lane.withdrawing
+        ? [
+            {
+              label: `(${lane.id}) Chance of Running Out`,
+              value: riskPct(leg.depletedPct),
+            },
+          ]
+        : [],
+  );
+  return [
+    ...perLeg,
+    ...(a.withdrawing && b.withdrawing
+      ? [
+          {
+            label: `(${a.id} or ${b.id}) Chance of Running Out`,
+            value: `${riskPct(last.depletedPct)} (either account, not the total)`,
           },
         ]
       : []),
   ];
 };
-
-// The A band set is the whole portfolio in combined and rollover mode, so
-// the question "can this run out" is asked of every lane it contains
-const spends = (ls: Lane[]) => ls.some((l) => l.withdrawals.length > 0);
 
 /* ---------------- Types ---------------- */
 
@@ -395,16 +537,16 @@ export default function InvestmentCalculatorModern({
     mcMode === "off"
       ? null
       : {
-          a: toMcParams(
-            laneA,
-            sliders.volatilityA ?? DEFAULT_VOLATILITY,
-            MONTE_CARLO_SEED,
-          ),
-          b: toMcParams(
-            laneB,
-            sliders.volatilityB ?? DEFAULT_VOLATILITY,
-            MONTE_CARLO_SEED,
-          ),
+          a: toMcParams(laneA, {
+            volatility: sliders.volatilityA ?? DEFAULT_VOLATILITY,
+            seed: MONTE_CARLO_SEED,
+            returnModel: toggles.returnModel,
+          }),
+          b: toMcParams(laneB, {
+            volatility: sliders.volatilityB ?? DEFAULT_VOLATILITY,
+            seed: MONTE_CARLO_SEED,
+            returnModel: toggles.returnModel,
+          }),
           mode: mcMode,
           // The Inflated toggle, named. It rides on the INPUT rather than
           // inside the params so the memo re-runs when it flips, and so the
@@ -503,13 +645,25 @@ export default function InvestmentCalculatorModern({
                       ? "Not within horizon"
                       : "N/A",
               },
-              ...(p.dynamicWithdrawal
+              // Printed whenever what LEAVES the portfolio differs from what
+              // the user typed - a policy re-reads it from the balance, a tax
+              // grosses it up, or both. It used to be gated on the policy
+              // alone, which left the commonest taxed case with nothing on
+              // screen: a $3,000 slider at a 25% rate draws $4,000 a month and
+              // no row, no label and no control said so. Indexed spending is
+              // the same case - the payment rises every year and the slider
+              // goes on showing the first one.
+              ...(p.dynamicWithdrawal ||
+              p.withdrawalTaxPct ||
+              p.spendingKeepsPace
                 ? [
                     {
                       label: `(${id}) Withdrawal`,
-                      value: withdrawing
-                        ? dynamicWithdrawalRange(l, p.dynamicWithdrawal)
-                        : "N/A",
+                      value: !withdrawing
+                        ? "N/A"
+                        : p.dynamicWithdrawal
+                          ? dynamicWithdrawalRange(l, p.dynamicWithdrawal)
+                          : fixedWithdrawalRange(l),
                     },
                   ]
                 : []),
@@ -550,11 +704,29 @@ export default function InvestmentCalculatorModern({
       ];
     };
 
-    const mcLabel = isRollover(toggles)
+    // Derived from the simulation that ACTUALLY RAN, never from the toggles
+    // that requested it. Two different things used to be read off the switches
+    // instead: `isRollover(toggles)` is true even when the roll falls past B's
+    // horizon and never fires, and the mode switch still reads "individual"
+    // while a rollover overrides it. Between them, a rollover-on-but-cannot-
+    // land plan in individual mode labelled the summed A+B portfolio "(A)" and
+    // printed the any-account risk as lane A's own - the exact defect this
+    // block exists to close, in the one combination nobody had looked at.
+    //
+    // resolveMcMode already knows which entry point runs, and
+    // `rolloverApplied` is the engine's own "does the roll fire" test.
+    // Together they name the pool.
+    const portfolioBands = mcMode === "combined" || mcMode === "rollover";
+    const mcLabel = rolloverApplied
       ? "Portfolio"
-      : toggles.advanced && toggles.monteCarloMode === "combined"
+      : portfolioBands
         ? "A+B"
         : "A";
+    // Which accounts that band set is built from, and which of them spend
+    const mcLanes = (portfolioBands ? lanes : [laneA]).map((l) => ({
+      id: l.id,
+      withdrawing: l.withdrawals.length > 0,
+    }));
 
     return [
       ...lanes.flatMap(laneRows),
@@ -580,8 +752,18 @@ export default function InvestmentCalculatorModern({
         label: "Inflation Rate",
         value: `${laneA.plan.inflationPct}%`,
       },
-      ...mcRows(mcLabel, mcBandsA, spends(mcLabel === "A" ? [laneA] : lanes)),
-      ...mcRows("B", mcBandsB, spends([laneB])),
+      ...mcRows(mcLabel, mcBandsA),
+      ...ruinRows(
+        mcBandsA,
+        mcLanes,
+        rolloverApplied
+          ? { today, month: toMonths(laneA.plan.yearsOfGrowth) }
+          : undefined,
+      ),
+      ...mcRows("B", mcBandsB),
+      ...ruinRows(mcBandsB, [
+        { id: "B", withdrawing: laneB.withdrawals.length > 0 },
+      ]),
     ];
   }, [
     lanes,
@@ -589,6 +771,7 @@ export default function InvestmentCalculatorModern({
     laneB,
     today,
     toggles,
+    mcMode,
     rolloverApplied,
     mcBandsA,
     mcBandsB,
@@ -601,43 +784,10 @@ export default function InvestmentCalculatorModern({
   // named only Investment A, so a reader attributed A's amount, rate and
   // horizon to the whole plan. Inflation is the plan's, not a lane's, so it
   // closes the list once.
-  const assumptions = useMemo<PdfKeyValue[]>(() => {
-    const laneAssumptions = (l: Lane): PdfKeyValue[] => {
-      const { id, plan: p } = l;
-      return [
-        {
-          label: `Initial Amount (${id})`,
-          value: formatCurrency(l.initialAmount),
-        },
-        { label: `Return Rate (${id})`, value: `${p.projectedGain}%` },
-        { label: `Years (${id})`, value: `${p.yearsOfGrowth}` },
-        {
-          label: `Monthly Contribution (${id})`,
-          value: formatCurrency(p.monthlyContribution),
-        },
-        ...(p.dynamicWithdrawal
-          ? dynamicWithdrawalAssumptions(id, p.dynamicWithdrawal)
-          : [
-              {
-                label: `Monthly Withdrawal (${id})`,
-                value: formatCurrency(p.monthlyWithdrawal),
-              },
-            ]),
-        ...(isTool(toggles, "fees")
-          ? [
-              {
-                label: `Annual Fee (${id})`,
-                value: `${p.annualFeePct ?? 0}%`,
-              },
-            ]
-          : []),
-      ];
-    };
-    return [
-      ...lanes.flatMap(laneAssumptions),
-      { label: "Inflation Rate", value: `${laneA.plan.inflationPct}%` },
-    ];
-  }, [lanes, laneA, toggles]);
+  const assumptions = useMemo<PdfKeyValue[]>(
+    () => planAssumptions(lanes, toggles, sliders),
+    [lanes, toggles, sliders],
+  );
 
   /* ---------------- FIRE ---------------- */
 
@@ -735,22 +885,40 @@ export default function InvestmentCalculatorModern({
           </ToggleSection>
           {isTool(toggles, "monteCarlo") && (
             <ToggleSection>
+              {/* min is MIN_VALUE, like every other slider in this file: zero
+                  volatility is the one setting that collapses the cone onto
+                  the plan line, which is both the engine's parity contract
+                  with the deterministic calculator and the most useful thing
+                  a reader can do to sanity-check a chart. A stored 0 was
+                  always legal; only the control forbade it. */}
               <VolatilityRow>
                 <InvestmentSlider
                   label="Volatility A (σ %)"
                   value={sliders.volatilityA ?? DEFAULT_VOLATILITY}
-                  min={1}
+                  min={MIN_VALUE}
                   max={MAX_VOLATILITY}
                   onChange={(v) => updateSlider("volatilityA", v)}
                 />
                 <InvestmentSlider
                   label="Volatility B (σ %)"
                   value={sliders.volatilityB ?? DEFAULT_VOLATILITY}
-                  min={1}
+                  min={MIN_VALUE}
                   max={MAX_VOLATILITY}
                   onChange={(v) => updateSlider("volatilityB", v)}
                 />
               </VolatilityRow>
+              <ToggleSwitch
+                label="Return model"
+                suffix={
+                  toggles.returnModel === "clustered"
+                    ? "Clustered"
+                    : "Independent"
+                }
+                checked={toggles.returnModel === "clustered"}
+                onCheckedChange={(v) =>
+                  updateToggle("returnModel", v ? "clustered" : "normal")
+                }
+              />
               <ToggleSwitch
                 label="Monte Carlo mode"
                 suffix={
@@ -768,6 +936,21 @@ export default function InvestmentCalculatorModern({
                 median sits a little below the plan line: compounding a volatile
                 return loses ground to compounding a steady one. The same inputs
                 always draw the same cone.
+              </HelperText>
+              <HelperText>
+                Clustered is the default: bad years arrive in runs, the way
+                1973–74, 2000–02 and 2008–09 did, which is what actually empties
+                a portfolio being drawn down. Independent makes every year a
+                fresh coin toss. Both keep the average return and the volatility
+                above exactly as set, at every horizon — what changes is when
+                the bad years arrive and how deep the worst of them go.
+              </HelperText>
+              <HelperText>
+                σ is the spread of the annual rate the plan compounds monthly,
+                so the calendar years it produces are about 1.1× as wide — at a
+                10% return, σ 18 gives years averaging 12.1% with a 20-point
+                spread, which is the US large-cap record. Set σ to 0 to collapse
+                the cone onto the plan line.
               </HelperText>
             </ToggleSection>
           )}

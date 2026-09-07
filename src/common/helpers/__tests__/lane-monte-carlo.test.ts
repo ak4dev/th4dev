@@ -161,7 +161,11 @@ describe("resolveMcMode", () => {
 describe("toMcParams", () => {
   it("hands the lane's own plan over with nothing dropped or renamed", () => {
     const lane = fullLane();
-    const mapped = toMcParams(lane, 18, 1337);
+    const mapped = toMcParams(lane, {
+      volatility: 18,
+      seed: 1337,
+      returnModel: "normal",
+    });
     // Field for field: this used to be a hand-written copy that renamed four
     // of them on the way past, which is exactly where two engines can end up
     // simulating different cash flows
@@ -173,6 +177,7 @@ describe("toMcParams", () => {
       volatility: 18,
       simCount: MONTE_CARLO_SIM_COUNT,
       seed: 1337,
+      returnModel: "normal",
     });
   });
 
@@ -188,7 +193,10 @@ describe("toMcParams", () => {
       },
       TODAY,
     );
-    expect(toMcParams(basic, 12, 1).monthlyContribution).toBe(0);
+    expect(
+      toMcParams(basic, { volatility: 12, seed: 1, returnModel: "normal" })
+        .monthlyContribution,
+    ).toBe(0);
   });
 });
 

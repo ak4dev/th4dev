@@ -13,6 +13,7 @@
 
 import {
   MAX_ANNUAL_FEE,
+  MAX_WITHDRAWAL_TAX,
   MAX_MONTHLY_CONTRIBUTION,
   MAX_PROJECTED_GAIN,
   MAX_WITHDRAWAL_RATE,
@@ -156,6 +157,25 @@ export default function LanePanel({
               0.01,
               sliders[laneKey("annualFee", id)] || 0,
             )}
+          {isTool(toggles, "taxes") && (
+            <>
+              {slider(
+                "withdrawalTax",
+                "Withdrawal Tax (%)",
+                MAX_WITHDRAWAL_TAX,
+                1,
+                sliders[laneKey("withdrawalTax", id)] || 0,
+              )}
+              <HelperText>
+                One flat effective rate on every dollar drawn — not brackets,
+                cost basis or account type. With it on, the withdrawal figures
+                above are what you get to SPEND, and the plan sells{" "}
+                {`spending ÷ (1 − rate)`} to deliver it. A percentage-of-balance
+                rate stays a draw on the balance; its floor and ceiling are
+                spending, so they are grossed up like the fixed figure.
+              </HelperText>
+            </>
+          )}
         </>
       )}
       {/* Goal for the ending balance; in advanced fixed-withdrawal mode it also

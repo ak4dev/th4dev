@@ -113,6 +113,19 @@ export interface Lane {
    * in - so this is not, and is no longer labelled as, a safe withdrawal rate.
    */
   growthCoversDraw?: { year: number; monthlyGross: number };
+  /**
+   * True when a dynamic policy's CEILING is what set the withdrawal, rather
+   * than the rate the user asked for.
+   *
+   * A ceiling that binds turns a percentage-of-balance policy back into a
+   * fixed withdrawal without saying so, and the default ceiling is the slider
+   * span rather than a figure anyone chose (see DEFAULT_WITHDRAWAL_CEILING),
+   * so it binds on every plan above about $3,000,000 that nobody has touched
+   * it on. Measured on the FIRST withdrawal the policy makes: that is the one
+   * the user can check against "rate% of my balance divided by twelve", and a
+   * later balance may legitimately grow into the ceiling.
+   */
+  ceilingBinds: boolean;
 }
 
 /** A rollover landing in a lane: what arrives, and when */
@@ -190,6 +203,13 @@ export function buildLane(
   // guardrail rewrites it the moment it is touched. So the span grows with
   // the plan - the most the rate slider could ever draw from the opening
   // balance - and never sits below a figure already stored.
+  //
+  // With Taxes on, these controls hold SPENDABLE dollars while the term below
+  // is a portfolio draw, so the span is generous rather than exact. That is
+  // the right way round: narrowing it by (1 - t) would shrink the track under
+  // the user's thumb the moment the tool was switched on, which is the very
+  // failure the paragraph above exists to prevent. A span that is too wide
+  // costs nothing.
   const withdrawalMax = Math.min(
     MAX_MONTHLY_WITHDRAWAL_LIMIT,
     Math.max(
@@ -251,6 +271,12 @@ export function buildLane(
           ceiling: s[key("withdrawalCeiling")] ?? DEFAULT_WITHDRAWAL_CEILING,
         }
       : undefined,
+    // Both resolved at this boundary like every other tool, so the sliders
+    // keep their stored values while `plan` describes exactly what is being
+    // simulated. A `|| 0` rather than `?? 0`: a stored NaN from a
+    // hand-edited import is not a rate, and a rate of nothing is no tax.
+    withdrawalTaxPct: isTool(t, "taxes") ? s[key("withdrawalTax")] || 0 : 0,
+    spendingKeepsPace: isTool(t, "spendingKeepsPace"),
   };
   // The plan's one clock, handed down rather than read here: both lanes and
   // every date this panel prints have to agree on which day "today" is.
@@ -292,6 +318,21 @@ export function buildLane(
   // when the plan does not reach it, and the info row says that it does not
   const displayTarget = toDisplay(s[key("targetValue")] || 0);
   const annualWithdrawal = (withdrawals[0] ?? 0) * 12;
+  // The unclamped rate leg, against what the policy actually paid first. Both
+  // in nominal dollars at the withdrawal's own month, which is where the
+  // engine evaluates the policy.
+  const firstWithdrawalMonth = toMonths(plan.withdrawalStartYear);
+  const balanceAtStart =
+    monthlyMatrix[firstWithdrawalMonth - 1]?.nominal ?? initialAmount;
+  const rateLeg = plan.dynamicWithdrawal
+    ? (balanceAtStart * plan.dynamicWithdrawal.ratePct) /
+      PERCENTAGE_DIVISOR /
+      MONTHS_PER_YEAR
+    : 0;
+  const ceilingBinds =
+    plan.dynamicWithdrawal !== undefined &&
+    withdrawals.length > 0 &&
+    rateLeg > withdrawals[0] + 1;
   // Both sides NOMINAL, whatever is on screen: the schedule records what the
   // plan actually pays out, which is a nominal figure.
   const covers =
@@ -366,6 +407,7 @@ export function buildLane(
       10 ** Math.max(2, Math.floor(Math.log10(Math.max(total, 1000))) - 1),
     targetReached,
     targetCapped,
+    ceilingBinds,
     growthCoversDraw:
       covers === undefined
         ? undefined

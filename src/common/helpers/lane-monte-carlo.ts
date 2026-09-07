@@ -20,7 +20,17 @@ import {
 } from "./monte-carlo";
 import { isRollover, isTool, type Lane } from "./lane-model";
 import { MONTE_CARLO_SIM_COUNT } from "../constants/app-constants";
-import type { DisplayTrack, TogglesState } from "../types/types";
+import type { DisplayTrack, ReturnModel, TogglesState } from "../types/types";
+
+/** The three settings a simulated run needs that a plan does not carry */
+export interface McSettings {
+  /** Standard deviation of this lane's annual rate, in percentage points */
+  volatility: number;
+  /** Seed for the shared random stream */
+  seed: number;
+  /** Shape of the annual draw; see ReturnModel */
+  returnModel: ReturnModel;
+}
 
 /** Which simulation is running, "off" included */
 export type McMode = "off" | "combined" | "individual" | "rollover";
@@ -71,16 +81,22 @@ export const resolveMcMode = (toggles: TogglesState): McMode =>
  * Monte Carlo has no mode flag of its own, and needs none: buildLane already
  * resolved basic mode, so the lane's plan carries exactly the cash flows the
  * deterministic engine applies.
+ *
+ * The three simulation settings arrive as ONE named object rather than as
+ * three positional numbers. `toMcParams(lane, 18, 1337)` reads the same
+ * whichever way round its two numbers go, and the failure - a plan simulated
+ * with a volatility of 1,337 - is a plausible-looking cone rather than a
+ * crash.
  */
 export const toMcParams = (
   lane: Lane,
-  volatility: number,
-  seed: number,
+  { volatility, seed, returnModel }: McSettings,
 ): MonteCarloParams => ({
   ...lane.plan,
   volatility,
   simCount: MONTE_CARLO_SIM_COUNT,
   seed,
+  returnModel,
 });
 
 /**

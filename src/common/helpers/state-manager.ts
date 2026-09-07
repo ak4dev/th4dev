@@ -9,10 +9,12 @@
 
 import type {
   InputValues,
+  ReturnModel,
   SliderValues,
   TH4State,
   TogglesState,
 } from "../types/types";
+import { RETURN_MODELS } from "../types/types";
 import type { BudgetItem } from "./budget-manager";
 import type { ScenarioSnapshot } from "./scenario-manager";
 import type { PortfolioHolding } from "../types/portfolio-types";
@@ -29,6 +31,7 @@ import {
   DEFAULT_INFLATION_RATE,
   DEFAULT_TARGET_VALUE,
   DEFAULT_VOLATILITY,
+  DEFAULT_WITHDRAWAL_TAX,
   DEFAULT_WITHDRAWAL_RATE,
   DEFAULT_WITHDRAWAL_FLOOR,
   DEFAULT_WITHDRAWAL_CEILING,
@@ -97,7 +100,12 @@ export const DEFAULT_TOGGLES: TogglesState = {
   scenarios: false,
   budget: false,
   dynamicWithdrawal: false,
+  taxes: false,
+  spendingKeepsPace: false,
   monteCarloMode: "combined",
+  // The one default that is not the engine's own. See TogglesState.returnModel
+  // for why the app asks for a different market than the engine assumes.
+  returnModel: "clustered",
 };
 
 /** Same default for the A and B lanes of a slider */
@@ -131,6 +139,7 @@ export const DEFAULT_SLIDERS: Record<DefaultedSliderKey, number> = {
   ...lanes("targetValue", DEFAULT_TARGET_VALUE),
   ...lanes("annualFee", 0),
   ...lanes("volatility", DEFAULT_VOLATILITY),
+  ...lanes("withdrawalTax", DEFAULT_WITHDRAWAL_TAX),
   yearlyInflation: DEFAULT_INFLATION_RATE,
   fireAnnualExpenses: DEFAULT_FIRE_ANNUAL_EXPENSES,
   fireSWR: DEFAULT_FIRE_SWR,
@@ -227,6 +236,51 @@ function isValidScenario(value: unknown): value is ScenarioSnapshot {
  * compatibility — missing fields are filled by normalizeState(), and
  * malformed rows in the array fields are dropped there too.
  */
+/** The two members of TogglesState that name a mode rather than switch one */
+const MODE_TOGGLES = new Set(["monteCarloMode", "returnModel"]);
+
+/**
+ * Whether a stored toggle value is the right SHAPE for its key: a string for
+ * the two that name a mode, a boolean for every switch.
+ *
+ * This is the question the import GUARD asks, and it is deliberately weaker
+ * than the one below. A guard rejects the whole record, so it must only refuse
+ * what cannot be repaired - and an unrecognised mode CAN be repaired, by
+ * normalizeState, which drops it and supplies the default. Refusing it here
+ * would mean a file naming a model this build has never heard of costs the
+ * user every slider in it, while an unknown BOOLEAN toggle from the same
+ * build is ignored harmlessly - the guard iterates DEFAULT_TOGGLES, so a key
+ * it does not know is simply not looked at.
+ *
+ * Nothing breaks today: a bundle predating `returnModel` ignores the key
+ * outright. The cost lands the first time a THIRD value is added to either
+ * mode, when every file the newer build writes would be refused - not
+ * degraded - by an older bundle a browser is still caching. The strictness
+ * that would cause that buys nothing now that the normaliser filters by
+ * value, so it is spent here rather than kept.
+ */
+function isKnownToggleShape(key: string, val: unknown): boolean {
+  return MODE_TOGGLES.has(key) ? isString(val) : typeof val === "boolean";
+}
+
+/**
+ * Whether one stored toggle value is one this build can actually run.
+ *
+ * This is the question the NORMALISER asks, where the answer costs a single
+ * field rather than the record: a mode it does not recognise is dropped and
+ * DEFAULT_TOGGLES supplies the default, so no word an import invents ever
+ * reaches an engine's switch.
+ */
+function isValidToggle(key: string, val: unknown): boolean {
+  if (key === "monteCarloMode") {
+    return val === "combined" || val === "individual";
+  }
+  if (key === "returnModel") {
+    return RETURN_MODELS.includes(val as ReturnModel);
+  }
+  return typeof val === "boolean";
+}
+
 export function isValidTH4State(value: unknown): value is TH4State {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
@@ -243,11 +297,7 @@ export function isValidTH4State(value: unknown): value is TH4State {
       if (REQUIRED_TOGGLES.has(key)) return false;
       continue;
     }
-    const ok =
-      key === "monteCarloMode"
-        ? val === "combined" || val === "individual"
-        : typeof val === "boolean";
-    if (!ok) return false;
+    if (!isKnownToggleShape(key, val)) return false;
   }
 
   if (v["budgetItems"] !== undefined && !Array.isArray(v["budgetItems"]))
@@ -494,12 +544,18 @@ export function normalizeState(raw: TH4State): NormalizedState {
       ...DEFAULT_INPUTS,
       ...pickWhere<InputKey, string>(raw.inputs, INPUT_KEY_SET, isString),
     },
+    // Filtered by VALUE as well as by key, because this is the only gate that
+    // CAN repair one: `isDefined` alone let a hand-edited file put an
+    // arbitrary string where a mode belongs and it arrived intact at the
+    // engine's switch. The guard above deliberately does not do this job -
+    // rejecting a whole plan over one unrecognised word is a worse answer
+    // than replacing the word.
     toggles: {
       ...DEFAULT_TOGGLES,
-      ...(pickWhere(
-        raw.toggles,
-        TOGGLE_KEYS,
-        isDefined,
+      ...(Object.fromEntries(
+        Object.entries(
+          pickWhere<string, unknown>(raw.toggles, TOGGLE_KEYS, isDefined),
+        ).filter(([key, val]) => isValidToggle(key, val)),
       ) as Partial<TogglesState>),
     },
     stock: {

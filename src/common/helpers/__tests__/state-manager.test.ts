@@ -18,6 +18,7 @@ import {
 } from "../state-manager";
 import {
   DEFAULT_THEME,
+  DEFAULT_VOLATILITY,
   DEFAULT_WITHDRAWAL_RATE,
   DEFAULT_WITHDRAWAL_FLOOR,
   DEFAULT_WITHDRAWAL_CEILING,
@@ -26,6 +27,7 @@ import {
   MAX_MONTHLY_WITHDRAWAL,
   MAX_MONTHLY_WITHDRAWAL_LIMIT,
   MAX_PROJECTED_GAIN,
+  MAX_WITHDRAWAL_TAX,
   DEFAULT_YEARS_OF_GROWTH,
   LANE_IDS,
   SLIDER_KEYS,
@@ -35,6 +37,7 @@ import {
 import { getMonthlyTotal } from "../budget-manager";
 import type { SliderKey } from "../../constants/app-constants";
 import type { SliderValues, TH4State, TogglesState } from "../../types/types";
+import { RETURN_MODELS } from "../../types/types";
 import type { PortfolioHolding } from "../../types/portfolio-types";
 import type { ScenarioSnapshot } from "../scenario-manager";
 
@@ -164,9 +167,25 @@ describe("isValidTH4State", () => {
     ).toBe(true);
   });
 
-  it("rejects invalid monteCarloMode", () => {
+  it("repairs an unknown monteCarloMode rather than refusing the plan", () => {
+    // This used to reject. It should not, and the reason applies to every
+    // mode-valued toggle: the guard's answer costs the WHOLE record, the
+    // normaliser can replace the one field, and a mode named by a later build
+    // is exactly the case a CDN-served app meets when a cached older bundle
+    // opens a file the current one wrote.
     const toggles = { ...LEGACY_TOGGLES, monteCarloMode: "unknown" };
-    expect(isValidTH4State({ ...bareState, toggles })).toBe(false);
+    expect(isValidTH4State({ ...bareState, toggles })).toBe(true);
+    expect(
+      normalizeState({ ...bareState, toggles } as TH4State).toggles
+        .monteCarloMode,
+    ).toBe("combined");
+    // A mode of the wrong SHAPE is still malformed, not merely unrecognised
+    expect(
+      isValidTH4State({
+        ...bareState,
+        toggles: { ...LEGACY_TOGGLES, monteCarloMode: 7 },
+      }),
+    ).toBe(false);
   });
 
   it("rejects non-array budgetItems but tolerates malformed rows (normalizeState drops them)", () => {
@@ -320,8 +339,12 @@ describe("DEFAULT_SLIDERS completeness", () => {
   it("includes fee and volatility slider defaults", () => {
     expect(DEFAULT_SLIDERS.annualFeeA).toBe(0);
     expect(DEFAULT_SLIDERS.annualFeeB).toBe(0);
-    expect(DEFAULT_SLIDERS.volatilityA).toBe(12);
-    expect(DEFAULT_SLIDERS.volatilityB).toBe(12);
+    // 18, not 12: the slider is the spread of the annual RATE the engine
+    // compounds monthly, so the calendar years it produces are ~1.1x wider.
+    // See DEFAULT_VOLATILITY for the three-column match against the record.
+    expect(DEFAULT_SLIDERS.volatilityA).toBe(DEFAULT_VOLATILITY);
+    expect(DEFAULT_SLIDERS.volatilityB).toBe(DEFAULT_VOLATILITY);
+    expect(DEFAULT_VOLATILITY).toBe(18);
   });
 
   it("includes dynamic withdrawal defaults for both lanes", () => {
@@ -370,7 +393,7 @@ describe("DEFAULT_SLIDERS completeness", () => {
     });
     expect(result.sliders.fireAnnualExpenses).toBe(40000);
     expect(result.sliders.annualFeeA).toBe(0);
-    expect(result.sliders.volatilityA).toBe(12);
+    expect(result.sliders.volatilityA).toBe(DEFAULT_VOLATILITY);
     expect(result.sliders.withdrawalRateB).toBe(DEFAULT_WITHDRAWAL_RATE);
     expect(result.sliders.withdrawalCeilingB).toBe(DEFAULT_WITHDRAWAL_CEILING);
   });
@@ -975,5 +998,75 @@ describe("parseAmountInput", () => {
     // the same class of silent rewrite as the $250,000.00 paste bug.
     expect(parseAmountInput("-500")).toBe(-500);
     expect(parseAmountInput("$-1,200.50")).toBe(-1200.5);
+  });
+});
+
+/* ---------- Toggles that are not booleans ---------- */
+
+describe("a toggle that names a mode is checked against its own list", () => {
+  const withToggles = (extra: Record<string, unknown>) => ({
+    ...DEFAULT_STATE,
+    toggles: { ...DEFAULT_TOGGLES, ...extra } as TH4State["toggles"],
+  });
+
+  it("accepts every model the engine can actually run", () => {
+    for (const model of RETURN_MODELS) {
+      expect(isValidTH4State(withToggles({ returnModel: model }))).toBe(true);
+    }
+  });
+
+  it("keeps a record whose mode this build has never heard of", () => {
+    // A guard rejects the WHOLE plan, so it may only refuse what cannot be
+    // repaired. A model named by a later build can be repaired - the
+    // normaliser drops it - and refusing it would cost the user every slider
+    // in the file while an unknown boolean toggle from that same build passes
+    // harmlessly. Nothing breaks today - a bundle predating the key ignores
+    // it - but the cost lands the first time a third value is added, when a
+    // browser still caching an older bundle would refuse the file outright.
+    expect(isValidTH4State(withToggles({ returnModel: "bootstrap" }))).toBe(
+      true,
+    );
+    // ...but the wrong SHAPE is still a malformed record
+    expect(isValidTH4State(withToggles({ returnModel: true }))).toBe(false);
+    expect(isValidTH4State(withToggles({ advanced: "yes" }))).toBe(false);
+  });
+
+  it("drops a bad mode on the way in rather than passing it through", () => {
+    // The repair the guard defers to: no word an import invents ever reaches
+    // an engine's switch, and the rest of the plan survives intact
+    const normalised = normalizeState({
+      ...withToggles({ returnModel: "bootstrap", monteCarloMode: "sideways" }),
+      sliders: { ...DEFAULT_SLIDERS, yearsOfGrowthA: 42 },
+    });
+    expect(normalised.toggles.returnModel).toBe(DEFAULT_TOGGLES.returnModel);
+    expect(normalised.toggles.monteCarloMode).toBe("combined");
+    expect(normalised.sliders.yearsOfGrowthA).toBe(42);
+  });
+
+  it("fills the model in for an export written before it existed", () => {
+    const legacy = normalizeState({
+      ...DEFAULT_STATE,
+      toggles: LEGACY_TOGGLES as TH4State["toggles"],
+    });
+    expect(legacy.toggles.returnModel).toBe("clustered");
+    expect(legacy.toggles.taxes).toBe(false);
+    expect(legacy.toggles.spendingKeepsPace).toBe(false);
+  });
+
+  it("defaults the app to the clustered market, not the engine's own", () => {
+    // The engine defaults to the plain Gaussian so a caller that asks for no
+    // model gets what it always got. The APP asks for the market that
+    // reproduces how bad years actually arrive, because that is the question
+    // a withdrawal plan is being asked.
+    expect(DEFAULT_TOGGLES.returnModel).toBe("clustered");
+  });
+
+  it("starts every plan with no tax modelled", () => {
+    for (const lane of LANE_IDS) {
+      expect(DEFAULT_SLIDERS[laneKey("withdrawalTax", lane)]).toBe(0);
+      expect(SLIDER_LIMITS[laneKey("withdrawalTax", lane)].max).toBe(
+        MAX_WITHDRAWAL_TAX,
+      );
+    }
   });
 });

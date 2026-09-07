@@ -51,15 +51,27 @@
  * the deterministic engine, the target solver, the
  * portfolio schedule and the totals table all treat as the
  * rate they compound. Do not add it to this file alone.
+ *
+ * ---------- Return model ----------
+ * WHICH SHAPE the annual draw has is a separate question
+ * from its mean and spread, and it is the caller's
+ * (see ReturnModel). Both shapes below are standardised to
+ * mean 0 and variance 1 before projectedGain and volatility
+ * are applied, so the two sliders keep their plain reading
+ * whichever is chosen - and, just as importantly, so does
+ * the SUM of many years: Var(30-year sum) / (30 * Var(year))
+ * is 1.00 for both, which is what stops a model switch from
+ * being a covert volatility switch.
  * ================================================== */
 
 import {
   MONTHS_PER_YEAR,
   PERCENTAGE_DIVISOR,
 } from "../constants/app-constants";
-import type { DisplayTrack, PlanInputs } from "../types/types";
+import type { DisplayTrack, PlanInputs, ReturnModel } from "../types/types";
 import {
   dynamicMonthlyWithdrawal,
+  grossWithdrawal,
   guardrailIndex,
   toMonths,
 } from "./investment-growth-calculator";
@@ -84,12 +96,28 @@ export interface MonteCarloParams extends Omit<
   PlanInputs,
   "rollOver" | "investmentToRoll" | "yearOfRollover"
 > {
-  /** Annual return standard deviation in percentage points (default 12) */
+  /**
+   * Standard deviation of the ANNUAL RATE this engine compounds monthly, in
+   * percentage points. Note it is not the standard deviation of the resulting
+   * calendar-year return: a rate X is applied as twelve months of X/12, so the
+   * year returns (1 + X/1200)^12 - 1, whose spread is about 1.115x this
+   * figure. A slider at 18 therefore produces simulated years averaging 12.1%
+   * arithmetic / 10.4% geometric with a 20.1-point spread, which is the US
+   * large-cap record; that ratio is why DEFAULT_VOLATILITY is 18 and not 15.
+   */
   volatility: number;
-  /** Number of simulations to run (default 500) */
+  /** Number of simulations to run */
   simCount: number;
   /** Seed for a deterministic random stream; Math.random is used when absent */
   seed?: number;
+  /**
+   * Shape of the annual draw. Absent means "normal" - the plain i.i.d.
+   * Gaussian this engine has always drawn - so a caller that does not ask for
+   * a model gets the same numbers it got before models existed, and every
+   * band recorded before this field is still the band this engine produces.
+   * The app itself asks for "clustered" (see DEFAULT_TOGGLES.returnModel).
+   */
+  returnModel?: ReturnModel;
 }
 
 export interface PercentileBand {
@@ -109,6 +137,45 @@ export interface PercentileBand {
    * rollover mode it is the summed/spliced path, not either leg on its own.
    */
   depletedPct: number;
+  /**
+   * The same figure measured on each ACCOUNT separately, present only where
+   * the band describes a portfolio built from more than one of them
+   * (runCombinedSimulation, runRolloverSimulation).
+   *
+   * It exists because depletedPct above and p10/p50/p90 beside it describe
+   * DIFFERENT POOLS, and nothing on screen used to say so. The percentiles
+   * are the summed portfolio; the depletion figure is "either account ran
+   * dry", which on a typical plan is one account's risk and not the other's -
+   * a lane drawing 9% a year beside a lane that only saves reports the
+   * spending lane's ruin verbatim, next to a 10th percentile made almost
+   * entirely of the saving lane's money. Reading the two as one pool is the
+   * misread this field exists to make impossible.
+   *
+   * Named rather than positional: this file dates every checkpoint by month
+   * "never by array index" for the same reason a leg is named here. A swapped
+   * index yields a plausible percentage under the wrong lane letter, which no
+   * range assertion can catch.
+   */
+  legDepletion?: LegDepletion;
+}
+
+/** One account's cumulative ruin share, and the last checkpoint it was measured over */
+export interface LegRuin {
+  /** Share of runs (0-1) in which THIS account has run dry by this checkpoint */
+  depletedPct: number;
+  /**
+   * Months from today up to which this account was still being measured. It
+   * equals the band's own `months` for an account that lives to the horizon,
+   * and the rollover month for lane A in a rollover, after which A has been
+   * absorbed into B and can no longer fail on its own.
+   */
+  throughMonth: number;
+}
+
+/** Both accounts of a two-lane portfolio, named as runIndividualSimulations names them */
+export interface LegDepletion {
+  a: LegRuin;
+  b: LegRuin;
 }
 
 interface LumpSumInjection {
@@ -148,7 +215,14 @@ interface SimPath {
 
 /* ---------- RNG ---------- */
 
-type Random = () => number;
+/**
+ * A uniform source in [0, 1). Exported with makeRandom below so a test can
+ * feed returnDraw a seeded stream directly: recovering an annual draw from a
+ * compounded balance is lossy - a deep enough draw floors the balance at zero
+ * and the logarithm goes to -Infinity - so a distributional assertion has to
+ * read the scalar stream, not the plan it produced.
+ */
+export type Random = () => number;
 
 /** mulberry32: a small, fast seeded PRNG yielding uniforms in [0, 1) */
 function mulberry32(seed: number): Random {
@@ -162,7 +236,7 @@ function mulberry32(seed: number): Random {
   };
 }
 
-function makeRandom(seed?: number): Random {
+export function makeRandom(seed?: number): Random {
   return seed === undefined ? Math.random : mulberry32(seed);
 }
 
@@ -173,6 +247,165 @@ function normalRandom(random: Random): number {
   while (u === 0) u = random();
   while (v === 0) v = random();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+/* ---------- Return models ---------- */
+
+/**
+ * The shape of one year's return draw, at a fixed mean and spread.
+ *
+ * - "normal": independent draws from a Gaussian. Every year is a fresh coin,
+ *   unrelated to the one before it.
+ * - "clustered": bad years arrive in RUNS. A two-state Markov chain switches
+ *   between a calm market and a crisis market, and the crisis state is both
+ *   more volatile and more likely to be followed by another crisis year.
+ *
+ * The difference is not a matter of taste for a plan that WITHDRAWS. What
+ * empties a portfolio is not one bad year, it is several arriving early while
+ * the draw continues; independent draws almost never produce that run, so a
+ * Gaussian engine flatters exactly the plans a user has tuned until the
+ * number looked acceptable. Measured on a $400,000 pot drawing $1,333/mo over
+ * 30 years, at the same mean and the same sigma: 0.07% ruin under "normal",
+ * 0.27% under "clustered". At sigma 18 the same pair is 1.97% and 2.56%.
+ *
+ * The name itself lives in types.ts, with the rest of the shared vocabulary;
+ * what lives HERE is the calibration and the evidence for it.
+ */
+
+export type { ReturnModel } from "../types/types";
+
+/**
+ * A generator of standardised annual draws - mean 0, variance 1 - for ONE
+ * simulated path. Multiplying by `volatility` and adding `projectedGain` is
+ * the caller's job, and doing it in that order is what makes a zero-volatility
+ * run collapse to exactly the deterministic plan whatever the model.
+ */
+type ReturnDraw = () => number;
+
+/* --- the "clustered" market --- */
+
+/**
+ * Two-state Markov switching, calibrated against the annual record rather
+ * than invented: about a quarter of years sit in the volatile state, a spell
+ * in it lasts two years on average, and it is roughly 2.2x as volatile as a
+ * calm year (the 1973-74, 2000-02, 2008-09, 2020 and 2022 clusters are all
+ * one to three years long).
+ *
+ * The two states share ONE mean. A regime that also shifted the mean would be
+ * a persistent drift rather than clustering, and a persistent drift shows up
+ * as serial correlation in the returns themselves - the annual record has
+ * essentially none (about -0.03) - and, worse, inflates the variance of a
+ * multi-year sum. That is the trap this calibration avoids on purpose: with
+ * equal means, Var(30-year sum) / (30 * Var(one year)) is 1.00, so sigma
+ * still means sigma at thirty years as well as at one. An earlier draft with
+ * a mean tilt measured 1.31 there, quietly turning a slider set to 12 into an
+ * effective 13.8 over a long plan.
+ */
+const CALM_TO_CRISIS = 0.176;
+const CRISIS_TO_CALM = 0.5;
+/** Stationary share of years spent in the crisis state: 0.176 / (0.176 + 0.5) */
+const CRISIS_SHARE = CALM_TO_CRISIS / (CALM_TO_CRISIS + CRISIS_TO_CALM);
+const CALM_SD = 0.8;
+const CRISIS_SD = 1.75;
+/**
+ * Standard deviation of the mixture, in closed form. Both states have mean 0,
+ * so the mixture variance is just the share-weighted mean of the two
+ * variances; dividing each state's sd by it makes the marginal variance
+ * exactly 1 rather than approximately 1.
+ */
+const REGIME_SD = Math.sqrt(
+  (1 - CRISIS_SHARE) * CALM_SD * CALM_SD + CRISIS_SHARE * CRISIS_SD * CRISIS_SD,
+);
+
+/**
+ * The four numbers the clustered market is, exported so a test can pin them.
+ *
+ * They are not recoverable from the draws at any sample size this suite can
+ * afford: cutting the mean crisis spell from two years to 1.7 while holding
+ * the stationary share leaves every distributional statistic - mean, sd,
+ * skew, autocorrelation, even the clustering measure itself - inside its
+ * tolerance, because the two ranges overlap at 40,000 draws. Spell length is
+ * the model's whole reason for existing, so it is pinned as a constant rather
+ * than estimated from a sample that cannot resolve it.
+ */
+export const CLUSTERED_CALIBRATION = {
+  calmToCrisis: CALM_TO_CRISIS,
+  crisisToCalm: CRISIS_TO_CALM,
+  calmSd: CALM_SD,
+  crisisSd: CRISIS_SD,
+} as const;
+
+/**
+ * Shape of the skew-normal innovation. Annual equity returns are close to
+ * Gaussian in their tails - fat tails are a daily and monthly fact that
+ * averaging washes out by the time a year is up - but they are decidedly
+ * LEFT-SKEWED, about -0.43 over the annual record. Skew is therefore the one
+ * non-normality worth carrying at this frequency, and alpha -1.9 is the shape
+ * that reproduces that figure.
+ */
+const SKEW_SHAPE = -1.9;
+const SKEW_DELTA = SKEW_SHAPE / Math.sqrt(1 + SKEW_SHAPE * SKEW_SHAPE);
+const SKEW_MEAN = SKEW_DELTA * Math.sqrt(2 / Math.PI);
+const SKEW_SD = Math.sqrt(1 - (2 * SKEW_DELTA * SKEW_DELTA) / Math.PI);
+
+/**
+ * A standardised skew-normal variate, built from two standard normals so it
+ * consumes a FIXED amount of randomness. A rejection sampler would draw a
+ * data-dependent number of uniforms, which is how a seeded stream stops being
+ * reproducible from the plan alone.
+ */
+function skewNormalRandom(random: Random): number {
+  const half = Math.abs(normalRandom(random));
+  const rest = normalRandom(random);
+  return (
+    (SKEW_DELTA * half +
+      Math.sqrt(1 - SKEW_DELTA * SKEW_DELTA) * rest -
+      SKEW_MEAN) /
+    SKEW_SD
+  );
+}
+
+/**
+ * Starts a fresh clustered path.
+ *
+ * The regime is drawn from its STATIONARY distribution, not started calm.
+ * Starting every path in the calm state is a subtle and expensive mistake:
+ * the chain then relaxes towards its long-run mix over the first few years,
+ * handing every path a quiet opening it did not earn, and a withdrawal plan
+ * is at its most fragile precisely in those years. Measured on the stressed
+ * plan, an always-calm start reports 14.7% ruin where a stationary start
+ * reports 21.7% - it does not merely blur the answer, it reverses the sign of
+ * the model's effect.
+ *
+ * The state is per PATH, which is why this is a factory and not a module
+ * variable: simulateOnce is called in a loop over one shared stream, and a
+ * hoisted regime would let each path inherit the previous path's ending
+ * state - and, in a rollover, leak lane A's market into lane B's.
+ */
+function clusteredDraw(random: Random): ReturnDraw {
+  let crisis = random() < CRISIS_SHARE;
+  return () => {
+    const sd = (crisis ? CRISIS_SD : CALM_SD) / REGIME_SD;
+    const draw = sd * skewNormalRandom(random);
+    // Transition AFTER the draw, so the state sampled above is the one this
+    // year was actually lived in
+    crisis = crisis ? random() >= CRISIS_TO_CALM : random() < CALM_TO_CRISIS;
+    return draw;
+  };
+}
+
+/**
+ * The draw generator for one path under `model`.
+ *
+ * "normal" MUST consume exactly one normalRandom per year and nothing else,
+ * in the position it always has: the stream is seeded once per run and shared
+ * across paths and lanes, so a single extra uniform re-phases every path after
+ * it and moves bands this engine has recorded since before models existed.
+ */
+export function returnDraw(model: ReturnModel, random: Random): ReturnDraw {
+  return model === "clustered"
+    ? clusteredDraw(random)
+    : () => normalRandom(random);
 }
 
 /* ---------- Checkpoint grid ---------- */
@@ -232,6 +465,9 @@ function simulateOnce(
     annualFeePct = 0,
     volatility,
     dynamicWithdrawal,
+    withdrawalTaxPct,
+    spendingKeepsPace,
+    returnModel = "normal",
   } = params;
 
   const totalMonths = Math.max(0, toMonths(yearsOfGrowth));
@@ -250,6 +486,9 @@ function simulateOnce(
   let nominal = initialAmount;
   let monthlyRate = 0;
   let dynamicMonthly = 0;
+  // Per PATH, never hoisted: a clustered draw carries a regime that must
+  // start fresh - and start stationary - for every simulated life
+  const draw = returnDraw(returnModel, random);
 
   const injectIfDue = (monthsDone: number) => {
     if (injection && monthsDone === injection.month) {
@@ -291,8 +530,12 @@ function simulateOnce(
     // (the only kind an integer horizon has) is unchanged.
     if (month % MONTHS_PER_YEAR === 0) {
       const chunk = Math.min(MONTHS_PER_YEAR, totalMonths - month);
-      const shock =
-        volatility * Math.sqrt(MONTHS_PER_YEAR / chunk) * normalRandom(random);
+      // The whole standardised deviate is multiplied by volatility, so a
+      // zero-volatility run collapses to exactly projectedGain under EVERY
+      // model - which is what the parity suite against the deterministic
+      // engine measures. A model that added anything outside this multiplier
+      // would survive at sigma 12 and break every one of those tests at 0.
+      const shock = volatility * Math.sqrt(MONTHS_PER_YEAR / chunk) * draw();
       monthlyRate =
         (projectedGain + shock) / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
     }
@@ -310,14 +553,25 @@ function simulateOnce(
         nominal,
         dynamicWithdrawal,
         guardrailIndex(inflationPct, month),
+        withdrawalTaxPct,
       );
     }
+    // Only the fixed leg is grossed here: dynamicMonthly already came back
+    // grossed from the shared helper, and grossing it twice would be invisible
+    // at a zero rate and wrong at every other one. Both engines gross BEFORE
+    // the cap below, so the balance floors at zero instead of going negative
+    // paying a tax it cannot afford.
     const requested =
       sinceStart < 0
         ? 0
         : dynamicWithdrawal
           ? dynamicMonthly
-          : monthlyWithdrawal;
+          : grossWithdrawal(
+              spendingKeepsPace
+                ? monthlyWithdrawal * guardrailIndex(inflationPct, month)
+                : monthlyWithdrawal,
+              withdrawalTaxPct,
+            );
     // A path can only spend what it holds, exactly as InvestmentCalculator
     // caps its draw: the balance floors at zero instead of going negative and
     // compounding a debt for the rest of the horizon
@@ -471,29 +725,75 @@ export function computeBands(
 function ruinAcrossLegs(
   legs: { paths: number[][]; until?: number }[],
   checkpoints: number,
-): number[] {
+): { any: number[]; perLeg: number[][] } {
   const runs = legs[0]?.paths.length ?? 0;
-  if (runs === 0) return new Array<number>(checkpoints).fill(0);
+  if (runs === 0) {
+    return {
+      any: new Array<number>(checkpoints).fill(0),
+      perLeg: legs.map(() => new Array<number>(checkpoints).fill(0)),
+    };
+  }
   const funded = legs.map(() => new Array<boolean>(runs).fill(false));
   const ranOut = legs.map(() => new Array<boolean>(runs).fill(false));
+  const any = new Array<number>(checkpoints);
+  const perLeg = legs.map(() => new Array<number>(checkpoints));
 
-  return Array.from({ length: checkpoints }, (_, i) => {
+  for (let i = 0; i < checkpoints; i++) {
     let depleted = 0;
+    const legCount = legs.map(() => 0);
     for (let run = 0; run < runs; run++) {
-      let any = false;
+      let anyLeg = false;
       legs.forEach((leg, l) => {
         if (i < (leg.until ?? checkpoints)) {
           const value = leg.paths[run][i];
           if (value > 0) funded[l][run] = true;
           else if (funded[l][run]) ranOut[l][run] = true;
         }
-        if (ranOut[l][run]) any = true;
+        // Outside the `until` bound on purpose: an account that has already
+        // run dry has run dry for good, and stops being inspected only in the
+        // sense that it can gain no NEW failure after it is absorbed
+        if (ranOut[l][run]) {
+          anyLeg = true;
+          legCount[l]++;
+        }
       });
-      if (any) depleted++;
+      if (anyLeg) depleted++;
     }
-    return depleted / runs;
-  });
+    any[i] = depleted / runs;
+    legs.forEach((_, l) => {
+      perLeg[l][i] = legCount[l] / runs;
+    });
+  }
+
+  // `any` is a per-run OR and is deliberately NOT derived from the per-leg
+  // shares: max(a, b) <= any <= min(1, a + b), with equality at the lower
+  // bound only when the legs never fail in the same run. On a plan where only
+  // one lane spends it happens to equal the max, which is exactly the kind of
+  // coincidence that makes a wrong derivation look right on the plan it was
+  // tested against.
+  return { any, perLeg };
 }
+
+/** Attaches an any-leg figure and its per-account breakdown to a band set */
+const withLegRuin = (
+  bands: PercentileBand[],
+  ruin: { any: number[]; perLeg: number[][] },
+  bounds: { a: number; b: number },
+): PercentileBand[] =>
+  bands.map((band, i) => ({
+    ...band,
+    depletedPct: ruin.any[i],
+    legDepletion: {
+      a: {
+        depletedPct: ruin.perLeg[0][i],
+        throughMonth: Math.min(band.months, bounds.a),
+      },
+      b: {
+        depletedPct: ruin.perLeg[1][i],
+        throughMonth: Math.min(band.months, bounds.b),
+      },
+    },
+  }));
 
 /**
  * Runs paired A+B simulations, sums paths element-wise, returns combined bands.
@@ -524,7 +824,8 @@ export function runCombinedSimulation(
   // Percentiles describe the portfolio; running out is a property of the
   // accounts inside it, so it is measured on the legs (see ruinAcrossLegs)
   const ruin = ruinAcrossLegs([{ paths: legA }, { paths: legB }], grid.length);
-  return bands.map((band, i) => ({ ...band, depletedPct: ruin[i] }));
+  const last = grid[grid.length - 1] ?? 0;
+  return withLegRuin(bands, ruin, { a: last, b: last });
 }
 
 /**
@@ -603,14 +904,25 @@ export function runRolloverSimulation(
   const rollAt = fires
     ? grid.findIndex((months) => months >= rolloverMonth)
     : -1;
+  // INCLUSIVE of A's own final checkpoint. `until` is an exclusive bound and
+  // rollAt is the index of the rollover month itself, so stopping at rollAt
+  // skipped the one checkpoint where a spending lane most often first reads
+  // zero: an A that drained during its last year reported 0% ruin here while
+  // the same pair in combined mode reported 100%. A run out at the moment it
+  // rolls has still run out - what B receives is nothing.
+  const untilA = rollAt === -1 ? grid.length : rollAt + 1;
   const ruin = ruinAcrossLegs(
-    [
-      { paths: legA, until: rollAt === -1 ? grid.length : rollAt },
-      { paths: legB },
-    ],
+    [{ paths: legA, until: untilA }, { paths: legB }],
     grid.length,
   );
-  return bands.map((band, i) => ({ ...band, depletedPct: ruin[i] }));
+  const last = grid[grid.length - 1] ?? 0;
+  return withLegRuin(bands, ruin, {
+    // After the roll, A no longer exists to fail on its own, so its figure is
+    // frozen at the roll date and says so rather than implying a horizon-end
+    // claim about an account that stopped existing years earlier
+    a: fires ? rolloverMonth : last,
+    b: last,
+  });
 }
 
 /**

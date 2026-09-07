@@ -13,6 +13,7 @@ import {
   MONTHS_PER_YEAR,
   PERCENTAGE_DIVISOR,
   MAX_PROJECTED_GAIN,
+  MAX_WITHDRAWAL_TAX,
   MAX_YEARS_OF_GROWTH,
 } from "../constants/app-constants";
 
@@ -59,22 +60,56 @@ export function guardrailIndex(
 }
 
 /**
+ * What the portfolio must give up so that `spendable` dollars reach the user:
+ * spendable / (1 - t). At a zero rate it is the spendable figure itself, by an
+ * early return rather than by arithmetic, so a plan with no tax is untouched
+ * to the last bit and every figure recorded before tax existed still holds.
+ *
+ * The rate is clamped here as well as in SLIDER_LIMITS because a plan can be
+ * built by spreading (solveForTarget) or by hand (a test, a hand-edited
+ * import) and never pass through the state gate. 1 / (1 - t) has a pole at
+ * 100%: unclamped, one bad import turns the whole balance into NaN and the
+ * screen into "$NaN", which is the failure buildLane's own parsing comment
+ * already records fighting.
+ *
+ * @param spendable - The money the user gets to spend, in that month's dollars
+ * @param taxPct    - Effective tax on the withdrawal, as a percentage
+ * @returns The amount actually drawn from the portfolio
+ */
+export function grossWithdrawal(spendable: number, taxPct = 0): number {
+  if (!taxPct) return spendable;
+  const rate = Math.min(Math.max(taxPct, 0), MAX_WITHDRAWAL_TAX);
+  return spendable / (1 - rate / PERCENTAGE_DIVISOR);
+}
+
+/**
  * Monthly amount for one dynamic-withdrawal year: ratePct% of the balance,
  * spread over 12 months and clamped to the guardrails (the floor wins when it
- * exceeds the ceiling).
+ * exceeds the ceiling). The figure returned is what leaves the PORTFOLIO.
  *
  * The guardrails are entered in today's dollars, so `index` scales them to the
  * month being evaluated (see guardrailIndex). It defaults to 1, which leaves
  * the pure nominal clamp callers without inflation already rely on.
+ *
+ * `taxPct` grosses up the two GUARDRAILS and deliberately not the rate. A
+ * floor is a statement about groceries - "I must be able to spend $2,000 a
+ * month" - so it is a spendable quantity, and it already carries the same
+ * treatment for inflation. The rate is not: "4% of the balance" is a portfolio
+ * draw with a fixed meaning outside this app, and silently turning a 4% policy
+ * into a 5.3% one at a 25% tax rate would falsify the very row the PDF prints
+ * ("Withdrawal Rate (A): 4% of balance"). Grossing both guardrails by the same
+ * factor is also what preserves the floor-beats-ceiling tie-break below, which
+ * a one-sided gross-up would invert.
  */
 export function dynamicMonthlyWithdrawal(
   balance: number,
   { ratePct, floor, ceiling }: DynamicWithdrawal,
   index = 1,
+  taxPct = 0,
 ): number {
   const monthly = (balance * ratePct) / PERCENTAGE_DIVISOR / MONTHS_PER_YEAR;
-  const indexedFloor = floor * index;
-  const indexedCeiling = ceiling * index;
+  const indexedFloor = grossWithdrawal(floor * index, taxPct);
+  const indexedCeiling = grossWithdrawal(ceiling * index, taxPct);
   return Math.min(
     Math.max(monthly, indexedFloor),
     Math.max(indexedCeiling, indexedFloor),
@@ -361,16 +396,36 @@ export class InvestmentCalculator {
    * today's dollars rather than shrinking in real terms every year.
    */
   private currentWithdrawal(): number {
-    const { dynamicWithdrawal, monthlyWithdrawal } = this.props;
+    const {
+      dynamicWithdrawal,
+      monthlyWithdrawal,
+      inflationPct,
+      withdrawalTaxPct,
+      spendingKeepsPace,
+    } = this.props;
     const sinceStart =
       this.monthsElapsed - toMonths(this.props.withdrawalStartYear);
     if (sinceStart < 0) return 0;
-    if (!dynamicWithdrawal) return monthlyWithdrawal;
+    const index = guardrailIndex(inflationPct, this.monthsElapsed);
+    if (!dynamicWithdrawal) {
+      // A fixed withdrawal is a nominal instruction unless the plan says the
+      // spending it pays for keeps pace with prices, in which case the slider
+      // is a today's-dollars figure and the plan pays what it is worth on the
+      // day - the same treatment a dynamic policy's guardrails already get.
+      return grossWithdrawal(
+        spendingKeepsPace ? monthlyWithdrawal * index : monthlyWithdrawal,
+        withdrawalTaxPct,
+      );
+    }
     if (sinceStart % MONTHS_PER_YEAR === 0) {
+      // Cached for the whole withdrawal year, and cached ALREADY GROSSED: the
+      // cap below is applied to what leaves the portfolio, so a net figure
+      // held here would be compared against a gross balance every month
       this.dynamicMonthly = dynamicMonthlyWithdrawal(
         this.nominal,
         dynamicWithdrawal,
-        guardrailIndex(this.props.inflationPct, this.monthsElapsed),
+        index,
+        withdrawalTaxPct,
       );
     }
     return this.dynamicMonthly;

@@ -693,3 +693,129 @@ describe("solveLaneTarget", () => {
     });
   });
 });
+
+/* ---------- Tools that change what a withdrawal means ---------- */
+
+describe("tax and indexed spending are resolved at the lane boundary", () => {
+  const built = (toggles: Partial<TogglesState>) =>
+    buildLane(
+      "A",
+      context({
+        inputs: { currentAmountA: "400000" },
+        sliders: {
+          monthlyWithdrawalA: 2000,
+          withdrawalStartYearA: 0,
+          withdrawalTaxA: 25,
+          yearlyInflation: 3,
+        },
+        toggles,
+      }),
+      TODAY,
+    );
+
+  it("simulates no tax while the tool is off, whatever is stored", () => {
+    // Same rule as fees and the dynamic policy: the slider keeps its value so
+    // flipping the tool back on restores it, while `plan` describes exactly
+    // what is being simulated
+    expect(built({ advanced: true }).plan.withdrawalTaxPct).toBe(0);
+    expect(built({ advanced: true, taxes: true }).plan.withdrawalTaxPct).toBe(
+      25,
+    );
+  });
+
+  it("runs neither tool in basic mode", () => {
+    const basic = built({ taxes: true, spendingKeepsPace: true });
+    expect(basic.plan.withdrawalTaxPct).toBe(0);
+    expect(basic.plan.spendingKeepsPace).toBe(false);
+  });
+
+  it("sells more than it spends once the tool is on", () => {
+    const untaxed = built({ advanced: true });
+    const taxed = built({ advanced: true, taxes: true });
+    expect(taxed.withdrawals[0]).toBeCloseTo(2000 / 0.75, 6);
+    expect(taxed.total).toBeLessThan(untaxed.total);
+  });
+
+  it("raises the payment every year once spending keeps pace", () => {
+    const indexed = built({ advanced: true, spendingKeepsPace: true });
+    expect(indexed.plan.spendingKeepsPace).toBe(true);
+    expect(indexed.withdrawals[12]).toBeGreaterThan(indexed.withdrawals[0]);
+  });
+});
+
+describe("a dynamic policy held at its ceiling says so", () => {
+  const policy = (initial: string, ceiling: number) =>
+    buildLane(
+      "A",
+      context({
+        inputs: { currentAmountA: initial },
+        sliders: {
+          withdrawalRateA: 4,
+          withdrawalFloorA: 0,
+          withdrawalCeilingA: ceiling,
+          withdrawalStartYearA: 0,
+          yearlyInflation: 0,
+        },
+        toggles: { advanced: true, dynamicWithdrawal: true },
+      }),
+      TODAY,
+    );
+
+  it("is quiet while the rate is what sets the withdrawal", () => {
+    // $1,000,000 at 4% asks for $3,333/mo, well inside a $10,000 ceiling
+    expect(policy("1000000", 10000).ceilingBinds).toBe(false);
+  });
+
+  it("reads the balance the policy is evaluated on, not the opening one", () => {
+    // withdrawalStartYear 0 indexes the monthly matrix at -1 and falls through
+    // to the opening amount, so the array lookup itself only runs on a later
+    // start - the off-by-one-prone half, since matrix[k] is the balance at the
+    // END of month k+1 while the policy is evaluated BEFORE month k+1.
+    // $1,000,000 at 7% is $1,417,625 after five years; 4% of that is $4,725/mo.
+    const later = (ceiling: number) =>
+      buildLane(
+        "A",
+        context({
+          inputs: { currentAmountA: "1000000" },
+          sliders: {
+            projectedGainA: 7,
+            yearsOfGrowthA: 30,
+            monthlyContributionA: 0,
+            withdrawalRateA: 4,
+            withdrawalFloorA: 0,
+            withdrawalCeilingA: ceiling,
+            withdrawalStartYearA: 5,
+            yearlyInflation: 0,
+          },
+          toggles: { advanced: true, dynamicWithdrawal: true },
+        }),
+        TODAY,
+      );
+    expect(later(10000).withdrawals[0]).toBeCloseTo(4725.42, 1);
+    expect(later(10000).ceilingBinds).toBe(false);
+    expect(later(4000).ceilingBinds).toBe(true);
+  });
+
+  it("is false for a lane with no policy to cap", () => {
+    const fixed = buildLane(
+      "A",
+      context({
+        inputs: { currentAmountA: "5000000" },
+        sliders: { monthlyWithdrawalA: 10000, withdrawalStartYearA: 0 },
+        toggles: { advanced: true },
+      }),
+      TODAY,
+    );
+    expect(fixed.ceilingBinds).toBe(false);
+  });
+
+  it("reports a ceiling that has turned the policy into a flat payment", () => {
+    // $5,000,000 at 4% asks for $16,667/mo and gets $10,000 - and $10,000 is
+    // the DEFAULT ceiling, which is the slider span rather than a figure
+    // anybody chose, so this binds on plans nobody has touched it on
+    const big = policy("5000000", 10000);
+    expect(big.ceilingBinds).toBe(true);
+    expect(big.withdrawals[0]).toBe(10000);
+    expect(policy("5000000", 1_000_000).ceilingBinds).toBe(false);
+  });
+});
