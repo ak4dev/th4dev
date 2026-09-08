@@ -9,12 +9,19 @@
  * simulated, so a year stranded past a shortened horizon
  * is shown corrected rather than as the value nobody is
  * using.
+ *
+ * The withdrawal family is the one place a control has
+ * two bounds rather than one. Its track is the lane's
+ * span, as above; its BOX reaches the sanity limit, so a
+ * plan that draws more than a lane of this size normally
+ * would can still be typed. See withdrawalSlider.
  * ================================================== */
 
 import {
   MAX_ANNUAL_FEE,
   MAX_WITHDRAWAL_TAX,
   MAX_MONTHLY_CONTRIBUTION,
+  MAX_MONTHLY_WITHDRAWAL_LIMIT,
   MAX_PROJECTED_GAIN,
   MAX_WITHDRAWAL_RATE,
   MAX_YEARS_OF_GROWTH,
@@ -66,6 +73,7 @@ export default function LanePanel({
     max: number,
     step = 1,
     value = sliders[laneKey(base, id)] ?? MIN_VALUE,
+    entryMax?: number,
   ) => (
     <InvestmentSlider
       label={label}
@@ -74,9 +82,43 @@ export default function LanePanel({
       min={MIN_VALUE}
       max={max}
       step={step}
+      entryMax={entryMax}
       onChange={(v) => updateSlider(laneKey(base, id), v)}
     />
   );
+
+  /**
+   * The three withdrawal controls, which are the only ones whose box outruns
+   * their track.
+   *
+   * The track is `lane.withdrawalMax` - the most this plan could plausibly
+   * draw - because a $2,000 withdrawal on a track that ran to the sanity limit
+   * would sit at 0.2% of it and every drag would be a demand for a different
+   * plan. But that span bottoms out at $10,000/mo, and a plan may hold far
+   * more: SLIDER_LIMITS stores these three keys up to
+   * MAX_MONTHLY_WITHDRAWAL_LIMIT, the Budget panel already writes figures
+   * above the span through "Set Withdrawal", and an imported plan keeps them.
+   * Only the box refused, which made a $25,000 withdrawal something a user
+   * could own but not type.
+   *
+   * So the box takes the sanity limit and the track re-spans around whatever
+   * is entered: buildLane's withdrawalMax reads all three stored figures, so
+   * typing $25,000 widens the track to $25,000 in the same commit, and
+   * dragging back down to $5,000 relaxes it to $10,000 again.
+   */
+  const withdrawalSlider = (
+    base: SliderBaseKey,
+    label: string,
+    value = sliders[laneKey(base, id)] ?? MIN_VALUE,
+  ) =>
+    slider(
+      base,
+      label,
+      lane.withdrawalMax,
+      1,
+      value,
+      MAX_MONTHLY_WITHDRAWAL_LIMIT,
+    );
 
   return (
     <PanelContainer surface="column">
@@ -115,32 +157,31 @@ export default function LanePanel({
                 0.1,
                 dynamic.ratePct,
               )}
-              {slider(
+              {withdrawalSlider(
                 "withdrawalFloor",
                 "Withdrawal Floor",
-                lane.withdrawalMax,
-                1,
                 dynamic.floor,
               )}
-              {slider(
+              {withdrawalSlider(
                 "withdrawalCeiling",
                 "Withdrawal Ceiling",
-                lane.withdrawalMax,
-                1,
                 dynamic.ceiling,
               )}
               <HelperText>
                 Floor and ceiling are in today's dollars: both are indexed to
                 inflation each year, so the ceiling never forces a real spending
-                cut.
+                cut. Each track spans what this plan could plausibly draw — type
+                a larger figure into either box and the tracks grow to fit it.
               </HelperText>
             </>
           ) : (
-            slider(
-              "monthlyWithdrawal",
-              "Monthly Withdrawal",
-              lane.withdrawalMax,
-            )
+            <>
+              {withdrawalSlider("monthlyWithdrawal", "Monthly Withdrawal")}
+              <HelperText>
+                The track spans what this plan could plausibly draw — type a
+                larger figure into the box and it grows to fit it.
+              </HelperText>
+            </>
           )}
           {slider(
             "withdrawalStartYear",

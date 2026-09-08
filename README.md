@@ -108,14 +108,17 @@ Why each is right:
   a lower σ, which the two existing sliders already express. The one thing a
   multi-asset model buys that they cannot is a glide path, and that is
   structural.
-- **A dynamic policy's default ceiling.** It is the slider span ($10,000/mo),
-  so it binds on any portfolio above about $3,000,000 — a guardrail nobody
-  chose. Raising it is not the fix: the withdrawal, floor and ceiling controls
-  must span every stored guardrail, so a large default stretches all three
-  tracks and leaves a real $2,000 withdrawal at 0.2% of the slider. A ceiling
-  that is genuinely absent needs an optional value rather than a large one.
-  Until then the binding is **disclosed** — the withdrawal row says "held at
-  the ceiling" rather than printing a flat number that looks like a policy.
+- **A dynamic policy's default ceiling.** It is the default track span
+  ($10,000/mo), so it binds on any portfolio above about $3,000,000 — a
+  guardrail nobody chose. Raising the default is not the fix: the withdrawal,
+  floor and ceiling controls must span every stored guardrail, so a large
+  default stretches all three tracks and leaves a real $2,000 withdrawal at
+  0.2% of the slider. A ceiling that is genuinely absent needs an optional
+  value rather than a large one. Until then the binding is **disclosed** — the
+  withdrawal row says "held at the ceiling" rather than printing a flat number
+  that looks like a policy — and it is **escapable**: the three withdrawal
+  boxes accept any figure up to $1,000,000/mo whatever their track shows, and
+  the track re-spans around what you type.
 
 ## Development
 

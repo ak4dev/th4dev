@@ -232,6 +232,27 @@ describe("buildLane", () => {
     expect(absurd.withdrawalMax).toBe(MAX_MONTHLY_WITHDRAWAL_LIMIT);
   });
 
+  it("re-spans the track around a withdrawal typed past it, then relaxes", () => {
+    // The three withdrawal BOXES accept up to MAX_MONTHLY_WITHDRAWAL_LIMIT
+    // while their track stays this span (LanePanel's withdrawalSlider), so the
+    // span has to close over whatever was typed: it is the only thing keeping
+    // the thumb on its own track, and a thumb past the end of its track
+    // announces an aria-valuenow outside the range it reports. On a lane whose
+    // own balance could never draw $10,000:
+    const span = (stored: Partial<SliderValues>) =>
+      buildLane("A", context({ sliders: stored }), TODAY).withdrawalMax;
+
+    expect(span({ monthlyWithdrawalA: 5000 })).toBe(MAX_MONTHLY_WITHDRAWAL);
+    // Typed past the track, the track follows - so the value is always on it
+    expect(span({ monthlyWithdrawalA: 25000 })).toBe(25000);
+    // The floor widens it the same way, so all three controls share one track
+    // wide enough for the largest figure any of them holds
+    expect(span({ withdrawalFloorA: 25000 })).toBe(25000);
+    // And it is not a ratchet the plan keeps: drag back down and the track
+    // returns to the span this lane can actually justify
+    expect(span({ monthlyWithdrawalA: 5000 })).toBe(MAX_MONTHLY_WITHDRAWAL);
+  });
+
   it("names the track it is displayed on and totals on that track", () => {
     const sliders = { yearlyInflation: 3 };
     const nominal = buildLane(

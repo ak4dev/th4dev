@@ -22,6 +22,7 @@ import { formatCurrency, parseAmountInput } from "../../common/helpers/format";
 import {
   AMOUNT_FIELD,
   sanitizeNumericText,
+  sliderField,
 } from "../../common/helpers/numeric-field";
 import { useDraftField } from "../../common/hooks/useDraftField";
 import {
@@ -211,6 +212,7 @@ export function InvestmentSlider({
   max,
   step = 1,
   onChange,
+  entryMax,
   inputAlign = "right",
   inputGroupSize = "default",
 }: {
@@ -222,6 +224,11 @@ export function InvestmentSlider({
   max: number;
   step?: number;
   onChange: (v: number) => void;
+  /**
+   * Widest figure the number box accepts, where that is wider than the track.
+   * Omitted, the box stops where the track does - see sliderField.
+   */
+  entryMax?: number;
   inputAlign?: "left" | "right";
   inputGroupSize?: "default" | "narrow";
 }) {
@@ -239,12 +246,14 @@ export function InvestmentSlider({
   const sliderMax = Math.max(max, min + step);
 
   // Typing is free (decimals like "10.5" included) and the value is clamped
-  // to the control's own range when it commits. An entry that reads as no
-  // number at all leaves the slider where it was: a range control has no
-  // empty position to move to, so there is nothing else it could mean.
+  // when it commits - to `entryMax` where the control offers a box wider than
+  // its track, and to the track everywhere else. sliderField owns that choice,
+  // including what an inert control does with it and what an entry that reads
+  // as no number at all means: a range control has no empty position to move
+  // to, so there is nothing else it could mean.
   const field = useDraftField({
     display: String(numericValue),
-    policy: { decimal: true, min, max, fallback: "revert" },
+    policy: sliderField({ min, max, entryMax }),
     commit: onChange,
   });
 
@@ -262,7 +271,19 @@ export function InvestmentSlider({
         />
       </SliderInputGroup>
       <SliderRoot
-        value={[numericValue]}
+        // Pinned to the end of the track, the way TargetControl pins its goal.
+        // Every call site today has a track that absorbs its own stored value,
+        // so this changes nothing - but `entryMax` is the seam where a box may
+        // hold more than its track shows, and a thumb past the end of its own
+        // track reports that badly rather than usefully: Radix clamps the
+        // percentage it positions with, so the thumb lands at 100% either way,
+        // but it writes `aria-valuenow` through unclamped, announcing a figure
+        // outside the aria-valuemin/aria-valuemax it sits between. The box
+        // beside it is what shows the real value.
+        //
+        // Not the NaN above: that is a zero-width range dividing by zero,
+        // which `sliderMax` already prevents and which no bound here can cause.
+        value={[Math.min(numericValue, sliderMax)]}
         min={min}
         max={sliderMax}
         step={step}

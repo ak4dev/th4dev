@@ -18,7 +18,11 @@ export const DEFAULT_WITHDRAWAL_TAX = 0;
 
 /* ---------- Investment Limits ---------- */
 export const MAX_MONTHLY_CONTRIBUTION = 5000;
-/** Default span of the withdrawal, floor and ceiling sliders; a lane widens it to fit its own plan */
+/**
+ * Default span of the withdrawal, floor and ceiling TRACKS; a lane widens it
+ * to fit its own plan. It is not what those controls accept: their boxes reach
+ * MAX_MONTHLY_WITHDRAWAL_LIMIT, and the track re-spans around what is typed.
+ */
 export const MAX_MONTHLY_WITHDRAWAL = 10000;
 /**
  * Sanity bound on every stored withdrawal figure — the point past which a
@@ -31,6 +35,13 @@ export const MAX_MONTHLY_WITHDRAWAL = 10000;
  * drawn at 4% needs $10,000/mo, which is exactly where the slider span
  * stops, so clamping stored guardrails to the span silently rewrote the
  * plans of the users this app exists to serve.
+ *
+ * It is also what the three withdrawal BOXES accept, which is what closed the
+ * gap this constant used to leave open: a figure above the span could be
+ * imported and could be pushed in from the Budget panel, but could not be
+ * typed, so the app kept plans it would not let anyone write. The two must
+ * stay the same number - a box wider than SLIDER_LIMITS would take an entry
+ * that normalizeState then silently changed under the user.
  */
 export const MAX_MONTHLY_WITHDRAWAL_LIMIT = 1_000_000;
 export const MAX_YEARS_OF_GROWTH = 100;
@@ -97,7 +108,12 @@ export const MAX_WITHDRAWAL_TAX = 60;
  *
  * Until then the binding is DISCLOSED rather than hidden: buildLane reports
  * `ceilingBinds`, and the info panel says the ceiling is holding the policy
- * below the rate it was asked for.
+ * below the rate it was asked for. And it is now ESCAPABLE: the ceiling box
+ * accepts any figure up to the sanity limit, so the $5,000,000 plan above can
+ * be given the $16,667 ceiling its policy asks for by typing it. That is a way
+ * out for the user who finds the disclosure, not a default that is right - the
+ * default is still a guardrail nobody chose, and an optional ceiling is still
+ * the fix.
  */
 export const DEFAULT_WITHDRAWAL_CEILING = MAX_MONTHLY_WITHDRAWAL;
 export const MAX_AGE = 120;

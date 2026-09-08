@@ -204,6 +204,15 @@ export function buildLane(
   // the plan - the most the rate slider could ever draw from the opening
   // balance - and never sits below a figure already stored.
   //
+  // That last term is now load-bearing rather than a courtesy to imported
+  // plans. The three withdrawal boxes accept up to
+  // MAX_MONTHLY_WITHDRAWAL_LIMIT while their TRACK stays this span (see
+  // LanePanel's withdrawalSlider), and it is the Math.max over the three
+  // stored figures below that re-spans the track around whatever was typed -
+  // in the same commit as the store write, so no render ever hands Radix a
+  // thumb outside its own range. Drop any of those three terms and a typed
+  // withdrawal becomes a thumb pinned off the end of its track.
+  //
   // With Taxes on, these controls hold SPENDABLE dollars while the term below
   // is a portfolio draw, so the span is generous rather than exact. That is
   // the right way round: narrowing it by (1 - t) would shrink the track under
@@ -489,6 +498,13 @@ export function solveLaneTarget(
   if (!targetSolvesWithdrawal(toggles)) {
     return { [targetKey]: stored };
   }
+  // The TRACK, deliberately, not the wider bound the withdrawal box accepts.
+  // A goal drag moves the withdrawal on the user's behalf, so it may only
+  // reach figures the withdrawal control is showing; typing past the track is
+  // the user's own act and gets the wider bound. The two consequences are
+  // disclosed rather than hidden: a withdrawal typed above the natural span
+  // becomes its own ceiling here (withdrawalMax takes the max over it), so a
+  // goal cannot raise it further, and Lane.targetCapped says so on screen.
   const solution = solveForTarget(
     lane.plan,
     target,

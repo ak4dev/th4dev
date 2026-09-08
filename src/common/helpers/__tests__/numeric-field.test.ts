@@ -4,8 +4,13 @@ import {
   numericFieldKeyAction,
   parseFieldValue,
   sanitizeNumericText,
+  sliderField,
   type NumericFieldPolicy,
 } from "../numeric-field";
+import {
+  MAX_MONTHLY_WITHDRAWAL,
+  MAX_MONTHLY_WITHDRAWAL_LIMIT,
+} from "../../constants/app-constants";
 
 describe("sanitizeNumericText", () => {
   it("keeps digits and the decimal point in decimal mode", () => {
@@ -122,6 +127,58 @@ describe("numericFieldKeyAction", () => {
   });
 });
 
+describe("sliderField", () => {
+  it("bounds the box by the track when the control names no wider entry", () => {
+    // What all three withdrawal controls did before the seam existed, and what
+    // every other slider in the app still does: one bound, shared. A $25,000
+    // withdrawal came back as the end of the track.
+    const shared = sliderField({ min: 0, max: MAX_MONTHLY_WITHDRAWAL });
+    expect(parseFieldValue("25000", shared)).toBe(MAX_MONTHLY_WITHDRAWAL);
+    expect(parseFieldValue("5000", shared)).toBe(5_000);
+  });
+
+  it("accepts past the end of the track where the control offers a wider box", () => {
+    // The three withdrawal controls on a lane too small to draw more than the
+    // default span: a $10,000 track against the sanity limit that every
+    // stored withdrawal figure is read back through.
+    const withdrawal = sliderField({
+      min: 0,
+      max: MAX_MONTHLY_WITHDRAWAL,
+      entryMax: MAX_MONTHLY_WITHDRAWAL_LIMIT,
+    });
+    // The figure the seam exists for. It used to come back as $10,000 - a
+    // plan the user did not write, and one the app would have kept happily
+    // had it arrived by import or from the Budget panel instead.
+    expect(parseFieldValue("25000", withdrawal)).toBe(25_000);
+    // Still bounded, and bounded at exactly what SLIDER_LIMITS will store:
+    // a box wider than that would take an entry normalizeState then changed
+    expect(parseFieldValue("2500000", withdrawal)).toBe(
+      MAX_MONTHLY_WITHDRAWAL_LIMIT,
+    );
+  });
+
+  it("never narrows the box below the track", () => {
+    // A bound under the track would leave the thumb able to reach a figure
+    // the box refused, which is the failure this seam exists to remove
+    const backwards = sliderField({ min: 0, max: 50_000, entryMax: 10_000 });
+    expect(parseFieldValue("50000", backwards)).toBe(50_000);
+  });
+
+  it("ignores a wider box on a control whose range has collapsed", () => {
+    // Contribution Stop Year and Withdrawal Start Year both go inert when the
+    // Years slider is dragged to 0. Committing still clamps to the REAL max,
+    // so nothing typed into one can smuggle in a value its range forbids -
+    // that invariant belongs to the range, not to `disabled` swallowing the
+    // events.
+    const inert = sliderField({
+      min: 0,
+      max: 0,
+      entryMax: MAX_MONTHLY_WITHDRAWAL_LIMIT,
+    });
+    expect(parseFieldValue("25000", inert)).toBe(0);
+  });
+});
+
 /*
  * One case per real call site, named after it.
  *
@@ -149,13 +206,10 @@ describe("call-site policies", () => {
   });
 
   it("InvestmentCalculatorModern InvestmentSlider: an unreadable entry leaves the slider where it was", () => {
-    // Years, min 0 max 100, half-year steps
-    const years = {
-      decimal: true,
-      min: 0,
-      max: 100,
-      fallback: "revert",
-    } satisfies NumericFieldPolicy;
+    // Years, min 0 max 100, half-year steps. Through the builder the control
+    // itself calls, so this pins the call site rather than a copy of it that
+    // can drift.
+    const years = sliderField({ min: 0, max: 100 });
     expect(parseFieldValue("abc", years)).toBe("revert");
     expect(parseFieldValue("", years)).toBe("revert");
     expect(parseFieldValue("10.5", years)).toBe(10.5);

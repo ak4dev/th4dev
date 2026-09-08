@@ -131,3 +131,48 @@ export const AMOUNT_FIELD = {
   decimal: true,
   fallback: 0,
 } satisfies NumericFieldPolicy;
+
+/**
+ * The policy the number box beside a slider track reads.
+ *
+ * A slider is two controls over one value - a track and a box - and they read
+ * the same bound until a control says otherwise. The withdrawal family is
+ * where they have to disagree: its track spans what THIS plan could plausibly
+ * draw, which for a small opening balance is $10,000/mo, while the plan itself
+ * may legitimately hold far more. Sharing the bound meant a $25,000 withdrawal
+ * could be imported, and pushed in from the Budget panel, but never typed -
+ * the box silently rewrote it to the end of the track.
+ *
+ * So `entryMax` is what may be TYPED and `max` is what the track SHOWS. It
+ * only ever widens, because a bound below the track would leave the thumb able
+ * to reach a figure the box then refused. It must also be no wider than what
+ * SLIDER_LIMITS will store, or the box accepts a number the state layer
+ * silently clamps and the user watches their entry change by itself.
+ *
+ * An inert control - one whose range has collapsed, which Contribution Stop
+ * Year and Withdrawal Start Year both do when Years is dragged to 0 - ignores
+ * `entryMax` entirely. Committing there still clamps to the REAL max, so
+ * typing into one cannot smuggle in a value its range forbids; that invariant
+ * belongs to the range rather than to the `disabled` attribute suppressing the
+ * events.
+ */
+export function sliderField({
+  min,
+  max,
+  entryMax,
+}: {
+  min: number;
+  /** End of the track, and the default end of the box */
+  max: number;
+  /** Widest figure the box accepts, where the control allows one past the track */
+  entryMax?: number;
+}): NumericFieldPolicy {
+  return {
+    decimal: true,
+    min,
+    max: max <= min ? max : Math.max(max, entryMax ?? max),
+    // A range control has no empty position to move to, so an entry that reads
+    // as no number at all leaves the value where it was
+    fallback: "revert",
+  };
+}
