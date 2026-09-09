@@ -15,6 +15,8 @@
 
 import { useId } from "react";
 import type { ReactNode } from "react";
+import * as Icons from "@radix-ui/react-icons";
+import * as Popover from "@radix-ui/react-popover";
 import * as Switch from "@radix-ui/react-switch";
 import { styled } from "../../../stitches.config";
 import { compactModernInputStyles } from "../../common/constants/input-styles";
@@ -112,8 +114,8 @@ export const SliderValueInput = styled("input", {
 });
 const SwitchRoot = styled(Switch.Root, {
   all: "unset",
-  width: 42,
-  height: 24,
+  width: 36,
+  height: 20,
   backgroundColor: "$comment",
   borderRadius: "9999px",
   position: "relative",
@@ -122,18 +124,18 @@ const SwitchRoot = styled(Switch.Root, {
 });
 const SwitchThumb = styled(Switch.Thumb, {
   display: "block",
-  width: 20,
-  height: 20,
+  width: 16,
+  height: 16,
   backgroundColor: "$foreground",
   borderRadius: "9999px",
   transition: "transform 0.2s",
   transform: "translateX(2px)",
-  "[data-state='checked'] &": { transform: "translateX(20px)" },
+  "[data-state='checked'] &": { transform: "translateX(18px)" },
 });
 const SwitchRow = styled("div", {
   display: "grid",
   gridTemplateColumns: "1fr auto",
-  gap: "12px",
+  gap: "10px",
   alignItems: "center",
   minWidth: 0,
 });
@@ -142,11 +144,51 @@ const SwitchRow = styled("div", {
 const LabelCell = styled("span", {
   display: "flex",
   alignItems: "baseline",
-  gap: "6px",
+  gap: "5px",
   minWidth: 0,
-  fontSize: "0.875rem",
+  fontSize: "0.8rem",
   fontWeight: 500,
   color: "$comment",
+});
+
+/**
+ * The "what does this do" button beside a switch's label.
+ *
+ * A button rather than a hover target, and a popover rather than a title
+ * attribute, for the same reason: a hover tooltip is unreachable on a phone,
+ * which is where a toggle whose name is two words most needs explaining. It
+ * carries its own accessible name because the icon is decorative, and it sits
+ * OUTSIDE the <label> so that clicking it opens the hint rather than flipping
+ * the switch underneath.
+ */
+const HintTrigger = styled(Popover.Trigger, {
+  all: "unset",
+  display: "inline-flex",
+  alignItems: "center",
+  flexShrink: 0,
+  alignSelf: "center",
+  cursor: "pointer",
+  borderRadius: "9999px",
+  color: "$comment",
+  opacity: 0.55,
+  lineHeight: 0,
+  transition: "opacity 0.15s",
+  "&:hover, &:focus-visible": { opacity: 1, color: "$purple" },
+  "&:focus-visible": { outline: "1px solid $purple", outlineOffset: "1px" },
+});
+
+/** Deliberately narrow: a hint is a sentence, not a second helper panel */
+const HintContent = styled(Popover.Content, {
+  backgroundColor: "$currentLine",
+  color: "$foreground",
+  borderRadius: "8px",
+  padding: "8px 10px",
+  maxWidth: "230px",
+  fontSize: "0.72rem",
+  lineHeight: 1.45,
+  fontWeight: 400,
+  boxShadow: "0 6px 18px rgba(0,0,0,0.3)",
+  zIndex: 40,
 });
 
 /* ---------------- Controls ---------------- */
@@ -312,12 +354,21 @@ export function ToggleSwitch({
   checked,
   onCheckedChange,
   suffix,
+  hint,
 }: {
   label: string;
   checked: boolean;
   onCheckedChange: (v: boolean) => void;
   /** Read-only detail beside the label, outside it so it is not part of the name */
   suffix?: ReactNode;
+  /**
+   * One sentence on what this switch does, behind an info button.
+   *
+   * A string rather than a node, and optional: this control still knows
+   * nothing about lanes or plans, and a switch whose name says everything
+   * ("Fees") is not obliged to carry one.
+   */
+  hint?: string;
 }) {
   const id = useId();
   return (
@@ -325,6 +376,23 @@ export function ToggleSwitch({
       <LabelCell>
         <Label htmlFor={id}>{label}:</Label>
         {suffix}
+        {hint !== undefined && (
+          <Popover.Root>
+            <HintTrigger aria-label={`What ${label} does`}>
+              <Icons.InfoCircledIcon width={13} height={13} />
+            </HintTrigger>
+            <Popover.Portal>
+              <HintContent
+                side="top"
+                align="start"
+                sideOffset={6}
+                collisionPadding={8}
+              >
+                {hint}
+              </HintContent>
+            </Popover.Portal>
+          </Popover.Root>
+        )}
       </LabelCell>
       <SwitchRoot id={id} checked={checked} onCheckedChange={onCheckedChange}>
         <SwitchThumb />

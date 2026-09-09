@@ -783,6 +783,63 @@ describe("golden plans render exact figures", () => {
   }
 });
 
+describe("every switch says what it does", () => {
+  /**
+   * A toggle's name is not its meaning. "Indexed Spending" reads as a display
+   * option and is worth about 45% of a 30-year plan's ending balance; "Return
+   * model" names two words that mean nothing without the sentence behind them.
+   * Each switch carries an info button, and this is what stops a new one
+   * shipping without one.
+   */
+  const hintNames = (html: string) =>
+    [...html.matchAll(/aria-label="What ([^"]+) does"/g)].map((m) => m[1]);
+
+  it("gives every toggle on screen an info button", () => {
+    const html = render({
+      toggles: { advanced: true, monteCarlo: true },
+    });
+    expect(hintNames(html)).toEqual([
+      "Advanced",
+      "Inflated",
+      "Rollover",
+      "Fees",
+      "Portfolio",
+      "Monte Carlo",
+      "FIRE",
+      "Scenarios",
+      "Budget",
+      "Dynamic Withdrawal",
+      "Taxes",
+      "Indexed Spending",
+      "Return model",
+      "Monte Carlo mode",
+    ]);
+  });
+
+  it("hides the tool hints with the tools, and keeps the core two", () => {
+    // Basic mode has no tool switches to explain, so it has no buttons for
+    // them either - a hint for a control that is not on screen is clutter
+    expect(hintNames(render())).toEqual(["Advanced", "Inflated"]);
+  });
+
+  it("puts the button outside the label, so it cannot flip the switch", () => {
+    // A <button> nested in a <label> activates the labelled control when it is
+    // clicked, which would make asking what a toggle does turn it on
+    const html = render({ toggles: { advanced: true } });
+    expect(/<label[^>]*>[^<]*<button/.test(html)).toBe(false);
+  });
+
+  it("keeps the hint text out of the page until it is asked for", () => {
+    // Radix portals a closed popover, so fourteen sentences cost the reader
+    // nothing until one is opened - and cost a screen reader nothing either
+    const html = render({ toggles: { advanced: true } });
+    expect(html).not.toContain("Rolls A's ending balance into B");
+    // Asserted against text that is really in the hints, so rewording one
+    // fails this rather than quietly making it vacuous
+    expect(hintNames(html)).toContain("Rollover");
+  });
+});
+
 describe("basic mode runs none of the tools its plan has switched on", () => {
   // Every tool toggle in this fixture is stored ON, so what is missing below
   // is missing because isTool gated it, not because nobody asked for it

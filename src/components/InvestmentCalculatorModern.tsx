@@ -150,20 +150,25 @@ const InfoRow = styled("div", {
   color: "$comment",
 });
 /** Fixed-width columns so toggle labels and switches align vertically */
+// The options panel runs a notch smaller than the rest of the app: it is a
+// dense two-column list of switches that the user sets once and then reads
+// past, not something they work in. Scaled together rather than piecemeal -
+// the switch, its label and the gaps all step down by about a tenth - so the
+// column keeps its proportions instead of just crowding.
 const TogglesGrid = styled("div", {
   display: "grid",
-  gap: "12px",
-  gridTemplateColumns: "repeat(2, minmax(140px, 1fr))",
+  gap: "10px",
+  gridTemplateColumns: "repeat(2, minmax(132px, 1fr))",
 });
 
 const ToggleSection = styled("div", {
   display: "flex",
   flexDirection: "column",
-  gap: "12px",
+  gap: "10px",
 });
 
 const SectionLabel = styled("span", {
-  fontSize: "0.7rem",
+  fontSize: "0.65rem",
   fontWeight: 600,
   color: "$comment",
   textTransform: "uppercase",
@@ -180,17 +185,67 @@ const VolatilityRow = styled("div", {
 
 /* ---------------- Toggles ---------------- */
 
-const TOOL_TOGGLES: [keyof FeatureToggles, string][] = [
-  ["rollover", "Rollover"],
-  ["fees", "Fees"],
-  ["portfolio", "Portfolio"],
-  ["monteCarlo", "Monte Carlo"],
-  ["fire", "FIRE"],
-  ["scenarios", "Scenarios"],
-  ["budget", "Budget"],
-  ["dynamicWithdrawal", "Dynamic Withdrawal"],
-  ["taxes", "Taxes"],
-  ["spendingKeepsPace", "Indexed Spending"],
+/**
+ * Every tool switch, with the one sentence its info button shows.
+ *
+ * The hints are drawn from what the app already documents about each tool -
+ * the landing page's feature list and the engines' own comments - rather than
+ * written fresh, so a switch cannot come to describe something the code stopped
+ * doing. Each says what the tool CHANGES, not what it is called: "Fees" needs
+ * no gloss, but "Indexed Spending" reads as a display option and is in fact
+ * worth about 45% of a 30-year plan's ending balance.
+ */
+const TOOL_TOGGLES: [keyof FeatureToggles, string, string][] = [
+  [
+    "rollover",
+    "Rollover",
+    "Rolls A's ending balance into B at A's finish year, so B compounds on the larger base. Declined, not stretched, if A outlasts B.",
+  ],
+  [
+    "fees",
+    "Fees",
+    "An annual percentage of the balance, charged monthly out of growth before any withdrawal. The panel reports the total paid.",
+  ],
+  [
+    "portfolio",
+    "Portfolio",
+    "Maps the projected total onto a stock allocation, with live prices and the share price each holding must reach to keep pace.",
+  ],
+  [
+    "monteCarlo",
+    "Monte Carlo",
+    "Replaces the plan line with a range: P10-P90 bands from randomised returns, plus each account's chance of running out.",
+  ],
+  [
+    "fire",
+    "FIRE",
+    "The balance that sustains your annual expenses at a chosen withdrawal rate, and the age the plan reaches it.",
+  ],
+  [
+    "scenarios",
+    "Scenarios",
+    "Saves the whole plan under a name, so several can be compared side by side and reloaded later.",
+  ],
+  [
+    "budget",
+    "Budget",
+    "A monthly budget by category. Its total can be pushed into the withdrawal slider, and feeds FIRE's expenses.",
+  ],
+  [
+    "dynamicWithdrawal",
+    "Dynamic Withdrawal",
+    "Draws a percentage of the balance instead of a fixed sum, re-read each year and held between a floor and a ceiling.",
+  ],
+  [
+    "taxes",
+    "Taxes",
+    "One flat rate on every dollar drawn. The withdrawal figures then show what you SPEND; the plan sells more to deliver it.",
+  ],
+  [
+    "spendingKeepsPace",
+    "Indexed Spending",
+    "The fixed withdrawal becomes a today's-dollars figure that rises with inflation. Worth about 45% of a 30-year ending balance.",
+  ],
 ];
 
 /* ---------------- Info Panel Rows ---------------- */
@@ -903,6 +958,7 @@ export default function InvestmentCalculatorModern({
             <TogglesGrid>
               <ToggleSwitch
                 label="Advanced"
+                hint="Unlocks Investment B, contributions, withdrawals and every tool below. Off stops them running, not just showing; your settings are kept."
                 checked={toggles.advanced}
                 onCheckedChange={(v) => updateToggle("advanced", v)}
               />
@@ -913,6 +969,7 @@ export default function InvestmentCalculatorModern({
                   withdrawal. buildLane's displayTarget does the conversion. */}
               <ToggleSwitch
                 label="Inflated"
+                hint="Shows every figure in today's dollars rather than the cash the plan will hold. Display only: it moves no input."
                 checked={toggles.showInflation}
                 onCheckedChange={(v) => updateToggle("showInflation", v)}
               />
@@ -922,10 +979,11 @@ export default function InvestmentCalculatorModern({
               <>
                 <SectionLabel>Tools</SectionLabel>
                 <TogglesGrid>
-                  {TOOL_TOGGLES.map(([key, label]) => (
+                  {TOOL_TOGGLES.map(([key, label, hint]) => (
                     <ToggleSwitch
                       key={key}
                       label={label}
+                      hint={hint}
                       checked={toggles[key]}
                       onCheckedChange={(v) => updateToggle(key, v)}
                     />
@@ -967,6 +1025,7 @@ export default function InvestmentCalculatorModern({
               </VolatilityRow>
               <ToggleSwitch
                 label="Return model"
+                hint="Clustered puts bad years in runs, as 2000-02 and 2008-09 did, which is what empties a portfolio being drawn down. Independent draws each year alone."
                 suffix={
                   toggles.returnModel === "clustered"
                     ? "Clustered"
@@ -979,6 +1038,7 @@ export default function InvestmentCalculatorModern({
               />
               <ToggleSwitch
                 label="Monte Carlo mode"
+                hint="Combined draws one cone for A and B summed; Individual draws a cone per account."
                 suffix={
                   toggles.monteCarloMode === "combined"
                     ? "Combined"
