@@ -164,18 +164,37 @@ describe("planAssumptions", () => {
     const withBalance: AssumptionLane = {
       ...lane("A"),
       balanceAtFirstWithdrawal: 400_000,
+      firstWithdrawal: 2000,
     };
     expect(
       rows({ advanced: true }, [withBalance])["Initial Withdrawal Rate (A)"],
     ).toBe("6.00% of $400,000 at first withdrawal");
-    // Measured on what leaves the PORTFOLIO, so a tax grosses it up: the
-    // slider holds spending, and sustainability is a question about the pot
+
+    // BOTH SIDES NOMINAL, which is the whole of what this row has to get
+    // right. The numerator is the draw the ENGINE made, never the slider: the
+    // first version rebuilt it here, grossing up for tax but not for indexed
+    // spending, which is a today's-dollars instruction escalated to the
+    // withdrawal date. On a lane deferring 20.5 years at 3% that is a factor
+    // of 1.833 - the row reported 5.37% where the plan drew 9.84%, on exactly
+    // the lane the gap matters most.
+    expect(
+      rows({ advanced: true, spendingKeepsPace: true }, [
+        { ...withBalance, firstWithdrawal: 3666 },
+      ])["Initial Withdrawal Rate (A)"],
+    ).toBe("11.00% of $400,000 at first withdrawal");
+    // A tax is the same story and is likewise already in the engine's figure
     expect(
       rows({ advanced: true, taxes: true }, [
-        { ...withBalance, plan: plan({ withdrawalTaxPct: 25 }) },
+        {
+          ...withBalance,
+          plan: plan({ withdrawalTaxPct: 25 }),
+          firstWithdrawal: 2000 / 0.75,
+        },
       ])["Initial Withdrawal Rate (A)"],
     ).toBe("8.00% of $400,000 at first withdrawal");
-    // Absent, not zero, when there is no draw or no balance to measure against
+
+    // Absent, not zero, when there is no draw, no balance, or no engine figure
+    // to measure with - a rate is not something to guess at
     expect(
       rows({ advanced: true }, [
         { ...withBalance, plan: plan({ monthlyWithdrawal: 0 }) },
@@ -184,6 +203,33 @@ describe("planAssumptions", () => {
     expect(
       rows({ advanced: true }, [lane("A")])["Initial Withdrawal Rate (A)"],
     ).toBeUndefined();
+    expect(
+      rows({ advanced: true }, [
+        { ...lane("A"), balanceAtFirstWithdrawal: 400_000 },
+      ])["Initial Withdrawal Rate (A)"],
+    ).toBeUndefined();
+  });
+
+  it("names the tools it did not run, so an absence is not a silence", () => {
+    // Switching Monte Carlo off removes the volatility, the return model, the
+    // correlation, three percentiles and every chance-of-running-out row. An
+    // absence of eight rows reads like an app that cannot model risk, which is
+    // the same complaint the spending row answered, on different fields.
+    expect(rows({ advanced: true })["Not Modelled"]).toBe(
+      "fees, withdrawal tax, Monte Carlo",
+    );
+    expect(
+      rows({ advanced: true, fees: true, taxes: true })["Not Modelled"],
+    ).toBe("Monte Carlo");
+    // Nothing to say once everything ran
+    expect(
+      rows({ advanced: true, fees: true, taxes: true, monteCarlo: true })[
+        "Not Modelled"
+      ],
+    ).toBeUndefined();
+    // Basic mode runs none of them by design and says so by being a basic
+    // report; listing every tool there would be noise, not disclosure
+    expect(rows({})["Not Modelled"]).toBeUndefined();
   });
 
   it("runs no tool the plan is not actually running", () => {
@@ -222,6 +268,7 @@ describe("planAssumptions", () => {
     expect(both.slice(laneRowCount).map((r) => r.label)).toEqual([
       "Inflation Rate",
       "Spending",
+      "Not Modelled",
     ]);
     expect(both[laneRowCount]).toEqual({
       label: "Inflation Rate",

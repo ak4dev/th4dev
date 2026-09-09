@@ -779,8 +779,16 @@ export default function InvestmentCalculatorModern({
       },
       {
         label: "Rollover Amount",
+        // On the DISPLAY track, like the chart and the totals - but the sum
+        // the engine injects into B is nominal, so with Inflated on the two
+        // differ by this plan's whole deflator: a $1,925,549 injection prints
+        // as $1,050,488 over a 20.5-year lane at 3%. Every other money figure
+        // in this block is nominal, so a reader reconciling the rollover
+        // against B's balance found a 1.83x gap with nothing explaining it.
+        // The figure is not wrong for the track it is on; it never said which
+        // track that was.
         value: rolloverApplied
-          ? formatCurrency(laneA.total)
+          ? `${formatCurrency(laneA.total)}${laneA.track === "real" ? " (today's dollars)" : ""}`
           : isRollover(toggles)
             ? "Not applied"
             : "N/A",
@@ -827,6 +835,11 @@ export default function InvestmentCalculatorModern({
         lanes.map((l) => ({
           ...l,
           balanceAtFirstWithdrawal: l.balanceAtStart,
+          // What the engine actually paid out first, not what the slider says:
+          // a tax grosses it up and indexed spending escalates it to the
+          // withdrawal date, and only this figure is in the same units as the
+          // balance it is divided by
+          firstWithdrawal: l.withdrawals[0],
         })),
         toggles,
         sliders,

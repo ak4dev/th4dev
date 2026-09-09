@@ -50,6 +50,20 @@ export interface AssumptionLane {
    * the lane simply gets no rate row.
    */
   balanceAtFirstWithdrawal?: number;
+  /**
+   * The first withdrawal the engine actually made, in nominal dollars - the
+   * same figure the Key Metrics "Withdrawal" row prints as the bottom of its
+   * drawn range, and the only correct numerator for a rate whose denominator
+   * is a nominal balance.
+   *
+   * It cannot be reconstructed from the slider. Under a tax the slider holds
+   * spending and the draw is grossed up; under indexed spending the slider is
+   * a TODAY'S-DOLLARS instruction and the draw is escalated by inflation to
+   * the withdrawal date. Rebuilding it here got the first right and the second
+   * wrong, which put a real numerator over a nominal denominator and
+   * understated a 20-year-deferred draw by 45%.
+   */
+  firstWithdrawal?: number;
 }
 
 /* ---------- Report data helpers ---------- */
@@ -135,13 +149,23 @@ const withdraws = (p: PlanInputs): boolean =>
  * withdraws or the balance is not known.
  */
 const initialWithdrawalRateRow = (l: AssumptionLane): PdfKeyValue[] => {
-  const { plan: p, balanceAtFirstWithdrawal: balance } = l;
-  if (!(p.monthlyWithdrawal > 0) || balance === undefined || !(balance > 0)) {
+  const {
+    plan: p,
+    balanceAtFirstWithdrawal: balance,
+    firstWithdrawal: drawn,
+  } = l;
+  if (
+    !(p.monthlyWithdrawal > 0) ||
+    balance === undefined ||
+    !(balance > 0) ||
+    drawn === undefined ||
+    !(drawn > 0)
+  ) {
     return [];
   }
-  const drawn = p.withdrawalTaxPct
-    ? p.monthlyWithdrawal / (1 - p.withdrawalTaxPct / PERCENTAGE_DIVISOR)
-    : p.monthlyWithdrawal;
+  // BOTH SIDES NOMINAL, and the numerator is the engine's own figure rather
+  // than anything rebuilt from the slider - see AssumptionLane.firstWithdrawal
+  // for what rebuilding it got wrong.
   const rate = ((drawn * MONTHS_PER_YEAR) / balance) * PERCENTAGE_DIVISOR;
   return [
     {
@@ -150,6 +174,24 @@ const initialWithdrawalRateRow = (l: AssumptionLane): PdfKeyValue[] => {
     },
   ];
 };
+
+/**
+ * The tools that were available and did not run, named for the report.
+ *
+ * Only the three whose absence removes rows silently. Rollover already prints
+ * "Not applied" in its own rows, and the spending rule is now stated in both
+ * of its states, so neither belongs here.
+ */
+const notModelled = (toggles: TogglesState): string[] =>
+  (
+    [
+      ["fees", "fees"],
+      ["taxes", "withdrawal tax"],
+      ["monteCarlo", "Monte Carlo"],
+    ] as const
+  )
+    .filter(([key]) => !toggles[key])
+    .map(([, name]) => name);
 
 /**
  * Every Assumptions row of a PDF report: what the plan was, per lane, plus
@@ -275,6 +317,29 @@ export function planAssumptions(
             value: on("spendingKeepsPace")
               ? "Fixed withdrawals rise with inflation"
               : "Fixed withdrawals stay flat in nominal dollars",
+          },
+        ]
+      : []),
+    // What the report does NOT rest on, named once rather than left as an
+    // absence for the reader to notice.
+    //
+    // The block's rule is that it lists settings IN FORCE, and for a quantity
+    // that rule is right: a 0% fee changes no figure, and its row appearing
+    // only with the tool on costs the reader nothing. Monte Carlo is not a
+    // quantity. Switching it off removes the volatility, the return model, the
+    // correlation, three percentiles and every chance-of-running-out row - the
+    // report's whole statement about risk - and an absence of eight rows reads
+    // exactly like an app that cannot model risk at all. That was the
+    // complaint behind the spending row, arriving on a different set of
+    // fields.
+    //
+    // One row rather than a "not applied" line per tool: the point is to close
+    // the gap between "did not run" and "cannot run", which one sentence does.
+    ...(toggles.advanced && notModelled(toggles).length > 0
+      ? [
+          {
+            label: "Not Modelled",
+            value: notModelled(toggles).join(", "),
           },
         ]
       : []),
