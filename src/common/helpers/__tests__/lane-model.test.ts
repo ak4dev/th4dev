@@ -232,6 +232,62 @@ describe("buildLane", () => {
     expect(absurd.withdrawalMax).toBe(MAX_MONTHLY_WITHDRAWAL_LIMIT);
   });
 
+  it("bounds a goal by the plan, not by the withdrawal's own track", () => {
+    // The track closes over the stored withdrawal (see above), so a plan whose
+    // withdrawal sits at the end of it has a track that IS its withdrawal.
+    // That figure cannot also be the bound a goal solves within: the ceiling
+    // would be the very number being solved for, and the solve would have no
+    // headroom to raise it. The goal's bound is read off the balance the plan
+    // is holding when it starts spending instead - the same 20% of a balance
+    // the track uses, taken from the pot being drawn rather than the one
+    // deposited.
+    const lane = (sliders: Partial<SliderValues>) =>
+      buildLane(
+        "A",
+        context({
+          inputs: { currentAmountA: "500000" },
+          sliders: {
+            projectedGainA: 7,
+            yearsOfGrowthA: 20,
+            monthlyContributionA: 0,
+            ...sliders,
+          },
+          toggles: { advanced: true },
+        }),
+        TODAY,
+      );
+
+    // Drawn from day one, the two are one figure and nothing changes at all
+    const today = lane({ withdrawalStartYearA: 0, monthlyWithdrawalA: 10000 });
+    expect(today.withdrawalMax).toBe(MAX_MONTHLY_WITHDRAWAL);
+    expect(today.withdrawalSolveMax).toBe(today.withdrawalMax);
+
+    // Left to grow for eighteen years first, the plan can plainly justify
+    // more than its opening balance could ever have paid
+    const later = lane({ withdrawalStartYearA: 18, monthlyWithdrawalA: 25000 });
+    expect(later.withdrawalMax).toBe(25000);
+    expect(later.withdrawalSolveMax).toBeGreaterThan(later.withdrawalMax);
+
+    // And it does not move when the withdrawal does, which is what stops a
+    // goal dragged across the track from walking the withdrawal up on every
+    // pass of the thumb: the balance it reads is fixed before the first
+    // withdrawal is taken
+    for (const monthlyWithdrawalA of [0, 1000, 9000, 25000]) {
+      expect(
+        lane({ withdrawalStartYearA: 18, monthlyWithdrawalA })
+          .withdrawalSolveMax,
+      ).toBe(later.withdrawalSolveMax);
+    }
+
+    // It is still never below the track, so a goal can never spend down a
+    // withdrawal the user typed and leave a smaller one they did not
+    const typed = lane({
+      withdrawalStartYearA: 18,
+      monthlyWithdrawalA: 250000,
+    });
+    expect(typed.withdrawalSolveMax).toBe(250000);
+  });
+
   it("re-spans the track around a withdrawal typed past it, then relaxes", () => {
     // The three withdrawal BOXES accept up to MAX_MONTHLY_WITHDRAWAL_LIMIT
     // while their track stays this span (LanePanel's withdrawalSlider), so the
@@ -524,6 +580,68 @@ describe("solveLaneTarget", () => {
       expect(after.plan.monthlyWithdrawal).toBe(0);
       expect(after.targetReached).toBeUndefined();
       expect(after.targetCapped).toBe(true);
+    });
+
+    it("moves a withdrawal that already sits at the end of its own track", () => {
+      // The report this came from: with the Monthly Withdrawal thumb at the
+      // end of its track, dragging Target Value moved nothing at all and
+      // nothing said why. No typing is needed to get there - $10,000/mo is
+      // simply where this track ends - and the track then equals the stored
+      // withdrawal, so handing it to the solver as a ceiling made the ceiling
+      // the value being solved for. The solve returned the figure it started
+      // from and the update dropped it as unchanged.
+      const late = {
+        projectedGainA: 7,
+        yearsOfGrowthA: 20,
+        monthlyContributionA: 0,
+        withdrawalStartYearA: 18,
+        monthlyWithdrawalA: MAX_MONTHLY_WITHDRAWAL,
+      };
+      const toggles: TogglesState = { ...DEFAULT_TOGGLES, advanced: true };
+      const rich = (over: Partial<SliderValues> = {}) =>
+        buildLane(
+          "A",
+          context({
+            inputs: { currentAmountA: "500000" },
+            sliders: { ...late, ...over },
+            toggles,
+          }),
+          TODAY,
+        );
+
+      const lane = rich();
+      expect(lane.plan.monthlyWithdrawal).toBe(lane.withdrawalMax);
+      const goal = Math.round(lane.total * 0.8);
+      const update = solveLaneTarget(lane, goal, toggles);
+      const solved = update.monthlyWithdrawalA as number;
+      expect(solved).toBeGreaterThan(lane.withdrawalMax);
+
+      // It lands on the goal rather than stopping at the end of the track:
+      // neither neighbouring dollar of withdrawal gets closer to it. And what
+      // it wrote is on the control at the next render, which is what the
+      // track closing over the stored figure is for
+      const after = rich(update as Partial<SliderValues>);
+      const miss = Math.abs(after.total - goal);
+      for (const neighbour of [solved - 1, solved + 1]) {
+        expect(
+          Math.abs(rich({ monthlyWithdrawalA: neighbour }).total - goal),
+        ).toBeGreaterThanOrEqual(miss);
+      }
+      expect(after.withdrawalMax).toBeGreaterThanOrEqual(solved);
+      expect(after.targetCapped).toBe(false);
+
+      // Dragging to the same goal again answers the same figure, so there is
+      // nothing to write. Every intermediate value of a dragged thumb solves,
+      // so a bound that grew with the withdrawal it had just written would
+      // ratchet up within a single drag of the goal; this one is read off the
+      // balance the plan holds before its first withdrawal, which no solve
+      // can move
+      const again = solveLaneTarget(after, goal, toggles);
+      expect(again).toEqual({ targetValueA: goal });
+      expect(
+        rich({ ...update, ...again } as Partial<SliderValues>).plan
+          .monthlyWithdrawal,
+      ).toBe(solved);
     });
 
     it("is capped at the ceiling when the withdrawal cannot spend down to the goal", () => {

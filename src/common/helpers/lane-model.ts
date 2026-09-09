@@ -85,6 +85,37 @@ export interface Lane {
   /** Span of this lane's withdrawal, floor and ceiling controls */
   withdrawalMax: number;
   /**
+   * The largest withdrawal a GOAL may set, which is deliberately not the span
+   * of the control. The span closes over the three stored withdrawal figures
+   * so their thumbs stay on their own track (see withdrawalMax), which made
+   * it useless as the solver's ceiling: whenever the withdrawal was the
+   * largest of the three, the ceiling WAS the value being solved for, the
+   * solve came back with the figure it started from, and the update dropped
+   * it as unchanged - so the Target Value thumb moved and nothing else did,
+   * with nothing on screen saying why. On a $3,000,000 plan drawing $50,000
+   * from year 10 that silence covered the lower 42% of the Target track; on a
+   * $500,000 plan with $25,000 typed in and drawn from year 18, 82%.
+   *
+   * This bound is read off the PLAN instead: the most the rate slider could
+   * ever draw from the balance the plan is holding when withdrawals BEGIN.
+   * That is the same 20% of a balance withdrawalMax uses, moved from the
+   * opening balance to the one actually being spent, and the move is the
+   * whole fix: $500,000 left alone for eighteen years is $2,800,000 by the
+   * time it is drawn, so the plan can plainly justify $46,667/mo, not the
+   * $8,333/mo its opening balance suggests. A plan that draws from year 0
+   * gets exactly the figure it gets today.
+   *
+   * It never sits below withdrawalMax, so a goal drag can never spend down a
+   * withdrawal the user typed in and leave them a smaller one they did not.
+   * And the balance it reads is fixed before the first withdrawal is taken,
+   * so writing a solved withdrawal does not move this bound: dragging the
+   * goal to the same place twice gives the same answer twice, rather than
+   * ratcheting the withdrawal up on every pass of the thumb - which is what
+   * any bound defined as a multiple of the stored figure does, and it does it
+   * within a single drag, since every intermediate value of the thumb solves.
+   */
+  withdrawalSolveMax: number;
+  /**
    * Stored (nominal) target converted to display units, exactly as stored:
    * a goal above the slider's span is still the goal, and the box shows it
    * even though the thumb sits at the end of the track.
@@ -333,6 +364,23 @@ export function buildLane(
   const firstWithdrawalMonth = toMonths(plan.withdrawalStartYear);
   const balanceAtStart =
     monthlyMatrix[firstWithdrawalMonth - 1]?.nominal ?? initialAmount;
+  // See Lane.withdrawalSolveMax. The ceiling a GOAL may raise the withdrawal
+  // to: withdrawalMax's own shape, read off the balance the plan draws from
+  // rather than the one it opened with, so a plan that waits eighteen years
+  // before spending is not held to what its opening balance could have paid.
+  // balanceAtStart is taken before any withdrawal is applied, so this bound
+  // does not move when a solve writes a withdrawal.
+  const withdrawalSolveMax = Math.min(
+    MAX_MONTHLY_WITHDRAWAL_LIMIT,
+    Math.max(
+      withdrawalMax,
+      Math.ceil(
+        (balanceAtStart * MAX_WITHDRAWAL_RATE) /
+          PERCENTAGE_DIVISOR /
+          MONTHS_PER_YEAR,
+      ),
+    ),
+  );
   const rateLeg = plan.dynamicWithdrawal
     ? (balanceAtStart * plan.dynamicWithdrawal.ratePct) /
       PERCENTAGE_DIVISOR /
@@ -394,7 +442,7 @@ export function buildLane(
     (withdrawalInert
       ? shortfall || surplus
       : (shortfall && plan.monthlyWithdrawal <= 0) ||
-        (surplus && plan.monthlyWithdrawal >= withdrawalMax));
+        (surplus && plan.monthlyWithdrawal >= withdrawalSolveMax));
 
   return {
     id,
@@ -409,6 +457,7 @@ export function buildLane(
     withdrawals,
     maxTarget,
     withdrawalMax,
+    withdrawalSolveMax,
     displayTarget,
     deflator: track === "real" ? deflator : 1,
     // One order of magnitude below the balance so the slider stays usable at any scale
@@ -498,18 +547,25 @@ export function solveLaneTarget(
   if (!targetSolvesWithdrawal(toggles)) {
     return { [targetKey]: stored };
   }
-  // The TRACK, deliberately, not the wider bound the withdrawal box accepts.
-  // A goal drag moves the withdrawal on the user's behalf, so it may only
-  // reach figures the withdrawal control is showing; typing past the track is
-  // the user's own act and gets the wider bound. The two consequences are
-  // disclosed rather than hidden: a withdrawal typed above the natural span
-  // becomes its own ceiling here (withdrawalMax takes the max over it), so a
-  // goal cannot raise it further, and Lane.targetCapped says so on screen.
+  // The plan's bound, NOT the span of the withdrawal control. The span has to
+  // close over every stored withdrawal figure or touching one control rewrites
+  // another's value, which made it self-defeating as a solver ceiling: a
+  // withdrawal at the end of its own track was its own ceiling, so the solve
+  // had no headroom, returned the value it started from, and the update
+  // dropped it - the Target thumb moved and the withdrawal did not, silently.
+  // Typing a withdrawal past its track is exactly how a plan lands there, so
+  // the bound failed the plans that most needed solving. See
+  // Lane.withdrawalSolveMax for the figure that replaces it, why it is read
+  // off the balance at the first withdrawal, and why it cannot ratchet.
+  //
+  // A goal is still bounded, and still only ever moves this one input. Where
+  // the bound is what stops it, Lane.targetCapped says so on screen against
+  // the same figure.
   const solution = solveForTarget(
     lane.plan,
     target,
     lane.track,
-    lane.withdrawalMax,
+    lane.withdrawalSolveMax,
   );
   return {
     ...(solution.monthlyWithdrawal === undefined

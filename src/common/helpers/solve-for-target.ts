@@ -81,11 +81,13 @@ function snapToDollar(
  * @param props  - The plan for the lane
  * @param target - Desired ending portfolio value in USD, in `track`'s units
  * @param track  - The track the goal is measured on, as the control shows it
- * @param maxMonthlyWithdrawal - Span of this lane's withdrawal TRACK, which
- *   bounds the search. Deliberately narrower than what the withdrawal box
- *   accepts (MAX_MONTHLY_WITHDRAWAL_LIMIT): a goal may only move the
- *   withdrawal to a figure its control is showing - see solveLaneTarget.
- *   Defaults to the standard track span, which no production caller takes.
+ * @param maxMonthlyWithdrawal - Ceiling on the search, and the figure a goal
+ *   below the plan's reach is pinned to. NOT the span of the withdrawal
+ *   control: that span closes over the stored withdrawal, so handing it in
+ *   here made the ceiling the very value being solved for and the solve
+ *   returned what it started from - see Lane.withdrawalSolveMax, which is
+ *   what the one production caller passes. Defaults to the standard track
+ *   span, which no production caller takes.
  * @returns The withdrawal that moved, the balance reached, and whether it capped
  */
 export function solveForTarget(

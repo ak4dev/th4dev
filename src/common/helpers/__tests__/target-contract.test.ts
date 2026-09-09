@@ -25,9 +25,14 @@
  *  4. Where the withdrawal is solved, a reachable goal is
  *     landed on to the dollar and an unreachable one is
  *     reported as capped, with the withdrawal at the bound
- *     that helps. The expected decision is derived here
- *     from the plan itself, never read back from the
- *     solver.
+ *     that helps. Reachable means reachable by the PLAN
+ *     (Lane.withdrawalSolveMax), not by the track the
+ *     control happens to show: that track is drawn around
+ *     the stored withdrawal, so reading it as the bound
+ *     froze the goal on every plan whose withdrawal was
+ *     the largest figure in it. The expected decision is
+ *     derived here from the plan itself, never read back
+ *     from the solver.
  *  5. Where the target moves nothing, the ending balance
  *     does not move either; and a stored goal on its own
  *     never changes what the plan reaches.
@@ -184,13 +189,23 @@ MODES.forEach((mode, modeIndex) => {
             solves && keys.includes(WITHDRAWAL) ? [WITHDRAWAL, GOAL] : [GOAL],
           );
           // Independent of the key check: the goal is stored as its nominal
-          // worth, and a solved withdrawal lies within the control's span
+          // worth, and a solved withdrawal lies within the bound a goal may
+          // move it to. That bound is the PLAN's (withdrawalSolveMax), not
+          // the span of the control: the span is drawn around the stored
+          // withdrawal, so requiring a solve to stay inside it was requiring
+          // the solve to leave the withdrawal exactly where it found it.
           expect(sliders[GOAL], why).toBe(Math.round(goal / lane.deflator));
           if (sliders[WITHDRAWAL] !== undefined) {
             expect(sliders[WITHDRAWAL], why).toBeGreaterThanOrEqual(0);
             expect(sliders[WITHDRAWAL], why).toBeLessThanOrEqual(
-              lane.withdrawalMax,
+              lane.withdrawalSolveMax,
             );
+            // And whatever it wrote is on the control at the next render,
+            // which is what the span closing over the stored figure is for
+            expect(
+              buildLane("A", apply(ctx, sliders), TODAY).withdrawalMax,
+              why,
+            ).toBeGreaterThanOrEqual(sliders[WITHDRAWAL]);
           }
         }
       }
@@ -241,9 +256,13 @@ MODES.forEach((mode, modeIndex) => {
       it("4. lands on a reachable goal to the dollar, and says so when it cannot", () => {
         for (const { i, ctx } of cases) {
           const lane = buildLane("A", ctx, TODAY);
-          // The decision the solver must make, derived from the plan alone
+          // The decision the solver must make, derived from the plan alone.
+          // The bottom of the range is what the bound a goal may reach spends
+          // the plan down to - the plan's own (withdrawalSolveMax), not the
+          // end of a track that was drawn around the withdrawal the solve
+          // started from.
           const hi = withWithdrawal(lane, 0);
-          const lo = withWithdrawal(lane, lane.withdrawalMax);
+          const lo = withWithdrawal(lane, lane.withdrawalSolveMax);
           // The tolerance the lane is allowed: a dollar above the balance,
           // and below it one real dollar or its nominal worth at the horizon
           const fisher = Math.pow(
@@ -273,14 +292,17 @@ MODES.forEach((mode, modeIndex) => {
               expect(w, why).toBe(0);
               expect(after.targetCapped, why).toBe(after.total + above < goal);
             } else if (goal < lo) {
-              expect(w, why).toBe(lane.withdrawalMax);
+              // Below every balance a goal may reach: the withdrawal goes to
+              // that bound and stops there, and the row says the goal is out
+              // of reach rather than the goal being quietly rewritten
+              expect(w, why).toBe(lane.withdrawalSolveMax);
               expect(after.targetCapped, why).toBe(after.total > goal + below);
             } else {
               expect(after.targetCapped, why).toBe(false);
               // Step-optimal: neither neighbouring dollar lands closer
               const miss = Math.abs(after.total - goal);
               for (const n of [w - 1, w + 1]) {
-                if (n < 0 || n > lane.withdrawalMax) continue;
+                if (n < 0 || n > lane.withdrawalSolveMax) continue;
                 expect(
                   Math.abs(withWithdrawal(lane, n) - goal),
                   why,
