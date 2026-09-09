@@ -118,14 +118,23 @@ function getPerformanceColor(
   return defaultColor;
 }
 
-/** Largest value plotted in a row, for Y-axis scaling */
-function rowMax(row: ChartRow): number {
+/**
+ * Largest PLAN value in a row: the two deterministic lines and the simulated
+ * medians. The edge of a cone is deliberately not here - see rowBandMax and
+ * BAND_HEADROOM.
+ */
+function rowPlanMax(row: ChartRow): number {
   return Math.max(
     row.investmentA ?? 0,
     row.investmentB ?? 0,
-    row.mc?.outer[1] ?? 0,
-    row.mcB?.outer[1] ?? 0,
+    row.mc?.p50 ?? 0,
+    row.mcB?.p50 ?? 0,
   );
+}
+
+/** Largest band edge in a row, which the axis bounds rather than follows */
+function rowBandMax(row: ChartRow): number {
+  return Math.max(row.mc?.outer[1] ?? 0, row.mcB?.outer[1] ?? 0);
 }
 
 /* ==================================================
@@ -224,15 +233,19 @@ export function InvestmentLineChart({
     },
   ] as const;
 
-  // The y-axis follows the plotted balances (with 5% padding). A goal far
-  // above them used to set the whole axis and squash both lines to a
-  // hairline; it is now drawn no higher than TARGET_HEADROOM times the
-  // balances and labelled as sitting above the chart.
-  const rowsMax = Math.max(0, ...rows.map(rowMax));
+  // The y-axis follows the PLAN (with 5% padding), and bounds the two things
+  // that would otherwise set it from far above. A goal used to squash both
+  // lines to a hairline and is now drawn no higher than TARGET_HEADROOM times
+  // the balances; a Monte Carlo cone did the same thing through its P90 edge
+  // and is now bounded by BAND_HEADROOM. Both are still drawn - the cone runs
+  // off the top of the plot rather than flattening everything under it.
+  const rowsMax = Math.max(0, ...rows.map(rowPlanMax));
+  const bandsMax = Math.max(0, ...rows.map(rowBandMax));
   const { max: maxValue, cap } = chartYAxis(
     rowsMax,
     targets.map((t) => t.value),
     CHART_PADDING_MULTIPLIER,
+    bandsMax,
   );
 
   return (

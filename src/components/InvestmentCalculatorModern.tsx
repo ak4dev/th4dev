@@ -322,7 +322,17 @@ const mcRows = (label: string, bands: PercentileBand[]): PdfKeyValue[] => {
     },
     {
       label: `(${label}) 10th Percentile`,
-      value: `${formatCurrency(last.p10)} (1 in 10 end below)`,
+      // A P10 of exactly $0 is the one case where "1 in 10 end below" is not
+      // just imprecise but backwards: nothing ends below zero, so the gloss
+      // reads as "one in ten do badly" for a plan where far more than one in
+      // ten ended with nothing at all. It understated the share by over four
+      // times on the plan this was found on - 42.8% ending broke, printed
+      // beside a figure that implied 10%. Where the decile boundary has hit
+      // the floor, the honest statement is the measured share itself.
+      value:
+        last.p10 <= 0
+          ? `${formatCurrency(0)} (${Math.round(last.depletedPct * 100)}% end with nothing)`
+          : `${formatCurrency(last.p10)} (1 in 10 end below)`,
     },
   ];
 };
@@ -620,6 +630,9 @@ export default function InvestmentCalculatorModern({
       const { id, plan: p } = l;
       const stop = p.contributionStopYear;
       const withdrawing = l.withdrawals.length > 0;
+      // The contribution twin of `withdrawing`: what the plan actually pays
+      // in, not what its stop year says it would pay in if it paid anything
+      const contributing = p.monthlyContribution > 0;
       const depletedAt = l.calc.getDepletedAtMonth();
       // Re-derived from the plan on every render (see Lane.targetCapped), so
       // it is never a stale memory of an earlier solve: the withdrawal sits
@@ -636,19 +649,37 @@ export default function InvestmentCalculatorModern({
               },
               {
                 // A stop year of 0 is a real instruction ("stop now"), so only
-                // an unset one is N/A
+                // an unset one is N/A - and a lane paying in nothing has no
+                // contribution window to close, whatever its stop year says.
+                // Without that second gate this row printed a horizon-end date
+                // beside "Monthly Contribution: $0", which is the DEFAULT the
+                // moment Advanced is switched on, and it sat between
+                // "Withdrawal Start: N/A" and "Runs Out: N/A" as the only one
+                // of the three declining to say the same thing.
                 label: `(${id}) Contributions End`,
-                value: stop === undefined ? "N/A" : dateAfterYears(today, stop),
+                value:
+                  !contributing || stop === undefined
+                    ? "N/A"
+                    : dateAfterYears(today, stop),
               },
               {
                 // A plan with no withdrawals cannot run out; one that does and
-                // survives says so rather than going quiet
+                // survives says so rather than going quiet.
+                //
+                // "the plan line" is not decoration. This is the single
+                // deterministic path, and in an exported PDF it lands in one
+                // flat list of Key Metrics with a simulated "Chance of Running
+                // Out" a few rows below it - two correct answers to different
+                // questions, reading as one contradiction, with the
+                // deterministic one first and therefore authoritative. Naming
+                // the engine in the value is what the row can do about that
+                // from here; the percentage names its own.
                 label: `(${id}) Runs Out`,
                 value:
                   depletedAt !== undefined
-                    ? dateAfterMonths(today, depletedAt)
+                    ? `${dateAfterMonths(today, depletedAt)} (plan line)`
                     : withdrawing
-                      ? "Not within horizon"
+                      ? "Not within horizon (plan line)"
                       : "N/A",
               },
               // Printed whenever what LEAVES the portfolio differs from what
@@ -791,7 +822,15 @@ export default function InvestmentCalculatorModern({
   // horizon to the whole plan. Inflation is the plan's, not a lane's, so it
   // closes the list once.
   const assumptions = useMemo<PdfKeyValue[]>(
-    () => planAssumptions(lanes, toggles, sliders),
+    () =>
+      planAssumptions(
+        lanes.map((l) => ({
+          ...l,
+          balanceAtFirstWithdrawal: l.balanceAtStart,
+        })),
+        toggles,
+        sliders,
+      ),
     [lanes, toggles, sliders],
   );
 

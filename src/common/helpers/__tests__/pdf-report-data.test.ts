@@ -52,7 +52,11 @@ describe("planAssumptions", () => {
   it("states the plan itself whatever the tools are", () => {
     expect(rows({})).toEqual({
       "Initial Amount (A)": "$250,000",
-      "Return Rate (A)": "7%",
+      // Was "7%". Both engines apply an annual rate as twelve months of
+      // rate/12, so the entered figure is nominal and the plan compounds at
+      // (1 + 7/1200)^12 - 1 = 7.23%. The convention did not change; what
+      // changed is that the report now says which of the two rates it used.
+      "Return Rate (A)": "7% nominal (7.23% effective)",
       "Years (A)": "30",
       "Monthly Contribution (A)": "$500",
       "Monthly Withdrawal (A)": "$2,000",
@@ -94,6 +98,69 @@ describe("planAssumptions", () => {
     expect(rows({ advanced: true, spendingKeepsPace: true })["Spending"]).toBe(
       "Fixed withdrawals rise with inflation",
     );
+    // And in BOTH states, which is the exception to the rule the block
+    // otherwise follows. The tool being off is not a quantity of zero, it is
+    // the other model: a fixed withdrawal held flat in nominal dollars is
+    // worth about 45% of a 30-year plan's ending balance against one indexed
+    // to inflation, and moves ruin on a stressed plan from 20.8% to 52.7%.
+    // With the row absent the two runs printed identical withdrawal figures
+    // and nothing said which had produced the outcome beside them.
+    expect(rows({ advanced: true })["Spending"]).toBe(
+      "Fixed withdrawals stay flat in nominal dollars",
+    );
+    // Still absent where there is no spending to describe
+    expect(
+      rows({ advanced: true }, [lane("A", { monthlyWithdrawal: 0 })])[
+        "Spending"
+      ],
+    ).toBeUndefined();
+  });
+
+  it("says what the entered return rate actually compounds to", () => {
+    // Both engines apply an annual rate X as twelve months of X/12, so X is a
+    // NOMINAL rate and the plan grows at (1 + X/1200)^12 - 1. The convention
+    // is deliberate and DEFAULT_VOLATILITY is calibrated against it, but it
+    // was stated only in source comments: a reader reconciling this report
+    // against their own spreadsheet had no way to know which rate ran.
+    expect(rows({})["Return Rate (A)"]).toBe("7% nominal (7.23% effective)");
+    expect(
+      rows({}, [lane("A", { projectedGain: 10 })])["Return Rate (A)"],
+    ).toBe("10% nominal (10.47% effective)");
+    // A rate with nothing to disclose says nothing extra: 0% compounds to 0%,
+    // and the two figures agree to the printed precision below about 0.1%
+    expect(rows({}, [lane("A", { projectedGain: 0 })])["Return Rate (A)"]).toBe(
+      "0%",
+    );
+  });
+
+  it("gives a fixed withdrawal the draw rate a policy states for itself", () => {
+    // A dollar figure carries no scale: $2,000/mo is prudent against one
+    // balance and 9% a year against another, and only the second reading says
+    // whether the plan is drawing too hard. A dynamic lane has printed its
+    // rate all along; the lane that states its draw in dollars had nothing.
+    const withBalance: AssumptionLane = {
+      ...lane("A"),
+      balanceAtFirstWithdrawal: 400_000,
+    };
+    expect(
+      rows({ advanced: true }, [withBalance])["Initial Withdrawal Rate (A)"],
+    ).toBe("6.00% of $400,000 at first withdrawal");
+    // Measured on what leaves the PORTFOLIO, so a tax grosses it up: the
+    // slider holds spending, and sustainability is a question about the pot
+    expect(
+      rows({ advanced: true, taxes: true }, [
+        { ...withBalance, plan: plan({ withdrawalTaxPct: 25 }) },
+      ])["Initial Withdrawal Rate (A)"],
+    ).toBe("8.00% of $400,000 at first withdrawal");
+    // Absent, not zero, when there is no draw or no balance to measure against
+    expect(
+      rows({ advanced: true }, [
+        { ...withBalance, plan: plan({ monthlyWithdrawal: 0 }) },
+      ])["Initial Withdrawal Rate (A)"],
+    ).toBeUndefined();
+    expect(
+      rows({ advanced: true }, [lane("A")])["Initial Withdrawal Rate (A)"],
+    ).toBeUndefined();
   });
 
   it("runs no tool the plan is not actually running", () => {
@@ -116,14 +183,27 @@ describe("planAssumptions", () => {
     }
   });
 
-  it("names every lane it was handed, and closes with the plan's inflation", () => {
+  it("names every lane it was handed, then states the whole-plan settings", () => {
     const both = planAssumptions(
       [lane("A"), lane("B", { projectedGain: 5 })],
       { ...DEFAULT_TOGGLES, advanced: true },
       DEFAULT_SLIDERS,
     );
     expect(both.filter((r) => r.label.endsWith("(B)"))).not.toHaveLength(0);
-    expect(both.at(-1)).toEqual({ label: "Inflation Rate", value: "2.5%" });
+    // Every per-lane row comes before every whole-plan row, which is the
+    // ordering discipline this used to assert as "closes with the inflation
+    // rate". It no longer closes there: these lanes withdraw, so the spending
+    // rule is now stated in both of its states and follows the inflation rate
+    // it is defined against.
+    const laneRowCount = both.filter((r) => /\([AB]\)$/.test(r.label)).length;
+    expect(both.slice(laneRowCount).map((r) => r.label)).toEqual([
+      "Inflation Rate",
+      "Spending",
+    ]);
+    expect(both[laneRowCount]).toEqual({
+      label: "Inflation Rate",
+      value: "2.5%",
+    });
   });
 });
 

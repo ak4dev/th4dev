@@ -85,6 +85,13 @@ export interface Lane {
   /** Span of this lane's withdrawal, floor and ceiling controls */
   withdrawalMax: number;
   /**
+   * Nominal balance this lane is holding when its first withdrawal is taken,
+   * measured BEFORE that withdrawal is applied. It is the denominator an
+   * opening draw rate needs, and it is what withdrawalSolveMax is read off;
+   * the report prints the rate because a dollar withdrawal carries no scale.
+   */
+  balanceAtStart: number;
+  /**
    * The largest withdrawal a GOAL may set, which is deliberately not the span
    * of the control. The span closes over the three stored withdrawal figures
    * so their thumbs stay on their own track (see withdrawalMax), which made
@@ -458,6 +465,7 @@ export function buildLane(
     maxTarget,
     withdrawalMax,
     withdrawalSolveMax,
+    balanceAtStart,
     displayTarget,
     deflator: track === "real" ? deflator : 1,
     // One order of magnitude below the balance so the slider stays usable at any scale

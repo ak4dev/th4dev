@@ -420,8 +420,20 @@ const monthsBetween = (later: Date, earlier: Date) =>
 /** The shape `Date.prototype.toDateString()` produces, e.g. "Wed Sep 03 2036" */
 const DATE_STRING = /^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4}$/;
 
-/** Rewrites the two clock-dependent value shapes as offsets from today */
+/**
+ * Rewrites the two clock-dependent value shapes as offsets from today.
+ *
+ * A trailing parenthesised qualifier is split off first and put back after.
+ * "Runs Out" names the engine it came from - "(plan line)" - because in an
+ * exported PDF it lands in one flat list beside a simulated ruin percentage;
+ * without this split the whole value stopped matching DATE_STRING and the
+ * golden tables filled up with raw, clock-dependent dates.
+ */
 const relative = (value: string, today: Date): string => {
+  const qualified = /^(.*?) (\([^()]*\))$/.exec(value);
+  if (qualified !== null) {
+    return `${relative(qualified[1], today)} ${qualified[2]}`;
+  }
   if (DATE_STRING.test(value))
     return `+${monthsBetween(new Date(value), today)} mo`;
   const year = /^(\d{4})\b/.exec(value);
@@ -506,16 +518,16 @@ const GOLDEN_PLANS: GoldenPlan[] = [
     info: {
       "(A) Withdrawal Start": "+120 mo",
       "(A) Contributions End": "+120 mo",
-      "(A) Runs Out": "Not within horizon",
+      "(A) Runs Out": "Not within horizon (plan line)",
       "(A) Target Reached": "+9 yr (yr 9)",
       // Gross growth first covers the first year's $24,000 draw in year 4
       "(A) Growth covers draw from": "+4 yr ($2,050/mo gross, nominal)",
       "(A) Fees Paid": "$95,962",
       "(B) Withdrawal Start": "+0 mo",
       // B stores no stop year, so contributions run to its whole horizon
-      "(B) Contributions End": "+240 mo",
+      "(B) Contributions End": "N/A", // was a horizon-end date for a lane contributing $0
       // $80,000 drawn at $1,500/mo does not last five years
-      "(B) Runs Out": "+59 mo",
+      "(B) Runs Out": "+59 mo (plan line)",
       "(B) Target Reached": "N/A",
       "(B) Growth covers draw from": "Not within horizon",
       "(B) Fees Paid": "$509",
@@ -534,7 +546,7 @@ const GOLDEN_PLANS: GoldenPlan[] = [
       "(A) Chance of Running Out": "6%",
       "(B) Median Outcome": "$0",
       "(B) 90th Percentile": "$0 (1 in 10 end above)",
-      "(B) 10th Percentile": "$0 (1 in 10 end below)",
+      "(B) 10th Percentile": "$0 (100% end with nothing)",
       "(B) Chance of Running Out": "100%",
     },
   },
@@ -549,8 +561,8 @@ const GOLDEN_PLANS: GoldenPlan[] = [
     spans: ["367704", "192787"],
     info: {
       "(A) Withdrawal Start": "+0 mo",
-      "(A) Contributions End": "+300 mo",
-      "(A) Runs Out": "Not within horizon",
+      "(A) Contributions End": "N/A", // was a horizon-end date for a lane contributing $0
+      "(A) Runs Out": "Not within horizon (plan line)",
       // 5% of $600,000 is $2,500/mo on day one, and the top of the range is
       // above the stored $3,000 ceiling because the guardrails are indexed
       "(A) Withdrawal":
@@ -561,8 +573,8 @@ const GOLDEN_PLANS: GoldenPlan[] = [
       // balance against a nominal draw and answer a later year.
       "(A) Growth covers draw from": "+1 yr ($3,030/mo gross, nominal)",
       "(B) Withdrawal Start": "+60 mo",
-      "(B) Contributions End": "+300 mo",
-      "(B) Runs Out": "Not within horizon",
+      "(B) Contributions End": "N/A", // was a horizon-end date for a lane contributing $0
+      "(B) Runs Out": "Not within horizon (plan line)",
       "(B) Withdrawal":
         "$899–$1,319/mo drawn nominal (4% of balance, guardrails indexed)",
       "(B) Target Reached": "N/A",
@@ -633,11 +645,11 @@ const GOLDEN_PLANS: GoldenPlan[] = [
       "(A) Withdrawal Start": "+120 mo",
       // No stop year is stored, so contributions run to the whole horizon
       "(A) Contributions End": "+240 mo",
-      "(A) Runs Out": "Not within horizon",
+      "(A) Runs Out": "Not within horizon (plan line)",
       "(A) Target Reached": "> 20 yrs",
       "(A) Growth covers draw from": "Not within horizon",
       "(B) Withdrawal Start": "N/A",
-      "(B) Contributions End": "+240 mo",
+      "(B) Contributions End": "N/A", // was a horizon-end date for a lane contributing $0
       "(B) Runs Out": "N/A",
       "(B) Target Reached": "N/A",
       "(B) Growth covers draw from": "N/A",
@@ -655,8 +667,8 @@ GOLDEN_PLANS.push({
   spans: ["4580334", "1717625"],
   info: {
     "(A) Withdrawal Start": "+0 mo",
-    "(A) Contributions End": "+300 mo",
-    "(A) Runs Out": "Not within horizon",
+    "(A) Contributions End": "N/A", // was a horizon-end date for a lane contributing $0
+    "(A) Runs Out": "Not within horizon (plan line)",
     // $2,500 of spending at a 25% rate costs the portfolio $3,333 on day one,
     // and $6,962 by year 25 because the same basket costs more then. The
     // slider shows $2,500 and would show $2,500 for ever; without this row
@@ -666,8 +678,8 @@ GOLDEN_PLANS.push({
     "(A) Target Reached": "N/A",
     "(A) Growth covers draw from": "+1 yr ($4,758/mo gross, nominal)",
     "(B) Withdrawal Start": "+0 mo",
-    "(B) Contributions End": "+300 mo",
-    "(B) Runs Out": "Not within horizon",
+    "(B) Contributions End": "N/A", // was a horizon-end date for a lane contributing $0
+    "(B) Runs Out": "Not within horizon (plan line)",
     "(B) Withdrawal":
       "$933–$1,949/mo drawn nominal ($700/mo spendable, indexed)",
     "(B) Target Reached": "N/A",
