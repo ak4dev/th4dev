@@ -582,19 +582,29 @@ const GOLDEN_PLANS: GoldenPlan[] = [
       "Rollover Date": "N/A",
       "Rollover Amount": "N/A",
       "Inflation Rate": "3%",
-      // The three percentile rows describe the SUMMED portfolio and say so
-      "(A+B) Median Outcome": "$592,635",
-      "(A+B) 90th Percentile": "$1,190,193 (1 in 10 end above)",
-      "(A+B) 10th Percentile": "$289,303 (1 in 10 end below)",
+      // The three percentile rows describe the SUMMED portfolio and say so.
+      // All three moved when the two lanes stopped being independent markets
+      // (see LANE_CORRELATION): the 10th percentile fell from $289,303 and
+      // the 90th rose from $1,190,193, because summing two uncorrelated
+      // accounts was averaging away a spread that does not average away for
+      // one household holding both.
+      "(A+B) Median Outcome": "$575,649",
+      "(A+B) 90th Percentile": "$1,298,220 (1 in 10 end above)",
+      "(A+B) 10th Percentile": "$205,177 (1 in 10 end below)",
       // ...and the risk rows describe ACCOUNTS, which is a different pool.
       // One row used to carry the "(A+B)" label for the any-account figure,
       // so a reader took "1% chance of running out" as a statement about the
-      // $289,303 above it. It never was: here A alone carries 1%, B carries
-      // 2%, and the chance that EITHER runs dry is 4% - a figure that belongs
+      // $205,177 above it. It never was: here A alone carries 1%, B carries
+      // 2%, and the chance that EITHER runs dry is 3% - a figure that belongs
       // to neither account and to no percentile on screen.
+      //
+      // A's own figure is untouched by the correlation and B's moved by
+      // sampling alone; what fell from 4% to 3% is the UNION, because two
+      // accounts in one market run dry in the same runs rather than in
+      // different ones.
       "(A) Chance of Running Out": "1%",
       "(B) Chance of Running Out": "2%",
-      "(A or B) Chance of Running Out": "4% (either account, not the total)",
+      "(A or B) Chance of Running Out": "3% (either account, not the total)",
     },
   },
   {
@@ -624,9 +634,12 @@ const GOLDEN_PLANS: GoldenPlan[] = [
       "Inflation Rate": "2.5%",
       // Rollover mode outranks the Monte Carlo mode switch, and its bands
       // describe the whole portfolio rather than either lane
-      "(Portfolio) Median Outcome": "$2,488,316",
-      "(Portfolio) 90th Percentile": "$5,005,211 (1 in 10 end above)",
-      "(Portfolio) 10th Percentile": "$1,134,981 (1 in 10 end below)",
+      // The rolled AMOUNT above is A's deterministic ending balance and did
+      // not move; these three are the simulated portfolio, and they did, for
+      // the reason LANE_CORRELATION gives
+      "(Portfolio) Median Outcome": "$2,312,094",
+      "(Portfolio) 90th Percentile": "$4,935,264 (1 in 10 end above)",
+      "(Portfolio) 10th Percentile": "$1,069,168 (1 in 10 end below)",
       // No "Chance of Running Out": nothing here ever withdraws
     },
   },
@@ -688,19 +701,34 @@ GOLDEN_PLANS.push({
     "Rollover Amount": "N/A",
     "Inflation Rate": "3%",
     // The whole reason this change set exists, in five rows. The three
-    // percentiles describe the SUMMED portfolio - whose 10th percentile is a
-    // positive $146,165 - while the three risk rows describe the ACCOUNTS
-    // inside it, one of which is dry in 45% of runs. Read as one pool they
-    // say "the bad case still leaves me $146,165 and there is a 45% chance of
-    // trouble", which is two different pots described as one.
-    "(A+B) Median Outcome": "$2,139,404",
-    "(A+B) 90th Percentile": "$8,890,123 (1 in 10 end above)",
-    "(A+B) 10th Percentile": "$146,165 (1 in 10 end below)",
-    // 45% is also strictly inside max(34, 17) and min(100, 34 + 17): the
-    // any-account figure is a union, never a maximum and never a sum
+    // percentiles describe the SUMMED portfolio while the three risk rows
+    // describe the ACCOUNTS inside it, one of which is dry in 34% of runs.
+    // Read as one pool they say "the bad case still leaves me something and
+    // there is a 36% chance of trouble", which is two different pots
+    // described as one.
+    //
+    // This plan is also the sharpest measurement of the independence defect
+    // LANE_CORRELATION fixed. The 10th percentile printed here used to be a
+    // positive $146,165: a floor manufactured by summing two accounts drawn
+    // from unrelated markets. Correlate them and it is $0 - one run in ten
+    // ends with nothing - and no wording could have rescued the old figure,
+    // because it was not a floor, it was a diversification artifact.
+    "(A+B) Median Outcome": "$1,608,359",
+    "(A+B) 90th Percentile": "$9,727,992 (1 in 10 end above)",
+    // Two fixes meeting. Correlating the accounts took this from a
+    // $146,165 "floor" to $0 - the floor was a diversification artifact of
+    // summing two accounts drawn from unrelated markets - and a P10 pinned
+    // to zero no longer claims "1 in 10 end below" when 36% end with
+    // nothing.
+    "(A+B) 10th Percentile": "$0 (36% end with nothing)",
+    // 36% is still strictly inside max(34, 16) and min(100, 34 + 16): the
+    // any-account figure is a union, never a maximum and never a sum. It fell
+    // from 45% for the same reason the percentiles moved - the two accounts
+    // now fail in the SAME runs - while A's own figure did not move at all
+    // and B's moved by one point of sampling.
     "(A) Chance of Running Out": "34%",
-    "(B) Chance of Running Out": "17%",
-    "(A or B) Chance of Running Out": "45% (either account, not the total)",
+    "(B) Chance of Running Out": "16%",
+    "(A or B) Chance of Running Out": "36% (either account, not the total)",
   },
 });
 

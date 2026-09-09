@@ -81,6 +81,29 @@ describe("planAssumptions", () => {
     expect(rows({ advanced: true })["Return Model"]).toBeUndefined();
   });
 
+  it("names the correlation between two accounts, which the user never chose", () => {
+    // A combined 10th percentile is a claim about how the two accounts fail
+    // together and cannot be reproduced from the per-lane rows above it. On
+    // the taxed two-lane golden plan the engine printed a $146,165 floor
+    // while the accounts were drawn from unrelated markets, and $0 once they
+    // shared one; the assumption that moved it belongs on the page.
+    const mc = { advanced: true, monteCarlo: true };
+    expect(rows(mc, [lane("A"), lane("B")])["Account Correlation"]).toBe(
+      "0.85 - both accounts move with one market, not independently",
+    );
+    // One account has nothing to move with, so the row would describe nothing
+    expect(rows(mc)["Account Correlation"]).toBeUndefined();
+    // ...and it is a simulation setting, so it goes when the simulation does
+    expect(
+      rows({ advanced: true }, [lane("A"), lane("B")])["Account Correlation"],
+    ).toBeUndefined();
+    // Basic mode resolves every tool off, so a two-lane basic report must not
+    // claim a correlation it never applied
+    expect(
+      rows({ monteCarlo: true }, [lane("A"), lane("B")])["Account Correlation"],
+    ).toBeUndefined();
+  });
+
   it("says which figure the withdrawal is once a tax makes them differ", () => {
     // The Key Metrics section on the same page prints the DRAWN figure, which
     // is a third larger. Without the qualifier the two sections state two

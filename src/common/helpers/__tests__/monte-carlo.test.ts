@@ -8,8 +8,10 @@ import {
   runIndividualSimulations,
   runRolloverSimulation,
   returnDraw,
+  pairedReturnDraws,
   makeRandom,
   CLUSTERED_CALIBRATION,
+  LANE_CORRELATION,
   type MonteCarloParams,
 } from "../monte-carlo";
 import { RETURN_MODELS } from "../../types/types";
@@ -45,6 +47,43 @@ const zeroVol = (o: Partial<MonteCarloParams> = {}): MonteCarloParams => ({
   simCount: 10,
   ...o,
 });
+
+/**
+ * Mean, sd, skew, excess kurtosis, lag-1 autocorrelation, and the same
+ * autocorrelation on |x - mean|.
+ *
+ * At module scope because two suites read it: "return models" measures a lane
+ * simulated alone, and "two accounts, one market" measures the same lane
+ * leading and following a pair. Sharing the estimator is what lets the second
+ * suite assert the FIRST one's bounds unchanged, which is the whole claim -
+ * a correlation must leave each lane's own distribution where it found it.
+ */
+const shape = (values: number[]) => {
+  const n = values.length;
+  const mean = values.reduce((s, v) => s + v, 0) / n;
+  const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+  const sd = Math.sqrt(variance);
+  const skew = values.reduce((s, v) => s + (v - mean) ** 3, 0) / n / sd ** 3;
+  const auto = (xs: number[]) => {
+    const m = xs.reduce((s, v) => s + v, 0) / xs.length;
+    const v = xs.reduce((s, x) => s + (x - m) ** 2, 0) / xs.length;
+    let cov = 0;
+    for (let i = 1; i < xs.length; i++) cov += (xs[i] - m) * (xs[i - 1] - m);
+    return cov / (xs.length - 1) / v;
+  };
+  return {
+    mean,
+    sd,
+    skew,
+    exKurt:
+      values.reduce((s, v) => s + (v - mean) ** 4, 0) / n / variance ** 2 - 3,
+    ac1: auto(values),
+    // Autocorrelation of the ABSOLUTE deviation: this is what "clustering"
+    // means. A market can have no memory of its direction (ac1 ~ 0) while
+    // very much having a memory of how violent it is.
+    acAbs: auto(values.map((v) => Math.abs(v - mean))),
+  };
+};
 
 const last = (bands: { p50: number }[]) => bands[bands.length - 1].p50;
 
@@ -611,7 +650,22 @@ describe("seeded randomness", () => {
 
   it("reproduces the combined and rollover bands recorded before the month grid landed", () => {
     // Pinned literals, not a re-run: the grid, the sqrt shock scaling and the
-    // rollover contract all had to leave whole-year plans byte-identical
+    // rollover contract all had to leave whole-year plans byte-identical.
+    //
+    // The two PAIRED literals were re-recorded when LANE_CORRELATION landed
+    // and are the only figures in this file that moved for it. They had to:
+    // lane B no longer reads a stretch of stream unrelated to lane A's, it
+    // reads lane A's own market with an idiosyncratic component mixed in, so
+    // every summed path is a different number. The SINGLE-LANE literal below
+    // is the control and did NOT move - not one digit - which is the whole
+    // claim the coupling rests on: correlating two lanes is not allowed to
+    // touch what either lane does on its own.
+    //
+    // Note the two paired arrays still agree entry for entry through month
+    // 120, A's finish. Before the roll fires the portfolio IS A + B, so
+    // combined and rollover mode must produce the same figures there, and a
+    // coupling that fed the two modes different markets would show up as a
+    // disagreement in this pair rather than as a plausible-looking cone.
     const pinA = { ...baseParams, seed: 7, simCount: 50, yearsOfGrowth: 10 };
     const pinB = {
       ...baseParams,
@@ -622,12 +676,12 @@ describe("seeded randomness", () => {
       monthlyContribution: 200,
     };
     expect(runCombinedSimulation(pinA, pinB).map((b) => b.p50)).toEqual([
-      150000, 170082, 188292.5, 206662, 237709.5, 266450.5, 290879.5, 336581.5,
-      365495.5, 409248.5, 442303, 498902, 505362,
+      150000, 169928, 188440.5, 213067, 237303.5, 259301.5, 285368, 336563.5,
+      367661, 369754, 414784, 420976.5, 457147,
     ]);
     expect(runRolloverSimulation(pinA, pinB).map((b) => b.p50)).toEqual([
-      150000, 170082, 188292.5, 206662, 237709.5, 266450.5, 290879.5, 336581.5,
-      365495.5, 409248.5, 442303, 526300.5, 556178,
+      150000, 169928, 188440.5, 213067, 237303.5, 259301.5, 285368, 336563.5,
+      367661, 369754, 414784, 450085.5, 510520,
     ]);
     expect(runMonteCarloSimulation(pinA).map((b) => b.p50)).toEqual([
       100000, 110178, 121455, 132354.5, 148907, 169171, 179766.5, 196489.5,
@@ -1084,32 +1138,6 @@ describe("return distribution calibration", () => {
  * ================================================== */
 
 describe("return models", () => {
-  /** Mean, sd, lag-1 autocorrelation, skew, and the same for |x - mean| */
-  const shape = (values: number[]) => {
-    const n = values.length;
-    const mean = values.reduce((s, v) => s + v, 0) / n;
-    const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
-    const sd = Math.sqrt(variance);
-    const skew = values.reduce((s, v) => s + (v - mean) ** 3, 0) / n / sd ** 3;
-    const auto = (xs: number[]) => {
-      const m = xs.reduce((s, v) => s + v, 0) / xs.length;
-      const v = xs.reduce((s, x) => s + (x - m) ** 2, 0) / xs.length;
-      let cov = 0;
-      for (let i = 1; i < xs.length; i++) cov += (xs[i] - m) * (xs[i - 1] - m);
-      return cov / (xs.length - 1) / v;
-    };
-    return {
-      mean,
-      sd,
-      skew,
-      ac1: auto(values),
-      // Autocorrelation of the ABSOLUTE deviation: this is what "clustering"
-      // means. A market can have no memory of its direction (ac1 ~ 0) while
-      // very much having a memory of how violent it is.
-      acAbs: auto(values.map((v) => Math.abs(v - mean))),
-    };
-  };
-
   /** N standardised draws from one path of `model` */
   const draws = (model: ReturnModel, seed: number, n: number) => {
     const draw = returnDraw(model, makeRandom(seed));
@@ -1275,6 +1303,239 @@ describe("return models", () => {
 });
 
 /* ==================================================
+ * Two accounts, one market
+ * ================================================== */
+
+describe("two accounts, one market", () => {
+  /**
+   * One path's worth of paired draws, consumed in the order simulatePair
+   * consumes them: the leader's whole horizon, then the follower's.
+   */
+  const pairs = (
+    model: ReturnModel,
+    seed: number,
+    paths: number,
+    years = 30,
+  ) => {
+    const random = makeRandom(seed);
+    const a: number[] = [];
+    const b: number[] = [];
+    for (let path = 0; path < paths; path++) {
+      const draw = pairedReturnDraws(model, random);
+      for (let year = 0; year < years; year++) a.push(draw.a());
+      for (let year = 0; year < years; year++) b.push(draw.b());
+    }
+    return { a, b };
+  };
+
+  const correlation = (xs: number[], ys: number[]) => {
+    const n = xs.length;
+    const mx = xs.reduce((s, v) => s + v, 0) / n;
+    const my = ys.reduce((s, v) => s + v, 0) / n;
+    let sxy = 0;
+    let sxx = 0;
+    let syy = 0;
+    for (let i = 0; i < n; i++) {
+      sxy += (xs[i] - mx) * (ys[i] - my);
+      sxx += (xs[i] - mx) ** 2;
+      syy += (ys[i] - my) ** 2;
+    }
+    return sxy / Math.sqrt(sxx * syy);
+  };
+
+  const PATHS = 2_000;
+
+  it("lands the two lanes on LANE_CORRELATION under every model", () => {
+    // The constant is a claim about the FINISHED annual draws, and it has to
+    // hold under both models with one number, because one toggle drives both
+    // lanes. The coupling is applied to the normals underneath, and under
+    // "clustered" the fold that makes the draw left-skewed eats correlation
+    // on the way out - feeding 0.85 straight through realises 0.756 - so the
+    // latent figure is derived from this target rather than being it. That
+    // derivation is what this test is really pinning: get it wrong and
+    // "clustered" quietly correlates the accounts at 0.756 while "normal"
+    // correlates them at 0.85.
+    //
+    // At 60,000 pairs the standard error of a correlation this high is about
+    // (1 - 0.85^2)/sqrt(n) = 0.0011, so 0.01 is nine of them.
+    for (const model of RETURN_MODELS) {
+      const { a, b } = pairs(model, 20_250_101, PATHS);
+      expect(correlation(a, b), model).toBeCloseTo(LANE_CORRELATION, 2);
+    }
+  });
+
+  it("leaves both lanes' own distributions exactly where they were", () => {
+    // The constraint that decides the whole design. A correlation may not
+    // change what either account does on its own, and the obvious
+    // implementation - blending the FINISHED draws, rho*zA + sqrt(1-rho^2)*z
+    // - breaks it under the model this app ships: convolving two independent
+    // copies of a skewed variable keeps only rho^3 + (1-rho^2)^1.5 of the
+    // skew, measured at 0.85 as -0.397 against the lone lane's -0.523, with
+    // excess kurtosis falling from 2.57 to 1.53. Lane A would keep its shape
+    // and lane B would not, so whether a plan got the clustered model's left
+    // tail would depend on which slot the account was typed into.
+    //
+    // Coupling the two NORMALS the year is shaped from instead leaves the
+    // follower marginally standard normal, so it comes out of the same
+    // shaping function with the same distribution. The bounds below are the
+    // ones "return models" applies to a lone lane, deliberately unchanged.
+    for (const model of RETURN_MODELS) {
+      const { a, b } = pairs(model, 20_250_102, PATHS);
+      for (const [lane, values] of [
+        ["A", a],
+        ["B", b],
+      ] as const) {
+        const { mean, sd, skew, exKurt, ac1, acAbs } = shape(values);
+        const why = `${model} lane ${lane}`;
+        expect(Math.abs(mean), why).toBeLessThan(0.04);
+        expect(Math.abs(sd - 1), why).toBeLessThan(0.04);
+        expect(Math.abs(ac1), why).toBeLessThan(0.04);
+        if (model === "clustered") {
+          expect(skew, why).toBeLessThan(-0.3);
+          expect(skew, why).toBeGreaterThan(-0.8);
+          expect(exKurt, why).toBeGreaterThan(1.8);
+          expect(acAbs, why).toBeGreaterThan(0.03);
+          expect(acAbs, why).toBeLessThan(0.1);
+        } else {
+          expect(Math.abs(skew), why).toBeLessThan(0.1);
+          expect(Math.abs(exKurt), why).toBeLessThan(0.15);
+          expect(Math.abs(acAbs), why).toBeLessThan(0.04);
+        }
+      }
+    }
+  });
+
+  it("puts both accounts in the same crisis at the same time", () => {
+    // A crisis is a market event, not an account event, so the regime is
+    // shared outright rather than correlated. The visible consequence is that
+    // the two lanes' draws co-move in MAGNITUDE beyond what their correlation
+    // alone would produce, and the "normal" pair is the benchmark for what
+    // that correlation alone is worth: a bivariate normal at 0.85 has
+    // corr(|a|, |b|) = 0.684 in closed form, measured 0.684 here. Sharing the
+    // regime lifts the clustered pair to 0.754; giving each lane its own
+    // chain would DROP it to 0.489, because two independent volatility
+    // scales dilute what the innovations agree on. So this assertion fails in
+    // exactly the case it is here to catch - two accounts having their
+    // crises in different years, which is the one thing a portfolio's bad
+    // decade is not.
+    const plain = pairs("normal", 20_250_103, PATHS);
+    const clustered = pairs("clustered", 20_250_103, PATHS);
+    const absCorr = ({ a, b }: { a: number[]; b: number[] }) =>
+      correlation(a.map(Math.abs), b.map(Math.abs));
+    expect(absCorr(clustered)).toBeGreaterThan(absCorr(plain) + 0.03);
+  });
+
+  it("leaves a lane simulated alone untouched, and leg A with it", () => {
+    // Lane A reads the seeded stream in exactly the order and quantity a lone
+    // lane reads it, so half of what a correlation changes is provably
+    // nothing. This is what makes the rest auditable, and it is why the
+    // single-lane literal in "seeded randomness" did not move when this
+    // landed while the two paired ones did.
+    const a = {
+      ...baseParams,
+      seed: 31,
+      simCount: 300,
+      monthlyWithdrawal: 900,
+      withdrawalStartYear: 1,
+      yearsOfGrowth: 20,
+    };
+    const b = {
+      ...baseParams,
+      seed: 31,
+      simCount: 300,
+      initialAmount: 50_000,
+      volatility: 22,
+      yearsOfGrowth: 25,
+    };
+    for (const model of RETURN_MODELS) {
+      const withModel = { ...a, returnModel: model };
+      const alone = runMonteCarloSimulation(withModel);
+      const combined = runCombinedSimulation(withModel, {
+        ...b,
+        returnModel: model,
+      });
+      expect(
+        combined
+          .slice(0, alone.length)
+          .map((band) => band.legDepletion!.a.depletedPct),
+        model,
+      ).toEqual(alone.map((band) => band.depletedPct));
+      // ...and in rollover mode too, where A's ending balance is the figure
+      // that gets rolled
+      const rolled = runRolloverSimulation(withModel, {
+        ...b,
+        returnModel: model,
+      });
+      expect(
+        rolled
+          .slice(0, alone.length)
+          .map((band) => band.legDepletion!.a.depletedPct),
+        model,
+      ).toEqual(alone.map((band) => band.depletedPct));
+    }
+  });
+
+  it("changes nothing at all at zero volatility", () => {
+    // The whole standardised deviate is multiplied by volatility, and a
+    // correlation only changes which deviate a lane gets, so at sigma 0 the
+    // two lanes must still both collapse onto the deterministic plan and
+    // their sum onto the sum of the two plans. A coupling that added anything
+    // outside the multiplier passes every distributional test above and
+    // breaks here.
+    for (const model of RETURN_MODELS) {
+      const a = zeroVol({
+        returnModel: model,
+        monthlyWithdrawal: 200,
+        withdrawalStartYear: 2,
+      });
+      const b = zeroVol({
+        returnModel: model,
+        initialAmount: 40_000,
+        yearsOfGrowth: 12,
+      });
+      const combined = runCombinedSimulation(a, b);
+      const soloA = runMonteCarloSimulation(a);
+      const soloB = runMonteCarloSimulation(b);
+      expect(combined[0].p10, model).toBe(combined[0].p90);
+      expect(combined.at(-1)!.p50, model).toBe(last(soloA) + last(soloB));
+    }
+  });
+
+  it("does not pair two lanes that are not on the same model", () => {
+    // There is no calibrated correlation between a Gaussian year and a
+    // clustered one, and forcing the one there is would break a marginal: a
+    // clustered follower reading a normal leader's market would fold a normal
+    // that is not standard and lose its own skew. The app cannot produce the
+    // case, so this pins what happens if it ever does - B draws its own
+    // market, exactly as it did before lanes were coupled, rather than a
+    // silently mis-shaped one.
+    const a = {
+      ...baseParams,
+      seed: 5,
+      simCount: 400,
+      returnModel: "clustered" as const,
+    };
+    const b = {
+      ...baseParams,
+      seed: 5,
+      simCount: 400,
+      initialAmount: 60_000,
+      returnModel: "normal" as const,
+    };
+    const mixed = runCombinedSimulation(a, b);
+    const matched = runCombinedSimulation(a, {
+      ...b,
+      returnModel: "clustered" as const,
+    });
+    expect(mixed.at(-1)!.p50).not.toBe(matched.at(-1)!.p50);
+    // Lane A still leads its own stream either way, so its leg is the same
+    expect(mixed.map((band) => band.legDepletion!.a.depletedPct)).toEqual(
+      matched.map((band) => band.legDepletion!.a.depletedPct),
+    );
+  });
+});
+
+/* ==================================================
  * Per-account depletion
  * ================================================== */
 
@@ -1323,10 +1584,19 @@ describe("depletion is measured per account and says which", () => {
   });
 
   it("keeps the any-account figure a union, never a sum or a maximum", () => {
+    // Lane B draws LESS than A but is twice as volatile, and the second half
+    // of that is what the test needs. Once the two lanes share a market
+    // (LANE_CORRELATION), a lane that differs from the other only in how hard
+    // it draws fails in a SUBSET of the other's runs - the union collapses
+    // onto the maximum and the strict assertion at the bottom stops being
+    // able to tell a union from a max. This pair fails on genuinely different
+    // runs because the accounts hold different markets, not merely different
+    // withdrawals, which is the shape the assertion was always about.
     const bothSpend = runCombinedSimulation(spender, {
       ...spender,
       seed: 4242,
       monthlyWithdrawal: 2500,
+      volatility: 20,
     });
     for (const band of bothSpend) {
       const { a, b } = band.legDepletion!;
@@ -1340,11 +1610,19 @@ describe("depletion is measured per account and says which", () => {
     // And on a plan where both can fail it is strictly inside those bounds,
     // so the test above is not passing on a degenerate case
     const end = bothSpend.at(-1)!;
+    const { a, b } = end.legDepletion!;
     expect(end.depletedPct).toBeGreaterThan(
-      Math.max(
-        end.legDepletion!.a.depletedPct,
-        end.legDepletion!.b.depletedPct,
-      ),
+      Math.max(a.depletedPct, b.depletedPct),
+    );
+    // ...and strictly BELOW the union two independent accounts would show.
+    // This is the assertion the old engine could not have passed: with the
+    // lanes drawn off disjoint stretches of one stream, the any-account
+    // figure sat on a + b - a*b to within sampling error, because that is
+    // what a union of independent events is. It is the cheapest end-to-end
+    // proof that the coupling reaches the ruin figures and not just the
+    // percentiles.
+    expect(end.depletedPct).toBeLessThan(
+      a.depletedPct + b.depletedPct - a.depletedPct * b.depletedPct,
     );
   });
 

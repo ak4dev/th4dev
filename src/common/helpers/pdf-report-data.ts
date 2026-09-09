@@ -25,6 +25,7 @@ import {
 } from "../constants/app-constants";
 import type { LaneId } from "../constants/app-constants";
 import { formatCurrency } from "./format";
+import { LANE_CORRELATION } from "./monte-carlo";
 
 /* ---------- Types ---------- */
 
@@ -285,6 +286,34 @@ export function planAssumptions(
               toggles.returnModel === "clustered"
                 ? "Clustered (bad years arrive in runs)"
                 : "Independent (each year drawn on its own)",
+          },
+        ]
+      : []),
+    // The one assumption on this page the user never chose, printed for
+    // exactly that reason.
+    //
+    // A combined 10th percentile is a claim about how two accounts fail
+    // TOGETHER, and it is not reproducible from anything else on the page.
+    // The engine used to draw the two lanes from unrelated markets - nobody
+    // chose that either; it fell out of simulating one lane after the other -
+    // and the figure it produced was not a portfolio floor but a
+    // diversification artifact: on the taxed two-lane plan this suite pins,
+    // the 10th percentile it printed was $146,165 where the correlated answer
+    // is $0. It also moves the any-account ruin row by up to nine points,
+    // downwards, because two accounts in one market run dry in the same runs.
+    // A reader holding only the PDF cannot tell those two readings apart
+    // without this row, which is the same argument the Volatility row above
+    // is here for.
+    //
+    // Gated on two lanes because one account has nothing to move with - not
+    // on the Monte Carlo MODE, even though individual mode never sums the two
+    // and the number does no work there. This block lists settings in force,
+    // not the quantities they happen to bite on; that is why Fees prints "0%".
+    ...(on("monteCarlo") && lanes.length > 1
+      ? [
+          {
+            label: "Account Correlation",
+            value: `${LANE_CORRELATION} - both accounts move with one market, not independently`,
           },
         ]
       : []),

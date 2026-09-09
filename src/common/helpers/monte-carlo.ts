@@ -69,6 +69,7 @@ import {
   PERCENTAGE_DIVISOR,
 } from "../constants/app-constants";
 import type { DisplayTrack, PlanInputs, ReturnModel } from "../types/types";
+import { bisect } from "./bisect";
 import {
   dynamicMonthlyWithdrawal,
   grossWithdrawal,
@@ -194,6 +195,12 @@ interface SimOptions {
   injection?: LumpSumInjection;
   /** Checkpoint months to record; defaults to this lane's own grid */
   grid?: number[];
+  /**
+   * The generator this path's annual draws come from. Absent means "build
+   * one from `random`", which is what a lane simulated alone does; a paired
+   * run supplies one so that both lanes of a path read the same market.
+   */
+  draw?: ReturnDraw;
 }
 
 /**
@@ -280,7 +287,7 @@ export type { ReturnModel } from "../types/types";
  * the caller's job, and doing it in that order is what makes a zero-volatility
  * run collapse to exactly the deterministic plan whatever the model.
  */
-type ReturnDraw = () => number;
+export type ReturnDraw = () => number;
 
 /* --- the "clustered" market --- */
 
@@ -349,24 +356,66 @@ const SKEW_MEAN = SKEW_DELTA * Math.sqrt(2 / Math.PI);
 const SKEW_SD = Math.sqrt(1 - (2 * SKEW_DELTA * SKEW_DELTA) / Math.PI);
 
 /**
- * A standardised skew-normal variate, built from two standard normals so it
- * consumes a FIXED amount of randomness. A rejection sampler would draw a
- * data-dependent number of uniforms, which is how a seeded stream stops being
- * reproducible from the plan alone.
+ * A standardised skew-normal variate, shaped from two standard normals: one
+ * folded to its magnitude, one added whole.
+ *
+ * TWO NORMALS, and no rejection step, so a year's innovation costs a FIXED
+ * amount of randomness. A rejection sampler would draw a data-dependent
+ * number of uniforms, which is how a seeded stream stops being reproducible
+ * from the plan alone.
+ *
+ * Drawing the normals and SHAPING them are separate steps, which is what
+ * makes two correlated lanes possible at all. This function is total over
+ * every pair of standard normals, so a second lane whose normals are
+ * correlated with this lane's - but still marginally standard normal - comes
+ * out of it with EXACTLY this distribution. See followingDraw.
  */
-function skewNormalRandom(random: Random): number {
-  const half = Math.abs(normalRandom(random));
-  const rest = normalRandom(random);
+function skewNormalFrom(half: number, rest: number): number {
   return (
-    (SKEW_DELTA * half +
+    (SKEW_DELTA * Math.abs(half) +
       Math.sqrt(1 - SKEW_DELTA * SKEW_DELTA) * rest -
       SKEW_MEAN) /
     SKEW_SD
   );
 }
 
+/* --- the market a path lives through --- */
+
 /**
- * Starts a fresh clustered path.
+ * One year of the market, split into the pieces a second lane needs to live
+ * through the SAME year: the regime's spread, and the two standard normals
+ * the year's innovation is shaped from.
+ *
+ * "normal" leaves `half` unused and pins `sd` at 1, because a Gaussian year
+ * is its own innovation and has no regime. The field is still present rather
+ * than optional so one MarketYear type describes both models and neither
+ * branch has to test whether a field exists.
+ */
+interface MarketYear {
+  /** The regime's standardised spread this year; 1 under "normal" */
+  sd: number;
+  /** The normal the skew-normal folds; 0 and unused under "normal" */
+  half: number;
+  /** The normal it adds whole; the entire draw under "normal" */
+  rest: number;
+}
+
+/**
+ * The years one path's market has lived so far, and the regime the next year
+ * would start in.
+ *
+ * A tape is per PATH, exactly as the regime it carries always was: it is
+ * created inside the path loop and dropped when the path ends. Sharing one
+ * across paths is the bug the comment on startTape names.
+ */
+interface MarketTape {
+  years: MarketYear[];
+  /** The regime the NEXT year starts in; always false under "normal" */
+  crisis: boolean;
+}
+
+/**
+ * Starts a fresh path's market.
  *
  * The regime is drawn from its STATIONARY distribution, not started calm.
  * Starting every path in the calm state is a subtle and expensive mistake:
@@ -380,19 +429,64 @@ function skewNormalRandom(random: Random): number {
  * The state is per PATH, which is why this is a factory and not a module
  * variable: simulateOnce is called in a loop over one shared stream, and a
  * hoisted regime would let each path inherit the previous path's ending
- * state - and, in a rollover, leak lane A's market into lane B's.
+ * state. Two LANES of the same path are the deliberate exception and are not
+ * that bug: see simulatePair.
  */
-function clusteredDraw(random: Random): ReturnDraw {
-  let crisis = random() < CRISIS_SHARE;
-  return () => {
-    const sd = (crisis ? CRISIS_SD : CALM_SD) / REGIME_SD;
-    const draw = sd * skewNormalRandom(random);
-    // Transition AFTER the draw, so the state sampled above is the one this
-    // year was actually lived in
-    crisis = crisis ? random() >= CRISIS_TO_CALM : random() < CALM_TO_CRISIS;
-    return draw;
-  };
+const startTape = (model: ReturnModel, random: Random): MarketTape => ({
+  years: [],
+  crisis: model === "clustered" ? random() < CRISIS_SHARE : false,
+});
+
+/**
+ * Appends one year to a tape and returns it.
+ *
+ * This is the ONLY place either model touches the stream, and it consumes it
+ * exactly as this engine always has: one normalRandom per year under
+ * "normal"; under "clustered" the two normals the innovation is shaped from
+ * and then one uniform for the transition, in that order. Anything that
+ * changed the count or the order here would re-phase every path after it and
+ * move bands recorded since before models existed.
+ */
+function extendTape(
+  model: ReturnModel,
+  random: Random,
+  tape: MarketTape,
+): MarketYear {
+  if (model !== "clustered") {
+    const year = { sd: 1, half: 0, rest: normalRandom(random) };
+    tape.years.push(year);
+    return year;
+  }
+  const sd = (tape.crisis ? CRISIS_SD : CALM_SD) / REGIME_SD;
+  const half = normalRandom(random);
+  const rest = normalRandom(random);
+  // Transition AFTER the draw, so the state sampled above is the one this
+  // year was actually lived in
+  tape.crisis = tape.crisis
+    ? random() >= CRISIS_TO_CALM
+    : random() < CALM_TO_CRISIS;
+  const year = { sd, half, rest };
+  tape.years.push(year);
+  return year;
 }
+
+/** The standardised draw a recorded market year is worth under `model` */
+const yearDraw = (model: ReturnModel, year: MarketYear): number =>
+  model === "clustered"
+    ? year.sd * skewNormalFrom(year.half, year.rest)
+    : year.rest;
+
+/**
+ * The draw generator for the lane that LEADS: it lives each year as this
+ * engine always has and records it on the tape for the other lane to read.
+ * Recording is all that distinguishes it from a lone lane's generator, which
+ * is why returnDraw below is defined as exactly this with a tape nobody
+ * keeps.
+ */
+const leadingDraw =
+  (model: ReturnModel, random: Random, tape: MarketTape): ReturnDraw =>
+  () =>
+    yearDraw(model, extendTape(model, random, tape));
 
 /**
  * The draw generator for one path under `model`.
@@ -401,11 +495,257 @@ function clusteredDraw(random: Random): ReturnDraw {
  * in the position it always has: the stream is seeded once per run and shared
  * across paths and lanes, so a single extra uniform re-phases every path after
  * it and moves bands this engine has recorded since before models existed.
+ * The tape this builds is written and never read - a lone lane has no partner
+ * to hand it to - and exists only so that a lane simulated alone and a lane
+ * leading a pair run the same code rather than two copies that can drift.
  */
 export function returnDraw(model: ReturnModel, random: Random): ReturnDraw {
-  return model === "clustered"
-    ? clusteredDraw(random)
-    : () => normalRandom(random);
+  return leadingDraw(model, random, startTape(model, random));
+}
+
+/* --- two accounts, one market --- */
+
+/**
+ * How strongly the two lanes' annual returns move together in the two modes
+ * that COMBINE them (combined and rollover). It is the correlation of the
+ * finished annual draw, under either return model and whatever each lane's
+ * own volatility slider says, because correlation is scale-free.
+ *
+ * ---------- The failure this prevents ----------
+ * Until this constant existed the two lanes were drawn off one stream
+ * consumed sequentially - all of A's paths, then all of B's - so path i of A
+ * and path i of B came from disjoint stretches of the stream and were
+ * INDEPENDENT. Measured at 600,000 annual draws a lane, the cross-lane
+ * correlation was 0.0006 under "normal" and 0.0010 under "clustered". Nobody
+ * chose that; it is what simulating one lane after the other happens to
+ * produce, and it quietly credited a household with the diversification of
+ * two unrelated markets.
+ *
+ * It is not a small error, and it is worst on the pessimistic figure the
+ * whole simulation exists to produce. Splitting ONE $700,000 account into two
+ * identically-configured $350,000 lanes - the same money, the same plan, the
+ * same sliders - moved the 30-year 10th percentile UP by 70.7% and the 90th
+ * DOWN by 11.3%. Summing two independent paths averages away variance that
+ * does not average away for one investor holding two accounts in one market.
+ *
+ * ---------- Why a constant, and not a slider ----------
+ * Every other simulated quantity in this app is something the user can
+ * estimate: what they hold, what they will draw, how volatile they think it
+ * is. Correlation is not. There is no figure in a user's head to type here,
+ * and a slider would still need a default, so it would add a control without
+ * removing the decision. It is the engine's claim about what two accounts of
+ * one household are, and the honest place for it is a named constant with
+ * this comment beside it and a row in the exported report (see
+ * planAssumptions) rather than a knob nobody moves.
+ *
+ * ---------- Why not derived from the lanes' own sliders ----------
+ * Deriving it from how alike the two lanes look - min(sigma)/max(sigma), or
+ * some blend with the gains - was tried and rejected. It is not a
+ * measurement; it is a second arbitrary choice wearing a derivation's
+ * clothes. Three things kill it. At this app's OWN defaults both lanes carry
+ * DEFAULT_VOLATILITY, so the ratio is 1 and the shipped default state becomes
+ * two PERFECTLY correlated lanes - which is exactly the re-seeding artifact
+ * the docblock on runIndividualSimulations names as a bug, arriving through
+ * the front door. It makes the volatility slider do two jobs, so dragging
+ * lane B from 15 to 16 moves the combined 10th percentile through a channel
+ * no user can see or explain, which is the same objection that took the
+ * Inflated switch out of this engine. And two lanes at sigma 18 gaining 12%
+ * and 4% are plainly not the same asset, which no function of sigma alone can
+ * know.
+ *
+ * ---------- Why 0.85 ----------
+ * Two lanes here are two ACCOUNTS of one household - a 401(k) and a taxable
+ * account, one spouse's and the other's - not two asset classes; the app has
+ * no asset-class concept at all. Two diversified equity portfolios sit around
+ * 0.85 to 0.95 on annual data (US total market against developed ex-US is
+ * about 0.86), and 0.85 is deliberately the LOW end of that band, so the
+ * engine errs towards the user's own reading rather than towards manufactured
+ * pessimism. It also leaves lane B's own settings doing real work:
+ * sqrt(1 - 0.85^2) = 0.527 of B's risk is still B's own.
+ *
+ * The one common pairing genuinely lower is equity against aggregate bonds,
+ * near 0. 0.85 overstates joint risk there and is chosen KNOWING so, for two
+ * reasons. The first is that the error is cheap exactly where it is wrong: a
+ * low-sigma lane contributes little variance whatever it is correlated with,
+ * so on a 25-year accumulating pair with lane A at sigma 17, the 0-to-0.85
+ * swing in combined p10 is 38.6% when lane B is equity-like at sigma 17, 15.5%
+ * at sigma 5, and 3.4% when it is cash-like at sigma 1. The second is that the
+ * two directions of error are not symmetric: too high makes a plan look
+ * riskier than it is, too low makes a retirement plan report a floor it does
+ * not have. An unexamined 0 was choosing the second.
+ *
+ * The choice WITHIN the plausible band barely matters, and the band's floor
+ * is the honest end of it. On that same plan the whole range 0.75 to 0.95
+ * spans 6.9% of the 10th percentile ($1,425,973 to $1,334,182) against the
+ * 38.8% the move off zero is worth ($1,913,977 to $1,378,693). That flatness
+ * is the real argument for a constant: precision above 0.6 buys almost
+ * nothing, and a slider would promise it.
+ *
+ * ---------- What it does NOT fix ----------
+ * Two lanes at 0.85 are still not one account. Splitting $700,000 into two
+ * identical $350,000 lanes and running it at this constant leaves the
+ * 10th percentile 7.5% above the whole-account truth, where independence left
+ * it 72.7% above; on the spending version of the same plan it leaves ruin
+ * 8.4 points high where independence left it 23.7 points high. Only rho = 1
+ * closes that gap exactly, and it does so exactly - the pair reproduces the
+ * single account to the dollar. Rho = 1 is nonetheless a claim about the
+ * market that is false for two different accounts, and it would make lane B's
+ * own market nothing but lane A's rescaled, so the residual is accepted and
+ * stated here rather than removed. A reader who weighs that identity above
+ * the market claim should read 0.90 to 0.95 as the defensible neighbouring
+ * choice; the numbers above are what the argument turns on.
+ */
+export const LANE_CORRELATION = 0.85;
+
+/**
+ * The correlation of two "clustered" draws whose underlying normals are
+ * correlated at `latent`, in closed form.
+ *
+ * The clustered draw is sd * (delta*|h| + sqrt(1 - delta^2)*r - mean) / sd0.
+ * Both lanes of a path share sd, and E[sd^2] is exactly 1 by REGIME_SD's
+ * construction, so the regime drops out of the correlation entirely and only
+ * the innovation is left. For a standard bivariate normal pair at correlation
+ * p, Cov(|h_a|, |h_b|) is (2/pi)(sqrt(1 - p^2) + p*asin(p) - 1), and the two
+ * normals of one lane are independent of the other lane's other normal, so
+ * the cross terms vanish and what remains is the expression below.
+ *
+ * It is worth checking the two ends by hand: this is 0 at latent 0, and at
+ * latent 1 the numerator collapses to delta^2*(1 - 2/pi) + 1 - delta^2, which
+ * is SKEW_SD^2 exactly, so it is 1. The map is therefore a genuine
+ * correlation-to-correlation function on [0, 1], and its derivative,
+ * (delta^2*(2/pi)*asin(p) + 1 - delta^2) / SKEW_SD^2, is positive throughout -
+ * which is what lets it be inverted by bisection.
+ */
+const clusteredDrawCorrelation = (latent: number): number =>
+  (SKEW_DELTA *
+    SKEW_DELTA *
+    (2 / Math.PI) *
+    (Math.sqrt(1 - latent * latent) + latent * Math.asin(latent) - 1) +
+    (1 - SKEW_DELTA * SKEW_DELTA) * latent) /
+  (SKEW_SD * SKEW_SD);
+
+/**
+ * The correlation to apply to the two normals a lane's year is shaped from,
+ * so that the FINISHED draws come out at LANE_CORRELATION.
+ *
+ * Under "normal" the draw is the normal, so there is nothing to invert. Under
+ * "clustered" the fold that makes the draw left-skewed also eats correlation:
+ * feeding 0.85 straight through measures 0.756 in the finished draws. Storing
+ * 0.85 as the latent figure and shipping it would mean the Return Model
+ * toggle silently switched the correlation between the accounts from 0.85 to
+ * 0.756 - one control quietly moving two assumptions, which is precisely what
+ * standardising both models to variance 1 exists to stop, and it would make
+ * the figure printed in the exported report wrong for the shipped default.
+ *
+ * So the TARGET is the constant and the latent figure is derived from it, by
+ * the repo's own bisection over the closed form above. Deriving rather than
+ * pinning also means the constant keeps its meaning if SKEW_SHAPE is ever
+ * recalibrated: it is read out of SKEW_DELTA, not written down beside it.
+ * Twenty halvings leave the realised correlation within about 2e-6 of the
+ * target, which is finer than 200,000 draws can measure.
+ */
+const CLUSTERED_LATENT_CORRELATION = bisect(
+  clusteredDrawCorrelation,
+  1,
+  0,
+  LANE_CORRELATION,
+);
+
+const latentCorrelation = (model: ReturnModel): number =>
+  model === "clustered" ? CLUSTERED_LATENT_CORRELATION : LANE_CORRELATION;
+
+/**
+ * The draw generator for the lane that FOLLOWS: it lives the leader's year -
+ * the same regime, the same market shock - with an idiosyncratic component of
+ * its own mixed in at the weight that realises LANE_CORRELATION.
+ *
+ * The coupling is applied to the two NORMALS the year is shaped from, never
+ * to the finished draw, and that is the whole design. A follower's normals
+ * are still marginally standard normal, so skewNormalFrom maps them onto
+ * EXACTLY the leader's distribution: mean, spread, skew and kurtosis are
+ * preserved by construction rather than approximately.
+ *
+ * The obvious alternative - a Cholesky blend of the finished draws,
+ * z_b = rho*z_a + sqrt(1 - rho^2)*z_idio - was prototyped and measured, and
+ * it is wrong for the model this app ships. Blending two independent copies
+ * of a skewed variable is a convolution, and convolution washes the skew out:
+ * it survives at a factor of rho^3 + (1 - rho^2)^1.5, which is 0.760 at
+ * rho 0.85. Measured over 600,000 draws that turns lane B's skew from -0.523
+ * into -0.397 and its excess kurtosis from 2.56 into 1.55, while lane A keeps
+ * both - so whether a plan gets the clustered model's left tail at all would
+ * depend on which slot the account was typed into. The worst case is not even
+ * at a low rho: the factor bottoms out at 0.707 for rho = 1/sqrt(2). That is
+ * a return model quietly de-skewed by a correlation setting, and it is the
+ * reason the coupling lives one level down.
+ *
+ * The REGIME is shared outright rather than correlated. A crisis is a market
+ * event, not an account event: 2008 did not arrive in the 401(k) and skip the
+ * brokerage account. This is not the leak the comment on startTape forbids -
+ * that one is a regime surviving from one PATH to the next, which lets a
+ * simulated life inherit a market it never lived through. Here the two lanes
+ * of the SAME path share the same simulated year, which is the claim being
+ * modelled, and every path still starts its own chain from stationary.
+ *
+ * Sharing it also happens to be what makes LANE_CORRELATION mean what it
+ * says. Because both lanes carry the same regime scale each year and
+ * E[sd^2] is exactly 1, the regime cancels out of the correlation and the
+ * closed form above is the whole story. Give each lane its OWN chain and the
+ * two independent scale factors dilute the coupling by E[sd]^2 = 0.863: the
+ * same latent figure then realises 0.734 rather than 0.850 (measured over
+ * 3,000,000 draws, and 0.85 * 0.863 = 0.734 in closed form), so a second
+ * calibration constant would be needed to undo a modelling choice nobody
+ * wanted. Correlating the two chains at a rho of their own is the obvious
+ * refinement and is deliberately not attempted: a second uncalibrated
+ * correlation is not an improvement on one calibrated one, and an outright
+ * share is the honest upper bound rather than a fitted guess.
+ *
+ * Years past the leader's horizon extend the tape from the follower's own
+ * stream, continuing the same regime chain rather than starting a new one:
+ * lane B outliving lane A is not lane B entering a fresh market.
+ */
+function followingDraw(
+  model: ReturnModel,
+  random: Random,
+  tape: MarketTape,
+  latent: number,
+): ReturnDraw {
+  const own = Math.sqrt(1 - latent * latent);
+  let year = 0;
+  return () => {
+    while (tape.years.length <= year) extendTape(model, random, tape);
+    const market = tape.years[year];
+    year++;
+    if (model !== "clustered") {
+      return latent * market.rest + own * normalRandom(random);
+    }
+    // Locals, not arguments: the two idiosyncratic normals come off the
+    // stream in a stated order rather than in whatever order the arguments
+    // of a call happen to be evaluated in
+    const half = latent * market.half + own * normalRandom(random);
+    const rest = latent * market.rest + own * normalRandom(random);
+    return market.sd * skewNormalFrom(half, rest);
+  };
+}
+
+/**
+ * One path's pair of draw generators: the leader's, and the follower's
+ * reading the leader's market.
+ *
+ * Exported for the same reason returnDraw is - recovering an annual draw from
+ * a compounded balance is lossy, so the assertions that this coupling leaves
+ * both marginals alone and lands the correlation on LANE_CORRELATION have to
+ * read the scalar draws. Call `a` for a path's whole horizon and then `b` for
+ * its whole horizon, which is the order simulatePair consumes them in.
+ */
+export function pairedReturnDraws(
+  model: ReturnModel,
+  random: Random,
+): { a: ReturnDraw; b: ReturnDraw } {
+  const tape = startTape(model, random);
+  return {
+    a: leadingDraw(model, random, tape),
+    b: followingDraw(model, random, tape, latentCorrelation(model)),
+  };
 }
 
 /* ---------- Checkpoint grid ---------- */
@@ -451,7 +791,11 @@ const sharedGrid = (a: MonteCarloParams, b: MonteCarloParams): number[] =>
 function simulateOnce(
   params: MonteCarloParams,
   random: Random,
-  { injection, grid = checkpointMonths(params.yearsOfGrowth) }: SimOptions = {},
+  {
+    injection,
+    grid = checkpointMonths(params.yearsOfGrowth),
+    draw: pairedDraw,
+  }: SimOptions = {},
 ): SimPath {
   const {
     initialAmount,
@@ -487,8 +831,10 @@ function simulateOnce(
   let monthlyRate = 0;
   let dynamicMonthly = 0;
   // Per PATH, never hoisted: a clustered draw carries a regime that must
-  // start fresh - and start stationary - for every simulated life
-  const draw = returnDraw(returnModel, random);
+  // start fresh - and start stationary - for every simulated life. A paired
+  // run hands its own generator in, so the two lanes of one path can read one
+  // market; a lone lane builds its own here and reads nothing else.
+  const draw = pairedDraw ?? returnDraw(returnModel, random);
 
   const injectIfDue = (monthsDone: number) => {
     if (injection && monthsDone === injection.month) {
@@ -796,11 +1142,71 @@ const withLegRuin = (
   }));
 
 /**
+ * Simulates BOTH lanes of a pair, path for path, on one market.
+ *
+ * Lane A leads and lane B follows, and the asymmetry is only in the code: the
+ * pair's joint distribution is the same either way round, because a
+ * correlation is symmetric and both lanes end up with the same marginal. What
+ * the asymmetry buys is that lane A reads the seeded stream in exactly the
+ * order and quantity a lane simulated ALONE reads it, so leg A's percentiles,
+ * leg A's ruin share and the balance a rollover rolls are bit-identical to a
+ * lone run of A. Half of what a correlation changes is therefore provably
+ * nothing, which is what makes the rest of it auditable.
+ *
+ * Both lanes are simulated in full passes, A then B, exactly as before. The
+ * tapes are what carry A's market across to B, and they are the only new
+ * state: one per path, holding at most that path's years.
+ *
+ * Two lanes on DIFFERENT return models are NOT paired. There is no calibrated
+ * correlation between a Gaussian year and a clustered one, and forcing the
+ * one there is would break a marginal: a "clustered" follower reading a
+ * "normal" leader's tape would take a fold of `half` that is not a standard
+ * normal, and lose its own skew. The app cannot produce the case - one toggle
+ * drives both lanes - so this branch exists to say what happens if it ever
+ * does: B draws its own independent market, exactly as it did before this
+ * function existed.
+ */
+function simulatePair(
+  paramsA: MonteCarloParams,
+  paramsB: MonteCarloParams,
+  random: Random,
+  grid: number[],
+  injectionFor?: (pathA: SimPath) => LumpSumInjection | undefined,
+): { pathsA: SimPath[]; pathsB: SimPath[] } {
+  const model = paramsA.returnModel ?? "normal";
+  const paired = (paramsB.returnModel ?? "normal") === model;
+  const latent = latentCorrelation(model);
+  const tapes: MarketTape[] = [];
+  const pathsA = Array.from({ length: paramsA.simCount }, () => {
+    const tape = startTape(model, random);
+    tapes.push(tape);
+    return simulateOnce(paramsA, random, {
+      grid,
+      draw: leadingDraw(model, random, tape),
+    });
+  });
+  const pathsB = pathsA.map((pathA, i) =>
+    simulateOnce({ ...paramsB, simCount: paramsA.simCount }, random, {
+      grid,
+      injection: injectionFor?.(pathA),
+      draw: paired ? followingDraw(model, random, tapes[i], latent) : undefined,
+    }),
+  );
+  return { pathsA, pathsB };
+}
+
+/**
  * Runs paired A+B simulations, sums paths element-wise, returns combined bands.
  * Each investment is simulated for its own horizon; past it, its final value
  * is carried forward as a constant so only the other's randomness drives
  * further widening. Both lanes are sampled on the union of their grids, so a
  * fractional horizon adds a row of its own rather than displacing one.
+ *
+ * Path i of A and path i of B are ONE household's two accounts in ONE market
+ * (see LANE_CORRELATION and simulatePair). They used to be two draws from
+ * unrelated markets, which is what summing them element-wise had quietly been
+ * claiming, and it made the lower tail this function exists to report
+ * optimistic by tens of percent.
  */
 export function runCombinedSimulation(
   paramsA: MonteCarloParams,
@@ -809,12 +1215,7 @@ export function runCombinedSimulation(
 ): PercentileBand[] {
   const random = makeRandom(paramsA.seed ?? paramsB.seed);
   const grid = sharedGrid(paramsA, paramsB);
-  const pathsA = simulatePaths(paramsA, random, { grid });
-  const pathsB = simulatePaths(
-    { ...paramsB, simCount: paramsA.simCount },
-    random,
-    { grid },
-  );
+  const { pathsA, pathsB } = simulatePair(paramsA, paramsB, random, grid);
   const legA = pathsA.map((p) => p[track]);
   const legB = pathsB.map((p) => p[track]);
   const bands = computeBands(
@@ -829,14 +1230,22 @@ export function runCombinedSimulation(
 }
 
 /**
- * Runs both lanes as independent portfolios off ONE shared random stream,
- * consumed sequentially, and returns a band set per lane on that lane's own
- * grid.
+ * Runs both lanes off ONE shared random stream, consumed sequentially, and
+ * returns a band set per lane on that lane's own grid.
  *
  * Two separate runMonteCarloSimulation calls would restart the same seeded
  * stream and hand path i of B exactly the shocks of path i of A, making the
  * lanes perfectly correlated - invisible in the marginal percentiles drawn
  * today, and wrong for anything that ever pairs the two path sets.
+ *
+ * This is the one paired entry point that is deliberately NOT coupled at
+ * LANE_CORRELATION, and the reason is that nothing here is paired: individual
+ * mode draws two cones and prints two blocks of rows, and never sums, splices
+ * or compares the two path sets. Every figure it returns is a MARGINAL, and a
+ * correlation leaves marginals exactly where they are - so coupling here
+ * would re-phase both lanes' streams and move every individual-mode figure on
+ * record to change nothing a reader can see. It would also cost the identity
+ * the test below pins, that lane A here IS a lone run of A.
  */
 export function runIndividualSimulations(
   paramsA: MonteCarloParams,
@@ -876,25 +1285,27 @@ export function runRolloverSimulation(
   const rolloverMonth = Math.max(0, toMonths(paramsA.yearsOfGrowth));
   const fires = rolloverMonth <= Math.max(0, toMonths(paramsB.yearsOfGrowth));
 
-  const legA: number[][] = [];
-  const legB: number[][] = [];
-  const portfolioPaths = simulatePaths(paramsA, random, { grid }).map(
-    (pathA) => {
-      // A is sampled on the shared grid, so its last entry is its horizon
-      // value carried forward: the balance at the rollover month itself
-      const amount = pathA.nominal[pathA.nominal.length - 1];
-      const pathB = simulateOnce(paramsB, random, {
-        grid,
-        injection: fires ? { month: rolloverMonth, amount } : undefined,
-      });
-      legA.push(pathA[track]);
-      legB.push(pathB[track]);
-      return grid.map((months, k) =>
-        fires && months >= rolloverMonth
-          ? pathB[track][k]
-          : pathA[track][k] + pathB[track][k],
-      );
-    },
+  const { pathsA, pathsB } = simulatePair(
+    paramsA,
+    paramsB,
+    random,
+    grid,
+    // A is sampled on the shared grid, so its last entry is its horizon
+    // value carried forward: the balance at the rollover month itself
+    (pathA) =>
+      fires
+        ? {
+            month: rolloverMonth,
+            amount: pathA.nominal[pathA.nominal.length - 1],
+          }
+        : undefined,
+  );
+  const legA = pathsA.map((p) => p[track]);
+  const legB = pathsB.map((p) => p[track]);
+  const portfolioPaths = legA.map((a, i) =>
+    grid.map((months, k) =>
+      fires && months >= rolloverMonth ? legB[i][k] : a[k] + legB[i][k],
+    ),
   );
 
   const bands = computeBands(portfolioPaths, grid);
