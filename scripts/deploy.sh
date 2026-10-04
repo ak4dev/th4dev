@@ -57,6 +57,9 @@ done
 # Optional: with no site to poll there is nothing to verify against, so the
 # last step is skipped rather than guessed at.
 SITE="${TH4_SITE:-}"
+# Optional user:password for a site behind HTTP Basic auth, so the verify step
+# is let in instead of being answered 401 on every attempt.
+SITE_AUTH="${TH4_SITE_AUTH:-}"
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m warning:\033[0m %s\n' "$*"; }
@@ -149,8 +152,12 @@ if [ -z "$ENTRY" ]; then
   exit 0
 fi
 say "verifying $SITE serves $ENTRY"
+CURL_AUTH=()
+if [ -n "$SITE_AUTH" ]; then
+  CURL_AUTH=(-u "$SITE_AUTH")
+fi
 for attempt in 1 2 3 4 5 6; do
-  LIVE="$(curl -fsS --max-time 20 "$SITE/?cachebust=$(date +%s)" 2> /dev/null || true)"
+  LIVE="$(curl -fsS --max-time 20 "${CURL_AUTH[@]}" "$SITE/?cachebust=$(date +%s)" 2> /dev/null || true)"
   case "$LIVE" in
     *"$ENTRY"*)
       say "live: $SITE is serving $HEAD_SHA"

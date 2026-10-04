@@ -179,7 +179,9 @@ rather than a success.
 It reads `TH4_BUCKET` and `TH4_DIST_ID` from the environment and has **no
 defaults**, so the script names no bucket, distribution, account or domain.
 `TH4_SITE` is optional; without it the last step has nothing to poll and is
-skipped. Keep your own values in a wrapper outside version control:
+skipped. If the site sits behind HTTP Basic auth, set `TH4_SITE_AUTH` to
+`user:password` so that poll is let in. Keep your own values in a wrapper
+outside version control:
 
 ```sh
 #!/usr/bin/env bash
